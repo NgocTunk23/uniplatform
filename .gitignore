@@ -1,0 +1,20 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Build files
+frontend/build/
+frontend/dist/
+
+# Môi trường và Bảo mật
+.env
+.env.local
+.DS_Store
