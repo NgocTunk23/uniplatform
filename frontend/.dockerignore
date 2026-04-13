@@ -1,0 +1,11 @@
+node_modules
+.git
+.next
+out
+build
+dist
+.env*
+.DS_Store
+README.md
+Dockerfile
+docker-compose.yml

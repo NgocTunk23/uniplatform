@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app # Gắn code từ máy thật vào container để Hot Reload
+      - /app/node_modules # Giữ lại node_modules trong container, không bị máy thật ghi đè
+    environment:
+      - NODE_ENV=development
+    # Lệnh này đảm bảo Vite chạy ở chế độ nhận diện thay đổi trong Docker
+    command: npm run dev -- --host 0.0.0.0

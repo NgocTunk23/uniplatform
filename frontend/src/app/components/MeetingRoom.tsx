@@ -130,7 +130,7 @@ export function MeetingRoom() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-screen bg-gray-900">
       {/* Top Bar */}
       <div className="flex items-center justify-between px-3 md:px-6 py-3 md:py-4 bg-gray-800/50 border-b border-gray-700/50">
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
@@ -146,12 +146,12 @@ export function MeetingRoom() {
             <Bot size={16} className="text-purple-400 animate-pulse" />
             <span className="text-purple-300 text-xs hidden md:inline">AI Recording</span>
           </div>
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
+          {/* <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
             <Settings size={18} className="md:w-5 md:h-5" />
           </button>
           <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
             <MoreVertical size={18} className="md:w-5 md:h-5" />
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -163,9 +163,8 @@ export function MeetingRoom() {
             {mockParticipants.map((participant) => (
               <div
                 key={participant.id}
-                className={`relative bg-gray-800 rounded-lg md:rounded-xl overflow-hidden aspect-video w-full ${
-                  participant.isSpeaking ? 'ring-2 ring-purple-500' : ''
-                }`}
+                className={`relative bg-gray-800 rounded-lg md:rounded-xl overflow-hidden aspect-video w-full ${participant.isSpeaking ? 'ring-2 ring-purple-500' : ''
+                  }`}
               >
                 {participant.isVideoOn ? (
                   <div className="w-full h-full bg-gradient-to-br from-purple-900/20 to-gray-800 flex items-center justify-center">
@@ -359,9 +358,8 @@ export function MeetingRoom() {
         <div className="flex items-center gap-1.5 md:gap-3 mx-auto md:mx-0">
           <button
             onClick={() => setIsMicOn(!isMicOn)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
-            }`}
+            className={`p-2.5 md:p-3 rounded-full transition-colors ${isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
+              }`}
           >
             {isMicOn ? (
               <Mic size={18} className="text-white md:w-5 md:h-5" />
@@ -372,9 +370,8 @@ export function MeetingRoom() {
 
           <button
             onClick={() => setIsVideoOn(!isVideoOn)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              isVideoOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
-            }`}
+            className={`p-2.5 md:p-3 rounded-full transition-colors ${isVideoOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
+              }`}
           >
             {isVideoOn ? (
               <Video size={18} className="text-white md:w-5 md:h-5" />
@@ -383,9 +380,9 @@ export function MeetingRoom() {
             )}
           </button>
 
-          <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
+          {/* <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
             <Monitor size={18} className="text-white md:w-5 md:h-5" />
-          </button>
+          </button> */}
 
           <button
             onClick={handleLeaveMeeting}
@@ -400,25 +397,23 @@ export function MeetingRoom() {
         <div className="flex items-center gap-1 md:gap-2">
           <button
             onClick={() => setShowParticipants(!showParticipants)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              showParticipants ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
-            }`}
+            className={`p-2.5 md:p-3 rounded-full transition-colors ${showParticipants ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
           >
             <Users size={18} className="text-white md:w-5 md:h-5" />
           </button>
 
           <button
             onClick={() => setShowChat(!showChat)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              showChat ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
-            }`}
+            className={`p-2.5 md:p-3 rounded-full transition-colors ${showChat ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
+              }`}
           >
             <MessageSquare size={18} className="text-white md:w-5 md:h-5" />
           </button>
 
-          <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
+          {/* <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
             <Grid3x3 size={18} className="text-white md:w-5 md:h-5" />
-          </button>
+          </button> */}
         </div>
       </div>
     </div>
