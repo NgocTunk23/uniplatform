@@ -6,8 +6,16 @@ import {
   FileText, 
   Sparkles,
   ChevronRight,
-  MoreHorizontal
+  MoreHorizontal,
+  ShieldCheck // <-- Import icon này
 } from 'lucide-react';
+
+// Bổ sung interface để nhận Props từ DashboardLayout truyền xuống
+interface RightPanelProps {
+  groupName: string;
+  isCoordinationOpen: boolean;
+  onToggleCoordination: () => void;
+}
 
 const scheduleData = [
   { time: '09:00 AM', status: 'busy', names: ['SJ', 'AC'] },
@@ -17,10 +25,29 @@ const scheduleData = [
   { time: '01:00 PM', status: 'free', names: ['JS', 'AC'], partial: true },
 ];
 
-export function RightPanel() {
+export function RightPanel({ groupName, isCoordinationOpen, onToggleCoordination }: RightPanelProps) {
   return (
-    <div className="flex flex-col h-full bg-white border-l border-gray-100 p-6 overflow-y-auto w-full">
-      {/* Intelligent Schedule Widget */}
+    <div className="flex flex-col h-full bg-white p-6 overflow-y-auto w-full">
+      
+      {/* HEADER NHÓM & NÚT TEAM COORDINATION */}
+      <div className="mb-8 pb-6 border-b border-gray-100">
+        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Current Workspace</h2>
+        <p className="text-xl font-bold text-gray-900 truncate">{groupName}</p>
+
+        <button
+          onClick={onToggleCoordination}
+          className={`w-full mt-4 py-3 border text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 ${
+            isCoordinationOpen
+              ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
+              : 'bg-white border-purple-200 text-purple-600 hover:bg-purple-50'
+          }`}
+        >
+          <ShieldCheck size={18} />
+          {isCoordinationOpen ? 'Back to Group Chat' : 'Open Team Coordination'}
+        </button>
+      </div>
+
+      {/* Intelligent Schedule Widget (Code cũ của bạn) */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
@@ -89,7 +116,7 @@ export function RightPanel() {
         </div>
       </div>
 
-      {/* AI Meeting Minutes Preview */}
+      {/* AI Meeting Minutes Preview (Code cũ của bạn) */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">

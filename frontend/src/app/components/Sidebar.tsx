@@ -1,21 +1,30 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { 
-  MessageSquare, 
+  // MessageSquare, 
   Calendar, 
-  FileText, 
   FolderOpen, 
   Bot,
   Hash,
-  Settings
+  Settings,
+  CalendarDays,
+  ShieldCheck,
 } from 'lucide-react';
 
+
+interface SidebarProps {
+  onCloseMobile?: () => void;
+  activeGroup: string | null;
+  onSelectGroup: Dispatch<SetStateAction<string | null>>;
+}
 const navItems = [
-  { icon: MessageSquare, label: 'Chat', path: '/chat' },
-  { icon: Calendar, label: 'Meetings', path: '/meetings' },
-  { icon: FileText, label: 'Meeting Minutes', path: '/minutes' },
-  { icon: FolderOpen, label: 'Drive Files', path: '/files' },
-  { icon: Bot, label: 'AI Assistant', path: '/ai-assistant' },
+  // { icon: MessageSquare, label: 'Chat',              path: '/chat' },
+  { icon: CalendarDays,  label: 'My Schedule',       path: '/schedule' },
+  { icon: Calendar,      label: 'Meetings',          path: '/meetings' },
+  
+  // { icon: ShieldCheck,   label: 'Team Coordination', path: '/team-schedule' },
+  { icon: FolderOpen,    label: 'Drive Files',       path: '/files' },
+  { icon: Bot,           label: 'AI Assistant',      path: '/ai-assistant' },
 ];
 
 const chatGroups = [
@@ -24,11 +33,13 @@ const chatGroups = [
   { name: 'Design Capstone', unread: 1 },
 ];
 
-export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
+// 2. Cập nhật lại phần khai báo component Sidebar để sử dụng interface vừa tạo
+export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
   const handleNavClick = (path: string) => {
+    onSelectGroup(null);
     navigate(path);
     onCloseMobile?.();
   };
@@ -75,31 +86,51 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
             Work Groups
           </h2>
           <div className="space-y-1">
-            {chatGroups.map((group, i) => (
-              <button
-                key={i}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-gray-50 group transition-colors"
-              >
-                <div className="flex items-center gap-3 overflow-hidden text-sm">
-                  <Hash size={16} className="text-gray-300 group-hover:text-gray-400 shrink-0" />
-                  <span className="truncate text-gray-700 font-medium group-hover:text-gray-900">
-                    {group.name}
-                  </span>
-                </div>
-                {group.unread > 0 && (
-                  <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0">
-                    {group.unread}
-                  </span>
-                )}
-              </button>
-            ))}
+            {chatGroups.map((group, i) => {
+              const isGroupActive = activeGroup === group.name; // Kiểm tra xem group này có đang được chọn không
+              
+              return (
+                <button
+                  key={i}
+                  // THÊM SỰ KIỆN CLICK Ở ĐÂY:
+                  onClick={() => {
+                    onSelectGroup(group.name); // Báo cho Dashboard biết group nào đang được chọn
+                    onCloseMobile?.();
+                  }}
+                  // Cập nhật class để có màu nền khi được active
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl group transition-colors ${
+                    isGroupActive ? 'bg-purple-50' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 overflow-hidden text-sm">
+                    <Hash 
+                      size={16} 
+                      className={`shrink-0 ${isGroupActive ? 'text-purple-500' : 'text-gray-300 group-hover:text-gray-400'}`} 
+                    />
+                    <span className={`truncate font-medium ${isGroupActive ? 'text-purple-700' : 'text-gray-700 group-hover:text-gray-900'}`}>
+                      {group.name}
+                    </span>
+                  </div>
+                  {group.unread > 0 && (
+                    <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0">
+                      {group.unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* User profile / Settings */}
       <div className="p-4 mt-auto border-t border-gray-50">
-        <button className="flex items-center gap-3 w-full p-2 rounded-xl hover:bg-gray-50 transition-colors">
+        <button
+          onClick={() => handleNavClick('/profile')}
+          className={`flex items-center gap-3 w-full p-2 rounded-xl transition-colors ${
+            location.pathname.startsWith('/profile') ? 'bg-purple-50' : 'hover:bg-gray-50'
+          }`}
+        >
           <div className="w-8 h-8 rounded-full bg-purple-200 border-2 border-white shadow-sm flex items-center justify-center text-purple-700 font-semibold text-xs shrink-0">
             JS
           </div>

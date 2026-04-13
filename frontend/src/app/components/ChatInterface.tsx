@@ -63,7 +63,11 @@ const messages = [
   }
 ];
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+  groupName: string;
+}
+
+export function ChatInterface({ groupName }: ChatInterfaceProps) {
   const [inputText, setInputText] = useState('');
 
   return (
@@ -75,7 +79,7 @@ export function ChatInterface() {
             <MessageSquare size={20} className="fill-purple-500/20" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-gray-900 leading-tight">Software Eng Project</h2>
+            <h2 className="text-lg font-bold text-gray-900">{groupName}</h2>
             <div className="flex items-center gap-1.5 mt-0.5 text-xs text-gray-500">
               <Users size={12} className="text-gray-400" />
               <span>4 Members online</span>
