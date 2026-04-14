@@ -52,4 +52,5 @@
 🏁 **Module 2 Status: COMPLETED**
 - Toàn bộ kiến trúc đã được hiện đại hóa với Prisma và Zod.
 - Hệ thống Error Handling và Role management được tập trung hóa.
-- Tài liệu API (Swagger) và Bộ test đã sẵn sàng 100%.
+- Tài liệu API (Swagger) và Bộ test (Auth, Chat) đã sẵn sàng 100%.
+- Tích hợp thành công Real-time Chat và AI RAG.

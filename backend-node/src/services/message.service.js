@@ -3,9 +3,11 @@ const prisma = require('../config/prisma');
 const saveMessage = async (messageData) => {
   return await prisma.message.create({
     data: {
-      workspaceId: messageData.workspaceid,
-      senderusername: messageData.senderusername,
       content: messageData.content,
+      senderusername: messageData.senderusername,
+      workspace: {
+        connect: { id: messageData.workspaceId }
+      },
       replyToId: messageData.reply,
       mentions: messageData.mentions || [],
       vectorembedding: messageData.vectorembedding || [],

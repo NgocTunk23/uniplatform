@@ -1,5 +1,6 @@
 const aiService = require('../services/ai.service');
 const ragService = require('../services/rag.service');
+const messageService = require('../services/message.service');
 
 const registerChatHandlers = (io, socket) => {
   console.log(`⚡ User connected to chat: ${socket.id}`);
@@ -20,7 +21,7 @@ const registerChatHandlers = (io, socket) => {
       const embedding = await aiService.getEmbedding(content);
       
       const newMessage = await messageService.saveMessage({
-        workspaceid: workspaceId,
+        workspaceId,
         senderusername,
         content,
         reply,
@@ -45,7 +46,7 @@ const registerChatHandlers = (io, socket) => {
 
       // Save AI response to DB (optional, but good for history)
       const aiMessage = await messageService.saveMessage({
-        workspaceid: workspaceId,
+        workspaceId,
         senderusername: 'UniBot',
         content: aiResponse,
         reply: null

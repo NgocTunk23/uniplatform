@@ -48,10 +48,10 @@ Dữ liệu được quản lý qua `prisma/schema.prisma` với các Model chí
 
 ## 4. Kiểm thử (Testing)
 
-- **Framework:** Jest + Supertest.
+- **Framework:** Jest + Supertest (API), socket.io-client (Real-time).
 - **Database:** Sử dụng `uniplatform_test` (Docker MongoDB) để đảm bảo hỗ trợ đầy đủ Replica Set và Transactions.
-- **Môi trường:** `JWT_SECRET` được cô lập riêng cho môi trường test.
-- **Phạm vi:** Kiểm tra đầy đủ các luồng Register, Login, Logout, bảo mật API, và các phản hồi lỗi chuẩn hóa.
+- **Môi trường:** `JWT_SECRET` được cô lập riêng cho môi trường test. `ai.service` được mock để tránh phụ thuộc API ngoài.
+- **Phạm vi:** Kiểm tra đầy đủ các luồng Register, Login, Logout, bảo mật API, broadcast tin nhắn socket, và phản hồi AI Bot.
 
 ## 5. Giải pháp Real-time Chat
 

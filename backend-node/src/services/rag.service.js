@@ -1,5 +1,5 @@
 const aiService = require('./ai.service');
-const Message = require('../models/message.model');
+const prisma = require('../config/prisma');
 
 /**
  * Retrieval-Augmented Generation (RAG) Service
@@ -11,11 +11,12 @@ const getAnswerFromKnowledge = async (workspaceId, userQuery) => {
 
     // 2. Search for relevant context in Messages
     // Note: On MongoDB Atlas, you would use $vectorSearch.
-    // On local DB, we either use a simple text search or retrieve recent context.
-    // For this implementation, we take the last 20 messages as context.
-    const relevantMessages = await Message.find({ workspaceid: workspaceId })
-      .sort({ createdAt: -1 })
-      .limit(20);
+    // On local DB, we retrieve recent context as fallback.
+    const relevantMessages = await prisma.message.findMany({
+      where: { workspaceId: workspaceId },
+      orderBy: { createdAt: 'desc' },
+      take: 20
+    });
 
     // 3. Optional: Similarity filtering in memory (if queryVector is available)
     // ...

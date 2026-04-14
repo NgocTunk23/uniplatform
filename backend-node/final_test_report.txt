@@ -1,0 +1,296 @@
+
+> uniplatform-backend@1.0.0 test
+> jest --runInBand --forceExit
+
+watchman warning: Recrawled this watch 1 time, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/daoduytung/Datas/Private/uniplatform' ; watchman watch-project '/Users/daoduytung/Datas/Private/uniplatform'`
+
+(node:32648) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:32648) Warning: `--localstorage-file` was provided without a valid path
+FAIL tests/chat.test.js
+  ● Console
+
+    console.log
+      ◇ injected env (7) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌘ enable debugging { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      🛡️  Prisma connected to MongoDB
+
+      at log (index.js:16:23)
+
+    console.log
+      ⚡ User connected to chat: RSIMxpB4i1I5GLFGAAAB
+
+      at log (src/socket/chat.socket.js:6:11)
+
+    console.log
+      User RSIMxpB4i1I5GLFGAAAB joined workspace: 654321654321654321654321
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+    console.log
+      User RSIMxpB4i1I5GLFGAAAB joined workspace: 654321654321654321654321
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+    console.log
+      🔥 User disconnected
+
+      at Socket.log (index.js:70:13)
+          at Map.forEach (<anonymous>)
+          at Array.map (<anonymous>)
+
+  ● Real-time Chat Socket Tests › User should join a workspace room
+
+    ReferenceError: done is not defined
+
+      53 |   server.listen(port, () => {
+      54 |     clientSocket = ioc(`http://localhost:${port}`);
+    > 55 |     clientSocket.on('connect', done);
+         |                                ^
+      56 |   });
+      57 | });
+      58 |
+
+      at Server.done (tests/chat.test.js:55:32)
+
+PASS tests/auth.test.js
+  ● Console
+
+    console.log
+      ◇ injected env (7) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      🧪 Testing against: mongodb://root:password@localhost:27017/uniplatform_test?authSource=admin&replicaSet=rs0&directConnection=true
+
+      at Object.log (tests/auth.test.js:49:11)
+
+    console.error
+      🧪 TEST DEBUG ERROR: {
+        status: 400,
+        message: 'User already exists',
+        errorCode: 'USER_EXISTS',
+        details: undefined,
+        path: '/api/auth/register'
+      }
+
+      34 | app.use((err, req, res, next) => {
+      35 |   if (err.statusCode >= 400) {
+    > 36 |     console.error('🧪 TEST DEBUG ERROR:', {
+         |             ^
+      37 |       status: err.statusCode,
+      38 |       message: err.message,
+      39 |       errorCode: err.errorCode,
+
+      at error (tests/auth.test.js:36:13)
+      at Layer.handle_error (node_modules/express/lib/router/layer.js:71:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:326:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at next (node_modules/express/lib/router/route.js:141:14)
+      at next (src/controllers/auth.controller.js:96:5)
+
+    console.error
+      🧪 TEST DEBUG ERROR: {
+        status: 401,
+        message: 'Invalid identifier or password',
+        errorCode: 'AUTH_INVALID',
+        details: undefined,
+        path: '/api/auth/login'
+      }
+
+      34 | app.use((err, req, res, next) => {
+      35 |   if (err.statusCode >= 400) {
+    > 36 |     console.error('🧪 TEST DEBUG ERROR:', {
+         |             ^
+      37 |       status: err.statusCode,
+      38 |       message: err.message,
+      39 |       errorCode: err.errorCode,
+
+      at error (tests/auth.test.js:36:13)
+      at Layer.handle_error (node_modules/express/lib/router/layer.js:71:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:326:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at next (node_modules/express/lib/router/route.js:141:14)
+      at next (src/controllers/auth.controller.js:151:5)
+
+    console.error
+      🧪 TEST DEBUG ERROR: {
+        status: 401,
+        message: 'Not authorized, no token',
+        errorCode: 'AUTH_MISSING',
+        details: undefined,
+        path: '/api/auth/logout'
+      }
+
+      34 | app.use((err, req, res, next) => {
+      35 |   if (err.statusCode >= 400) {
+    > 36 |     console.error('🧪 TEST DEBUG ERROR:', {
+         |             ^
+      37 |       status: err.statusCode,
+      38 |       message: err.message,
+      39 |       errorCode: err.errorCode,
+
+      at error (tests/auth.test.js:36:13)
+      at Layer.handle_error (node_modules/express/lib/router/layer.js:71:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:326:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at next (node_modules/express/lib/router/route.js:141:14)
+      at Layer.handle_error (node_modules/express/lib/router/layer.js:67:12)
+      at next (node_modules/express/lib/router/route.js:147:13)
+      at next (src/middlewares/auth.middleware.js:43:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:122:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at app.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+[0mPOST /api/auth/register [32m201[0m 90.696 ms - 305[0m
+[0mPOST /api/auth/login [32m200[0m 70.993 ms - 305[0m
+[0mPOST /api/auth/register [32m201[0m 78.323 ms - 303[0m
+[0mPOST /api/auth/login [32m200[0m 71.806 ms - 303[0m
+[0mPOST /api/workspaces [32m201[0m 10.408 ms - 250[0m
+[0mPOST /api/workspaces/69de2ab8214267a897a10397/members [32m200[0m 8.648 ms - 337[0m
+PASS tests/full-flow.test.js
+  ● Console
+
+    console.log
+      ◇ injected env (7) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      ◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+    console.log
+      🛡️  Prisma connected to MongoDB
+
+      at log (index.js:16:23)
+
+    console.log
+      🧪 Full Flow Server started on 52174
+
+      at Server.log (tests/full-flow.test.js:47:15)
+
+    console.log
+      ⚡ User connected to chat: 9RuD2W7Q26Rd7vSkAAAC
+
+      at log (src/socket/chat.socket.js:6:11)
+
+    console.log
+      ⚡ User connected to chat: UiiqbIZI8S1KLQO4AAAD
+
+      at log (src/socket/chat.socket.js:6:11)
+
+    console.log
+      User UiiqbIZI8S1KLQO4AAAD joined workspace: 69de2ab8214267a897a10397
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+    console.log
+      User 9RuD2W7Q26Rd7vSkAAAC joined workspace: 69de2ab8214267a897a10397
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+    console.log
+      🔥 User disconnected
+
+      at Socket.log (index.js:70:13)
+          at Map.forEach (<anonymous>)
+          at Array.map (<anonymous>)
+
+    console.log
+      🔥 User disconnected
+
+      at Socket.log (index.js:70:13)
+          at Map.forEach (<anonymous>)
+          at Array.map (<anonymous>)
+
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       1 failed, 15 passed, 16 total
+Snapshots:   0 total
+Time:        7.293 s, estimated 8 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
