@@ -1,45 +1,78 @@
 const express = require('express');
-const http = require('http'); // Thêm thư viện http
-const { Server } = require('socket.io'); // Thêm Socket.io
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
+const morgan = require('morgan');
+const dotenv = require('dotenv');
+const prisma = require('./src/config/prisma');
+const { swaggerUi, specs } = require('./src/config/swagger');
+const errorMiddleware = require('./src/middlewares/error.middleware');
+
+// Load env vars
+dotenv.config();
+
+// Prisma Connection Check
+prisma.$connect()
+  .then(() => console.log('🛡️  Prisma connected to MongoDB'))
+  .catch((err) => console.error('❌ Prisma connection error:', err));
+
+const workspaceRoutes = require('./src/routes/workspace.routes');
+const messageRoutes = require('./src/routes/message.routes');
+const fileRoutes = require('./src/routes/file.routes');
+const adminRoutes = require('./src/routes/admin.routes');
+const authRoutes = require('./src/routes/auth.routes');
+const userRoutes = require('./src/routes/user.routes');
 
 const app = express();
-app.use(cors());
 
-// Tạo Server HTTP từ app Express
+// Middlewares
+app.use(cors());
+app.use(express.json());
+app.use(morgan('dev'));
+
+// Swagger Documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
+// Routes
+app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+
+// Basic Health Check Route
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'UniPlatform Backend is running' });
+});
+
+// Centralized Error Handling
+app.use(errorMiddleware);
+
+// Create HTTP Server
 const server = http.createServer(app);
 
-// Khởi tạo Socket.io với cấu hình CORS cho phép Frontend truy cập
+const registerChatHandlers = require('./src/socket/chat.socket');
+
+// Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
 
-// Lắng nghe các kết nối từ Client 
+// Socket.io Handlers
 io.on('connection', (socket) => {
-  console.log('⚡ Một người dùng đã kết nối:', socket.id);
-
-  // Lắng nghe sự kiện người dùng tham gia vào một nhóm cụ thể (Room)
-  socket.on('join_room', (roomId) => {
-    socket.join(roomId);
-    console.log(`User ${socket.id} đã tham gia phòng: ${roomId}`);
-  });
-
-  // Lắng nghe khi có tin nhắn mới được gửi từ Client 
-  socket.on('send_message', (data) => {
-    // data bao gồm: roomId, sender, message
-    // Phát lại (Broadcast) tin nhắn đó cho tất cả mọi người trong phòng 
-    io.to(data.roomId).emit('receive_message', data);
-  });
+  registerChatHandlers(io, socket);
 
   socket.on('disconnect', () => {
-    console.log('🔥 Người dùng đã ngắt kết nối');
+    console.log('🔥 User disconnected');
   });
 });
 
-// LƯU Ý: Phải dùng server.listen thay vì app.listen
-server.listen(5000, () => {
-  console.log("🚀 Server Socket.io đang chạy tại port 5000");
+const PORT = process.env.PORT || 5001;
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
