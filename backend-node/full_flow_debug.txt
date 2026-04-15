@@ -1,0 +1,1062 @@
+
+> uniplatform-backend@1.0.0 test
+> jest --runInBand --forceExit tests/full-flow.test.js
+
+watchman warning: Recrawled this watch 1 time, most recently because:
+MustScanSubDirs UserDroppedTo resolve, please review the information on
+https://facebook.github.io/watchman/docs/troubleshooting.html#recrawl
+To clear this warning, run:
+`watchman watch-del '/Users/daoduytung/Datas/Private/uniplatform' ; watchman watch-project '/Users/daoduytung/Datas/Private/uniplatform'`
+
+  console.log
+    ◇ injected env (7) from .env // tip: ⌘ enable debugging { debug: true }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+  console.log
+    ◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+  console.log
+    ◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+  console.log
+    ◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+
+      at _log (node_modules/dotenv/lib/main.js:131:11)
+
+(node:31927) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    🛡️  Prisma connected to MongoDB
+
+      at log (index.js:16:23)
+
+  console.log
+    🧪 Full Flow Server started on 51829
+
+      at Server.log (tests/full-flow.test.js:47:15)
+
+  console.log
+    ⚡ User connected to chat: Hs75BWu9wdAcCbsUAAAC
+
+      at log (src/socket/chat.socket.js:6:11)
+
+  console.log
+    ⚡ User connected to chat: LFjiGSB0htUEPff5AAAD
+
+      at log (src/socket/chat.socket.js:6:11)
+
+[0mPOST /api/auth/register [32m201[0m 109.788 ms - 305[0m
+[0mPOST /api/auth/login [33m400[0m 0.817 ms - 289[0m
+[0mPOST /api/auth/register [32m201[0m 87.701 ms - 303[0m
+[0mPOST /api/auth/login [33m400[0m 0.270 ms - 289[0m
+[0mPOST /api/workspaces [33m401[0m 0.484 ms - 98[0m
+[0mPOST /api/workspaces/undefined/members [33m401[0m 0.180 ms - 98[0m
+  console.log
+    User Hs75BWu9wdAcCbsUAAAC joined workspace: null
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+  console.log
+    User LFjiGSB0htUEPff5AAAD joined workspace: null
+
+      at Socket.log (src/socket/chat.socket.js:10:13)
+
+  console.log
+    DEBUG SOCKET DATA (send_message): {
+      senderusername: 'leader_a',
+      content: 'Hello Alpha Squad! Team meeting at 10.'
+    }
+
+      at Socket.log (src/socket/chat.socket.js:15:15)
+
+  console.error
+    ❌ Socket Error (send_message): 
+    Invalid `prisma.message.create()` invocation in
+    /Users/daoduytung/Datas/Private/uniplatform/backend-node/src/services/message.service.js:4:31
+    
+      1 const prisma = require('../config/prisma');
+      2 
+      3 const saveMessage = async (messageData) => {
+    → 4   return await prisma.message.create({
+            data: {
+              content: "Hello Alpha Squad! Team meeting at 10.",
+              senderusername: "leader_a",
+              workspace: {
+                connect: {
+                  id: undefined,
+          ?       AND?: WorkspaceWhereInput | WorkspaceWhereInput[],
+          ?       OR?: WorkspaceWhereInput[],
+          ?       NOT?: WorkspaceWhereInput | WorkspaceWhereInput[],
+          ?       name?: StringFilter | String,
+          ?       admin?: StringFilter | String,
+          ?       members?: MemberCompositeListFilter | MemberObjectEqualityInput[],
+          ?       createdAt?: DateTimeFilter | DateTime,
+          ?       updatedAt?: DateTimeFilter | DateTime,
+          ?       messages?: MessageListRelationFilter
+                }
+              },
+              replyToId: undefined,
+              mentions: [],
+              vectorembedding: [
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1,
+                0.1
+              ]
+            }
+          })
+    
+    Argument `connect` of type WorkspaceWhereUniqueInput needs at least one of `id` arguments. Available options are marked with ?.
+
+      32 |
+      33 |     } catch (error) {
+    > 34 |       console.error('❌ Socket Error (send_message):', error.message);
+         |               ^
+      35 |     }
+      36 |   });
+      37 |
+
+      at Socket.error (src/socket/chat.socket.js:34:15)
+
+  console.error
+    ❌ Socket Error (ask_ai): 
+    Invalid `prisma.message.create()` invocation in
+    /Users/daoduytung/Datas/Private/uniplatform/backend-node/src/services/message.service.js:4:31
+    
+      1 const prisma = require('../config/prisma');
+      2 
+      3 const saveMessage = async (messageData) => {
+    → 4   return await prisma.message.create({
+            data: {
+              content: "I am your AI assistant for PROJECT FULL FLOW.",
+              senderusername: "UniBot",
+              workspace: {
+                connect: {
+                  id: undefined,
+          ?       AND?: WorkspaceWhereInput | WorkspaceWhereInput[],
+          ?       OR?: WorkspaceWhereInput[],
+          ?       NOT?: WorkspaceWhereInput | WorkspaceWhereInput[],
+          ?       name?: StringFilter | String,
+          ?       admin?: StringFilter | String,
+          ?       members?: MemberCompositeListFilter | MemberObjectEqualityInput[],
+          ?       createdAt?: DateTimeFilter | DateTime,
+          ?       updatedAt?: DateTimeFilter | DateTime,
+          ?       messages?: MessageListRelationFilter
+                }
+              },
+              replyToId: null,
+              mentions: [],
+              vectorembedding: []
+            }
+          })
+    
+    Argument `connect` of type WorkspaceWhereUniqueInput needs at least one of `id` arguments. Available options are marked with ?.
+
+      58 |
+      59 |     } catch (error) {
+    > 60 |       console.error('❌ Socket Error (ask_ai):', error.message);
+         |               ^
+      61 |       socket.emit('ai_status', { status: 'error', message: 'AI failed to respond' });
+      62 |     }
+      63 |   });
+
+      at Socket.error (src/socket/chat.socket.js:60:15)
+
+  console.log
+    🔥 User disconnected
+
+      at Socket.log (index.js:70:13)
+          at Map.forEach (<anonymous>)
+          at Array.map (<anonymous>)
+
+  console.log
+    🔥 User disconnected
+
+      at Socket.log (index.js:70:13)
+          at Map.forEach (<anonymous>)
+          at Array.map (<anonymous>)
+
+(node:31927) Warning: `--localstorage-file` was provided without a valid path
+FAIL tests/full-flow.test.js (62.647 s)
+  UniPlatform Full-Flow (E2E) Integration Tests
+    ✕ 1. Register and Login User A (Leader) (131 ms)
+    ✕ 2. Register and Login User B (Member) (92 ms)
+    ✕ 3. User A creates a Workspace (3 ms)
+    ✕ 4. User A adds User B to the Workspace (2 ms)
+    ✓ 5. Both Users join Workspace Room via Sockets (502 ms)
+    ✕ 6. User A sends a message, User B receives it in real-time (30007 ms)
+    ✕ 7. User B asks AI a question, both see the response (30005 ms)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 1. Register and Login User A (Leader)
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+      79 |     });
+      80 |     tokenA = loginRes.body.token;
+    > 81 |     expect(tokenA).toBeDefined();
+         |                    ^
+      82 |   });
+      83 |
+      84 |   step('2. Register and Login User B (Member)', async () => {
+
+      at Object.toBeDefined (tests/full-flow.test.js:81:20)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 2. Register and Login User B (Member)
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+      89 |     });
+      90 |     tokenB = loginRes.body.token;
+    > 91 |     expect(tokenB).toBeDefined();
+         |                    ^
+      92 |   });
+      93 |
+      94 |   step('3. User A creates a Workspace', async () => {
+
+      at Object.toBeDefined (tests/full-flow.test.js:91:20)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 3. User A creates a Workspace
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 401
+
+       98 |       .send({ name: 'Alpha Squad', admin: userA.username });
+       99 |
+    > 100 |     expect(res.statusCode).toBe(201);
+          |                            ^
+      101 |     workspaceId = res.body.id;
+      102 |     expect(workspaceId).toBeDefined();
+      103 |   });
+
+      at Object.toBe (tests/full-flow.test.js:100:28)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 4. User A adds User B to the Workspace
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 401
+
+      109 |       .send({ username: userB.username, workspacerole: 'Member' });
+      110 |
+    > 111 |     expect(res.statusCode).toBe(200);
+          |                            ^
+      112 |     expect(res.body.members.some(m => m.username === userB.username)).toBe(true);
+      113 |   });
+      114 |
+
+      at Object.toBe (tests/full-flow.test.js:111:28)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 6. User A sends a message, User B receives it in real-time
+
+    thrown: "Exceeded timeout of 30000 ms for a test while waiting for `done()` to be called.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      178 |  */
+      179 | function step(name, fn) {
+    > 180 |   test(name, fn);
+          |   ^
+      181 | }
+      182 |
+
+      at test (tests/full-flow.test.js:180:3)
+      at step (tests/full-flow.test.js:122:3)
+      at Object.describe (tests/full-flow.test.js:72:1)
+
+  ● UniPlatform Full-Flow (E2E) Integration Tests › 7. User B asks AI a question, both see the response
+
+    thrown: "Exceeded timeout of 30000 ms for a test while waiting for `done()` to be called.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      178 |  */
+      179 | function step(name, fn) {
+    > 180 |   test(name, fn);
+          |   ^
+      181 | }
+      182 |
+
+      at test (tests/full-flow.test.js:180:3)
+      at step (tests/full-flow.test.js:149:3)
+      at Object.describe (tests/full-flow.test.js:72:1)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 1 passed, 7 total
+Snapshots:   0 total
+Time:        62.713 s, estimated 64 s
+Ran all test suites matching tests/full-flow.test.js.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

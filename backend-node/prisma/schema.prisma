@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGO_URI")
+}
+
+model User {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  username     String    @unique
+  password     String
+  fullname     String
+  role         String    @default("Member")
+  dateofbirth  DateTime?
+  address      String?
+  email        String    @unique
+  phone        String?
+  status       String    @default("active")
+  imageuser    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Workspace {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  admin     String    // Refers to User.username
+  members   Member[]
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+type Member {
+  username      String
+  workspacerole String   @default("Member")
+  joinedat      DateTime @default(now())
+}
+
+model Message {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  workspaceId     String   @db.ObjectId
+  senderusername  String
+  content         String
+  replyToId       String?  @db.ObjectId
+  mentions        String[]
+  vectorembedding Float[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  files           File[]
+}
+
+model File {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  uploader        String   // Refers to User.username
+  messageId       String?  @db.ObjectId
+  meetingminuteid String?
+  filename        String
+  ggid            String   @unique
+  typefile        String?
+  sizefile        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  message         Message? @relation(fields: [messageId], references: [id])
+}
+
+model SystemLog {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorusername  String
+  targetresource String
+  targetid       String?
+  changes        LogChange[]
+  createdAt      DateTime @default(now())
+}
+
+type LogChange {
+  field String
+  new   Json?
+  old   Json?
+}

@@ -2,16 +2,39 @@
   "name": "uniplatform-backend",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "jest --runInBand --forceExit"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "dependencies": {
-    "socket.io": "^4.7.2",
+    "@google/generative-ai": "^0.24.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
     "express": "^4.18.2",
-    "mongoose": "^7.0.0",
+    "express-session": "^1.17.3",
+    "googleapis": "^171.4.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^7.8.9",
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1",
     "passport": "^0.6.0",
     "passport-google-oauth20": "^2.0.0",
-    "express-session": "^1.17.3",
-    "dotenv": "^16.0.3",
-    "cors": "^2.8.5"
+    "socket.io": "^4.8.3",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.19.3",
+    "@prisma/config": "^7.7.0",
+    "@types/node": "^25.6.0",
+    "dotenv": "^17.4.2",
+    "jest": "^30.3.0",
+    "mongodb-memory-server": "^11.0.1",
+    "prisma": "^6.19.3",
+    "socket.io-client": "^4.8.1",
+    "supertest": "^7.2.2"
   }
 }

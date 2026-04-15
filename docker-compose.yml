@@ -4,11 +4,26 @@ services:
     container_name: mongodb_uniplatform
     ports:
       - "27017:27017"
+    entrypoint: >
+      bash -c "
+      cp /tmp/mongodb.key /data/configdb/mongodb.key &&
+      chmod 400 /data/configdb/mongodb.key &&
+      chown 999:999 /data/configdb/mongodb.key &&
+      exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/configdb/mongodb.key
+      "
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=password
     volumes:
       - mongo_data:/data/db
+      - ./mongodb.key:/tmp/mongodb.key:ro # Mount vào thư mục tạm /tmp
+    healthcheck:
+      # Sửa lỗi cú pháp bằng cách bọc trong dấu ngoặc kép và dùng CMD-SHELL
+      test: >
+        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   frontend:
     build: ./frontend
@@ -22,9 +37,9 @@ services:
   backend-node:
     build: ./backend-node
     ports:
-      - "5000:5000"
+      - "5001:5001"
     environment:
-      - PORT=5000
+      - PORT=5001
       - MONGO_URI=${MONGO_URI}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
