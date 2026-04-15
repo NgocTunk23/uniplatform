@@ -10,6 +10,7 @@ const ROLES = {
   WORKSPACE: {
     LEADER: 'Leader',
     MEMBER: 'Member',
+    VIEWER: 'Viewer',
   },
 };
 

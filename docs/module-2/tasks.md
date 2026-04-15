@@ -22,7 +22,7 @@
 - [x] T4.1: Triển khai Mongoose Model cho `Messages` và `Files`.
 - [x] T4.2: Tái cấu trúc Socket.io code (chia module, xử lý Room theo Workspace).
 - [x] T4.3: Lưu trữ tin nhắn vào DB và xử lý Pagination/Infinite Scroll.
-- [x] T4.4: Tích hợp Google Drive API để upload/download file đính kèm.
+- [x] T4.4: Tích hợp Google Drive API (v3) qua chế độ **OAuth2 (Refresh Token)** để upload/download file (Xử lý giới hạn quota của Service Account).
 
 ## Phase 5: AI & Smart Search (AI Integration)
 - [x] T5.1: Cấu hình Gemini API và Service xử lý AI.
@@ -37,7 +37,7 @@
 
 ## Phase 7: Kiểm thử (Testing)
 - [x] T7.1: Cấu hình Jest và môi trường Test (Mongo Memory Server).
-- [x] T7.2: Viết Unit Test cho Auth (Register, Login, Logout).
+- [x] T7.2: Viết Unit Test cho Auth (Register, Login, Logout) và Integration Test cho Chat & File Attachment.
 - [x] T7.3: Cập nhật tài liệu dự án Phase 2.
 
 ## Phase 8: Nâng cấp Kiến trúc (Architectural Upgrade)

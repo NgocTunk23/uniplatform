@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
@@ -59,6 +60,36 @@ const io = new Server(server, {
   cors: {
     origin: "*", 
     methods: ["GET", "POST"]
+  }
+});
+
+// Socket.io Middleware for Authentication
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
+
+    if (!user) {
+      return next(new Error('Authentication error: User not found'));
+    }
+
+    if (user.status === 'locked') {
+      return next(new Error('Authentication error: Account is locked'));
+    }
+
+    // Attach user to socket
+    const { password, ...userData } = user;
+    socket.user = userData;
+    next();
+  } catch (err) {
+    next(new Error('Authentication error: Invalid token'));
   }
 });
 

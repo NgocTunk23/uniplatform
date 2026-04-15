@@ -33,6 +33,11 @@ const uploadFile = async (req, res, next) => {
     // Upload to Google Drive
     const driveData = await gdriveUtil.uploadFile(req.file);
 
+    // Sanitize input fields to prevent Prisma Malformed ObjectID errors
+    // If a string is empty or not a valid 24-char hex string, set as undefined so Prisma ignores it
+    const sanitizedMessageId = (req.body.messageid && /^[0-9a-fA-F]{24}$/.test(req.body.messageid)) ? req.body.messageid : undefined;
+    const sanitizedMeetingMinuteId = req.body.meetingminuteid || undefined;
+
     // Save metadata to database via Prisma
     const newFile = await prisma.file.create({
       data: {
@@ -41,17 +46,19 @@ const uploadFile = async (req, res, next) => {
         ggid: driveData.id,
         typefile: req.file.mimetype,
         sizefile: req.file.size.toString(),
-        messageId: req.body.messageid,
-        meetingminuteid: req.body.meetingminuteid,
+        messageId: sanitizedMessageId,
+        meetingminuteid: sanitizedMeetingMinuteId,
       },
     });
 
     res.status(201).json({
       message: 'File uploaded successfully',
       file: newFile,
-      webViewLink: driveData.webViewLink
+      webViewLink: driveData.webViewLink,
+      downloadLink: gdriveUtil.getDownloadLink(driveData.id)
     });
   } catch (error) {
+    console.error('❌ File Controller Upload Error:', error);
     next(error);
   }
 };
@@ -80,6 +87,12 @@ const deleteFile = async (req, res, next) => {
     });
     
     if (!file) throw new ApiError(404, 'File not found', ERROR_CODES.FILE.FILE_NOT_FOUND);
+
+    // RBAC: Only uploader can delete for now
+    // In production, uploader OR workspace admin should be allowed
+    if (file.uploader !== req.user.username) {
+      throw new ApiError(403, 'Unauthorized to delete this file. Only the uploader can remove it.', ERROR_CODES.AUTH.AUTH_ERROR);
+    }
 
     // Delete from Google Drive
     await gdriveUtil.deleteFile(file.ggid);

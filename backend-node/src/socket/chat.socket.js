@@ -8,29 +8,45 @@ const registerChatHandlers = (io, socket) => {
   socket.on('join_workspace', (workspaceId) => {
     socket.join(workspaceId);
     console.log(`User ${socket.id} joined workspace: ${workspaceId}`);
+    socket.emit('workspace_joined', { workspaceId });
   });
 
   socket.on('send_message', async (data) => {
     try {
-      const { workspaceId, senderusername, content, reply, mentions } = data;
+      const { workspaceId, content, reply, mentions, fileIds } = data;
+      const senderusername = socket.user.username;
       
-      // 1. Broadcast immediately for responsiveness
-      io.to(workspaceId).emit('receive_message', { ...data, createdAt: new Date() });
+      console.log(`📩 Received message from ${senderusername} in workspace ${workspaceId}: ${content}`);
+
+      // 1. Broadcast immediately (snappy UI)
+      io.to(workspaceId).emit('receive_message', { 
+        ...data, 
+        senderusername, 
+        createdAt: new Date() 
+      });
 
       // 2. Background: Generate Embedding and Save to DB
+      console.log('🧠 Generating embedding...');
       const embedding = await aiService.getEmbedding(content);
       
+      console.log('💾 Saving message to DB...');
       const newMessage = await messageService.saveMessage({
         workspaceId,
         senderusername,
         content,
         reply,
         mentions,
+        fileIds,
         vectorembedding: embedding
       });
+      console.log('✅ Message saved with ID:', newMessage.id);
+
+      // 3. Broadcast the confirmed message with actual DB IDs and File metadata
+      io.to(workspaceId).emit('receive_message_confirmed', newMessage);
 
     } catch (error) {
       console.error('❌ Socket Error (send_message):', error.message);
+      console.error(error.stack);
     }
   });
 

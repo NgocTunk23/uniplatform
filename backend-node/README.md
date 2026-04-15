@@ -22,10 +22,32 @@ Tạo file `.env` dựa trên các thông tin sau (Lưu ý cổng 5001 được 
 PORT=5001
 MONGO_URI="mongodb://root:password@localhost:27017/uniplatform?authSource=admin&replicaSet=rs0"
 JWT_SECRET=your_jwt_secret_here
+
+# Google Drive Configuration
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=http://localhost:5001/api/auth/google/callback
 GOOGLE_DRIVE_REFRESH_TOKEN=...
-GOOGLE_DRIVE_CLIENT_ID=...
-GOOGLE_DRIVE_CLIENT_SECRET=...
+GOOGLE_DRIVE_FOLDER_ID=...
 ```
+
+### 2. Cấu hình Google Drive (Bắt buộc cho Module File)
+Hệ thống sử dụng OAuth2 để tương tác với Google Drive. Hãy thực hiện chính xác các bước sau:
+1. **Google Cloud Console:** 
+   - Truy cập [Google Cloud Console](https://console.cloud.google.com/).
+   - Tạo Project mới và Enable **Google Drive API**.
+   - Tại mục **OAuth consent screen**: Chọn User Type là **External**, thêm email cá nhân vào danh sách **Test users**.
+   - Tại mục **Credentials**: Tạo **OAuth 2.0 Client ID** loại **Web application**.
+   - Thêm `http://localhost:5001/api/auth/google/callback` vào mục **Authorized redirect URIs**.
+2. **Lấy Refresh Token:**
+   - Điền `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET` vào file `.env`.
+   - Chạy lệnh: `node scripts/get-refresh-token.js`.
+   - Làm theo hướng dẫn trên terminal để lấy mã `refresh_token` và dán vào `.env`.
+3. **Cấu hình Thư mục lưu trữ:**
+   - Tạo 1 Folder trên Drive của bạn.
+   - Copy ID của Folder (chuỗi ký tự cuối trên URL) dán vào `GOOGLE_DRIVE_FOLDER_ID`.
+4. **Kiểm tra kết nối Real-upload:**
+   - Chạy: `node scripts/test-real-upload.js` để đảm bảo file có thể tải lên thành công.
 
 ### 2. Khởi tạo Database
 Dự án yêu cầu MongoDB chạy ở chế độ **Replica Set** để Prisma có thể thực hiện các giao dịch (Transactions).
@@ -69,12 +91,26 @@ src/
 ```
 
 ## 🧪 Kiểm thử (Testing)
-Dự án sử dụng Jest để kiểm thử tích hợp. Bộ test đã được cấu hình để chạy trên một database riêng biệt (`uniplatform_test`) để đảm bảo không ảnh hưởng đến dữ liệu phát triển.
+Dự án sử dụng Jest để kiểm thử tích hợp. Bộ test bao gồm các kịch bản thực tế (Real GDrive/AI).
+
+**Lưu ý quan trọng:** Do sử dụng các thư viện Node.js hiện đại (ESM), bạn cần chạy test với cờ thực nghiệm:
 
 ```bash
-# Chạy toàn bộ test
+# Chạy toàn bộ test suite
 npm test
+
+# Chạy riêng bộ test Case-Study thực tế (Production-grade)
+NODE_OPTIONS='--experimental-vm-modules' npx jest tests/production-case-study.test.js --runInBand
 ```
+
+## 🛡️ Phân quyền & Bảo mật (RBAC)
+Hệ thống áp dụng các quy tắc bảo mật chặt chẽ cho Module 2:
+- **Socket Authentication:** Tất cả kết nối Socket đều bắt buộc phải có JWT Token trong `handshake.auth`.
+- **Vai trò Workspace:**
+    - `Leader`: Có toàn quyền quản lý Workspace và thành viên.
+    - `Member`: Có quyền chat và upload file.
+    - `Viewer`: Chỉ có quyền xem tin nhắn và file, bị chặn quyền xóa.
+- **Quyền sở hữu File:** Chỉ có người tải lên tệp tin (**uploader**) mới có quyền xóa tệp đó khỏi hệ thống, kể cả khi người đó có quyền Leader trong Workspace (ngoại trừ admin hệ thống).
 
 ## 📡 Danh sách API Endpoints
 

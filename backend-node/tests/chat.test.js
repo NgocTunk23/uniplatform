@@ -17,6 +17,7 @@ const ioc = require('socket.io-client');
 const http = require('http');
 const { PrismaClient } = require('@prisma/client');
 const { execSync } = require('child_process');
+const jwt = require('jsonwebtoken');
 
 // Mock AI Service BEFORE importing the app
 jest.mock('../src/services/ai.service', () => ({
@@ -40,8 +41,22 @@ beforeAll(async () => {
   });
 
   // Ensure fresh DB and create a dummy workspace for the hardcoded ID
+  await prisma.file.deleteMany({});
   await prisma.message.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.user.deleteMany({});
+
+  const user = await prisma.user.create({
+    data: {
+      username: 'testadmin',
+      email: 'admin@test.com',
+      password: 'hashedpassword',
+      fullname: 'Test Admin'
+    }
+  });
+
+  const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+
   await prisma.workspace.create({
     data: {
       id: workspaceId,
@@ -52,7 +67,9 @@ beforeAll(async () => {
 
   return new Promise((resolve) => {
     server.listen(port, () => {
-      clientSocket = ioc(`http://localhost:${port}`);
+      clientSocket = ioc(`http://localhost:${port}`, {
+        auth: { token }
+      });
       clientSocket.on('connect', resolve);
     });
   });
@@ -109,7 +126,10 @@ describe('Real-time Chat Socket Tests', () => {
 
     // 2. Emit the message
     clientSocket.emit('join_workspace', workspaceId);
-    clientSocket.emit('send_message', testMessage);
+    clientSocket.emit('send_message', {
+      workspaceId: testMessage.workspaceId,
+      content: testMessage.content
+    });
   });
 
   test('should handle AI interaction via ask_ai', (done) => {
@@ -150,5 +170,49 @@ describe('Real-time Chat Socket Tests', () => {
     });
 
     clientSocket.emit('ask_ai', aiPrompt);
+  });
+
+  test('should save message with file attachments', async () => {
+    // 1. Create a dummy file in DB
+    const dummyFile = await prisma.file.create({
+      data: {
+        uploader: 'testadmin',
+        filename: 'attachment.pdf',
+        ggid: 'drive_123',
+        typefile: 'application/pdf',
+        sizefile: '1024'
+      }
+    });
+
+    const messageWithFiles = {
+      workspaceId,
+      senderusername: 'testadmin',
+      content: 'See this file!',
+      fileIds: [dummyFile.id]
+    };
+
+    return new Promise((resolve, reject) => {
+      clientSocket.once('receive_message_confirmed', async (newMessage) => {
+        try {
+          expect(newMessage.content).toBe(messageWithFiles.content);
+          expect(newMessage.files).toHaveLength(1);
+          expect(newMessage.files[0].filename).toBe('attachment.pdf');
+
+          // Verify in DB with relation
+          const dbMsg = await prisma.message.findUnique({
+            where: { id: newMessage.id },
+            include: { files: true }
+          });
+          expect(dbMsg.files).toHaveLength(1);
+          expect(dbMsg.files[0].id).toBe(dummyFile.id);
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      clientSocket.emit('join_workspace', workspaceId);
+      clientSocket.emit('send_message', messageWithFiles);
+    });
   });
 });

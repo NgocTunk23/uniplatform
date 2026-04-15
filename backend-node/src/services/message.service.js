@@ -1,16 +1,23 @@
 const prisma = require('../config/prisma');
 
 const saveMessage = async (messageData) => {
+  const { fileIds, workspaceId, ...otherData } = messageData;
+  
   return await prisma.message.create({
     data: {
-      content: messageData.content,
-      senderusername: messageData.senderusername,
-      workspace: {
-        connect: { id: messageData.workspaceId }
-      },
-      replyToId: messageData.reply,
-      mentions: messageData.mentions || [],
-      vectorembedding: messageData.vectorembedding || [],
+      content: otherData.content,
+      senderusername: otherData.senderusername,
+      workspaceId: workspaceId, // Set the scalar field directly
+      replyToId: otherData.reply,
+      mentions: otherData.mentions || [],
+      vectorembedding: otherData.vectorembedding || [],
+      // Connect uploaded files if any
+      files: fileIds && fileIds.length > 0 ? {
+        connect: fileIds.map(id => ({ id }))
+      } : undefined
+    },
+    include: {
+      files: true 
     }
   });
 };
@@ -21,6 +28,9 @@ const getMessagesByWorkspace = async (workspaceId, limit = 50, skip = 0) => {
     take: limit,
     skip: skip,
     orderBy: { createdAt: 'desc' },
+    include: {
+      files: true
+    }
   });
 };
 

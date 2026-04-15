@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --runInBand --forceExit"
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
