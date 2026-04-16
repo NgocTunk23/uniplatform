@@ -17,7 +17,8 @@ const SOCKET_EVENTS = {
   
   // AI events
   ASK_AI: 'ask_ai',
-  AI_STATUS: 'ai_status'
+  AI_STATUS: 'ai_status',
+  ERROR: 'app_error'
 };
 
 module.exports = SOCKET_EVENTS;

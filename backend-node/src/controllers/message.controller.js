@@ -29,7 +29,7 @@ const getChatHistory = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 50;
     const skip = parseInt(req.query.skip) || 0;
     
-    const messages = await messageService.getMessagesByWorkspace(workspaceId, limit, skip);
+    const messages = await messageService.getMessagesByWorkspace(workspaceId, req.user, limit, skip);
     res.json(messages);
   } catch (error) {
     next(error);

@@ -2,20 +2,34 @@ const aiService = require('../services/ai.service');
 const ragService = require('../services/rag.service');
 const messageService = require('../services/message.service');
 const SOCKET_EVENTS = require('../constants/socket-events');
+const permissionUtil = require('../utils/permission.util');
 
 const registerChatHandlers = (io, socket) => {
+  const user = socket.user;
   console.log(`⚡ User connected to chat: ${socket.id}`);
 
-  socket.on(SOCKET_EVENTS.JOIN_WORKSPACE, (workspaceId) => {
-    socket.join(workspaceId);
-    console.log(`User ${socket.id} joined workspace: ${workspaceId}`);
-    socket.emit(SOCKET_EVENTS.WORKSPACE_JOINED, { workspaceId });
+  socket.on(SOCKET_EVENTS.JOIN_WORKSPACE, async (workspaceId) => {
+    try {
+      // Security: Check if user is member of workspace
+      await permissionUtil.getWorkspaceMembership(workspaceId, user);
+      
+      socket.join(workspaceId);
+      console.log(`User ${socket.id} joined workspace: ${workspaceId}`);
+      socket.emit(SOCKET_EVENTS.WORKSPACE_JOINED, { workspaceId });
+    } catch (error) {
+      console.error(`❌ Join Workspace Error: ${error.message}`);
+      socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
+    }
   });
 
   socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data) => {
     try {
       const { workspaceId, content, reply, mentions, fileIds } = data;
-      const senderusername = socket.user.username;
+      
+      // Security: Check if user can write
+      await permissionUtil.ensureCanWrite(workspaceId, user);
+
+      const senderusername = user.username;
       
       console.log(`📩 Received message from ${senderusername} in workspace ${workspaceId}: ${content}`);
 
@@ -47,7 +61,7 @@ const registerChatHandlers = (io, socket) => {
 
     } catch (error) {
       console.error('❌ Socket Error (send_message):', error.message);
-      console.error(error.stack);
+      socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
     }
   });
 
@@ -55,6 +69,9 @@ const registerChatHandlers = (io, socket) => {
   socket.on(SOCKET_EVENTS.ASK_AI, async (data) => {
     try {
       const { workspaceId, prompt, senderusername } = data;
+      
+      // Security: Check if user can write
+      await permissionUtil.ensureCanWrite(workspaceId, user);
       
       // Notify client that AI is typing
       socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'typing' });

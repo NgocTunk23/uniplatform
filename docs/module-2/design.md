@@ -16,7 +16,7 @@ backend-node/
 │   ├── routes/             # API routes + Validation middleware
 │   ├── middlewares/        # Auth, Logging, Validation, Error Handling
 │   ├── socket/             # Socket.io handlers
-│   └── utils/              # Helper functions (AI, Google Drive, Crypto)
+│   └── utils/              # Helper functions (AI, Google Drive, Permission)
 ├── tests/                  # Unit & Integration tests (Sử dụng DB test biệt lập)
 ├── prisma/                 # Prisma Schema và Seed scripts
 ├── .env                    # Biến môi trường (PORT=5001)
@@ -83,3 +83,4 @@ Dữ liệu được quản lý qua `prisma/schema.prisma` với các Model chí
 ## 7. Giám sát & Nhật ký (Monitoring & Logging)
 - **Drive Quota Dashboard:** Tích hợp `drive.about.get` để theo dõi hạn mức lưu trữ Google Drive theo GB và %.
 - **Audit Logger Utility:** Class tiện ích `audit-logger.util.js` tự động tính toán Diff giữa 2 object và lưu vết thay đổi theo từng field.
+- **Permission Utility (RBAC):** Token `permission.util.js` quản lý tập trung việc kiểm tra quyền truy cập Workspace (Membership), vai trò Leader/Viewer và quyền Superuser, được áp dụng đồng nhất cho cả API và Socket.

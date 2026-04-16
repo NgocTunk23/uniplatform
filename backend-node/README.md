@@ -148,6 +148,21 @@ Hỗ trợ đầy đủ các tính năng thông qua các module sau:
 - `POST /users/:id/force-logout`: Cưỡng chế đăng xuất người dùng ngay lập tức.
 - `GET /logs`: Xem nhật ký thao tác chi tiết (**Audit Logs với Old/New values**).
 
+## 🔐 Bảo mật & Phân quyền (RBAC)
+
+Hệ thống UniPlatform hỗ trợ phân quyền đa tầng để đảm bảo an toàn dữ liệu:
+
+### 1. Vai trò Hệ thống (System Roles)
+- **Admin**: Quản trị viên tối cao (Superuser). Có quyền truy cập mọi Workspace và xóa mọi tệp tin để quản lý hệ thống.
+- **Member**: Người dùng thông thường. Có thể tạo Workspace riêng.
+
+### 2. Vai trò Workspace (Workspace Roles)
+- **Leader**: Chủ sở hữu hoặc Quản lý Workspace. Có quyền thêm/xóa thành viên và quản lý toàn bộ nội dung trong Workspace đó.
+- **Member**: Thành viên chính thức. Có quyền Chat, Tải tệp lên và xóa tệp của chính mình.
+- **Viewer**: Người xem. Chế độ **Read-only** (Chỉ đọc). Chỉ có thể xem lịch sử tin nhắn và tải xuống tệp tin, không được phép Chat hoặc Upload.
+
+---
+
 ## 📡 Hướng dẫn Tích hợp Chat (Socket.io)
 
 Hệ thống sử dụng Socket.io cho giao tiếp thời gian thực. Dưới đây là cách tích hợp chính xác:

@@ -2,6 +2,8 @@ const gdriveUtil = require('../utils/gdrive.util');
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/api-error');
 const ERROR_CODES = require('../constants/error-codes');
+const permissionUtil = require('../utils/permission.util');
+const ROLES = require('../constants/roles');
 
 /**
  * @swagger
@@ -88,10 +90,33 @@ const deleteFile = async (req, res, next) => {
     
     if (!file) throw new ApiError(404, 'File not found', ERROR_CODES.FILE.FILE_NOT_FOUND);
 
-    // RBAC: Only uploader can delete for now
-    // In production, uploader OR workspace admin should be allowed
-    if (file.uploader !== req.user.username) {
-      throw new ApiError(403, 'Unauthorized to delete this file. Only the uploader can remove it.', ERROR_CODES.AUTH.AUTH_ERROR);
+    // RBAC logic:
+    let isAuthorized = false;
+
+    // 1. System Admin bypass
+    if (req.user.role === ROLES.SYSTEM.ADMIN) {
+      isAuthorized = true;
+    }
+    // 2. Uploader bypass
+    else if (file.uploader === req.user.username) {
+      isAuthorized = true;
+    }
+    // 3. Workspace Leader bypass
+    else if (file.messageId) {
+      const message = await prisma.message.findUnique({
+        where: { id: file.messageId },
+        select: { workspaceId: true }
+      });
+      if (message) {
+        const membership = await permissionUtil.getWorkspaceMembership(message.workspaceId, req.user);
+        if (membership.workspacerole === ROLES.WORKSPACE.LEADER) {
+          isAuthorized = true;
+        }
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new ApiError(403, 'Unauthorized. Only uploader, Workspace Leader, or System Admin can delete this file.', ERROR_CODES.AUTH.AUTH_ERROR);
     }
 
     // Delete from Google Drive

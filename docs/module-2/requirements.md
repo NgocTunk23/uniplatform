@@ -21,7 +21,8 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - Mời thành viên vào Workspace.
     - Xóa thành viên khỏi Workspace.
     - Phân quyền nghiêm ngặt trong Workspace: `Leader`, `Member`, `Viewer`.
-    - **Viewer Role:** Chỉ có quyền xem tin nhắn và tài liệu, không có quyền xóa tệp tin hoặc thay đổi cấu hình nhóm.
+    - **Viewer Role:** Chế độ **Read-only**. Chỉ có quyền xem tin nhắn và tài liệu, không có quyền gửi tin nhắn, đặt câu hỏi cho AI, hoặc tải lên/xóa tệp tin.
+- **Quyền Quản trị tối cao (System Admin):** Vai trò `Admin` hệ thống được cấp quyền Superuser, có thể truy cập mọi Workspace và xóa bất kỳ tệp tin nào để hỗ trợ quản trị và bảo trì.
 
 ## 3. Nhắn tin nhóm (Real-time Chat)
 - **Kết nối Real-time:** Sử dụng Socket.io với xác thực JWT bắt buộc cho mọi kết nối.

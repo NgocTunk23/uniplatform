@@ -12,11 +12,17 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
   let adminUser;
 
   beforeAll(async () => {
+    // 0. Clean DB for isolation
+    await prisma.file.deleteMany({});
+    await prisma.message.deleteMany({});
+    await prisma.workspace.deleteMany({});
+    await prisma.user.deleteMany({});
+
     // 1. Setup Admin
     adminUser = await prisma.user.create({
       data: {
-        username: 'superadmin_test',
-        email: 'admin@test.com',
+        username: 'ah_admin',
+        email: 'ah_admin@test.com',
         password: 'password123',
         fullname: 'System Admin',
         role: 'Admin'
@@ -27,8 +33,8 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
     // 2. Setup regular User
     const user = await prisma.user.create({
       data: {
-        username: 'victim_user',
-        email: 'victim@test.com',
+        username: 'ah_victim',
+        email: 'ah_victim@test.com',
         password: 'password123',
         fullname: 'Victim User',
         role: 'Member'
@@ -40,7 +46,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
 
   afterAll(async () => {
     await prisma.systemLog.deleteMany({ where: { actorusername: adminUser.username } });
-    await prisma.user.deleteMany({ where: { username: { in: ['superadmin_test', 'victim_user'] } } });
+    await prisma.user.deleteMany({ where: { username: { in: ['ah_admin', 'ah_victim'] } } });
   });
 
   test('PHASE 1: Admin Dashboard should show Google Drive Quota', async () => {
@@ -71,7 +77,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
       .set('Authorization', `Bearer ${adminToken}`);
 
     const lastLog = logsRes.body[0];
-    expect(lastLog.actorusername).toBe('superadmin_test');
+    expect(lastLog.actorusername).toBe('ah_admin');
     expect(lastLog.targetresource).toBe('User');
     expect(lastLog.targetid).toBe(userId);
     

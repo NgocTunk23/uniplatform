@@ -30,15 +30,19 @@ Tài liệu này ghi chép lại hành trình phát triển Module 2, từ việ
 Đây là bước cuối cùng để đưa hệ thống đạt chuẩn Production-grade:
 - **Cơ chế Force Logout:** Triển khai `tokenVersion` để cho phép Admin vô hiệu hóa phiên làm việc của User ngay lập tức.
 - **Audit Logging:** Xây dựng bộ so sánh dữ liệu (Diff) để lưu vết chi tiết các thay đổi nhạy cảm trong hệ thống.
-- **Drive Monitoring:** Dashboard Admin hiển thị trực quan hạn mức lưu trữ Google Drive.
+- **RBAC Hardening (Lớp bảo mật mới nhất):** 
+    - Xây dựng `Permission Utility` trung tâm.
+    - **Join Guard:** Ngăn chặn truy cập workspace trái phép qua Sockets.
+    - **Write Guard:** Áp dụng chế độ Read-only cho Viewer (không chat/upload/AI).
+    - **Superuser Support:** Cấp quyền toàn năng cho System Admin.
 - **AI Stability:** Chuyển đổi sang `text-embedding-004` và chuẩn hóa endpoint `v1beta` để loại bỏ hoàn toàn lỗi 404.
 
 ## 4. Kết quả xác minh cuối cùng (Verification)
 
-Hệ thống đã trải qua kỳ kiểm thử "Dự án Alpha" cực kỳ khắt khe:
-- **Tỷ lệ vượt qua:** 100% (48/48 test cases).
-- **Phạm vi:** Kiểm tra từ Auth, Workspace, Chat, File thật, AI thật, cho đến Security Hardening (Audit logs, Force logout).
-- **Độ ổn định:** Vượt qua kỳ test liên tục 8 bộ test suite mà không gặp lỗi mạng hay lỗi logic.
+Hệ thống đã trải qua kỳ kiểm thử cực kỳ khắt khe:
+- **Tỷ lệ vượt qua:** 100% (56/56 test cases).
+- **Phạm vi:** Kiểm tra từ Auth, Workspace, Chat, File thật, AI thật, cho đến Security Hardening (Audit logs, Force logout, RBAC Enforcement).
+- **Độ ổn định:** Vượt qua kỳ test liên tục 9 bộ test suite mà không gặp lỗi mạng hay lỗi logic.
 
-🏁 **Tình trạng Module 2:** **HOÀN THÀNH (CERTIFIED)**
+🏁 **Tình trạng Module 2:** **HOÀN THÀNH (CERTIFIED & HARDENED)**
 Hệ thống hiện tại không chỉ hoạt động tốt mà còn cực kỳ vững chắc, sẵn sàng để mở rộng các tính năng AI chuyên sâu hơn trong Module 3.

@@ -26,6 +26,7 @@ jest.mock('../src/services/ai.service', () => ({
   generateResponse: jest.fn().mockResolvedValue('Hello, I am UniBot! How can I help you?')
 }));
 
+const ROLES = require('../src/constants/roles');
 const { server, io } = require('../index');
 
 let prisma;
@@ -62,7 +63,10 @@ beforeAll(async () => {
     data: {
       id: workspaceId,
       name: 'Test Workspace',
-      admin: 'testadmin'
+      admin: 'testadmin',
+      members: {
+        set: [{ username: 'testadmin', workspacerole: ROLES.WORKSPACE.LEADER }]
+      }
     }
   });
 

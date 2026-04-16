@@ -40,7 +40,8 @@
 - [x] T7.1: Viết Integration Test cho Auth, Chat, File (MockDrive).
 - [x] T7.2: Viết **Production-Grade Case Study** (Test real 100% với GDrive thật/AI thật).
 - [x] T7.3: Viết **Admin Hardening Test** (Kiểm thử Security/Audit logs).
-- [x] T7.4: Đạt tỷ lệ Pass 100% cho toàn bộ 8 bộ test suite.
+- [x] T7.4: Viết **RBAC & Security Hardening Test** (Kiểm thử phân quyền chéo, Viewer restriction).
+- [x] T7.5: Đạt tỷ lệ Pass 100% cho toàn bộ 9 bộ test suite.
 
 ---
 🏁 **Module 2 Status: 100% COMPLETED**
