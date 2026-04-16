@@ -1,17 +1,18 @@
 const aiService = require('../services/ai.service');
 const ragService = require('../services/rag.service');
 const messageService = require('../services/message.service');
+const SOCKET_EVENTS = require('../constants/socket-events');
 
 const registerChatHandlers = (io, socket) => {
   console.log(`⚡ User connected to chat: ${socket.id}`);
 
-  socket.on('join_workspace', (workspaceId) => {
+  socket.on(SOCKET_EVENTS.JOIN_WORKSPACE, (workspaceId) => {
     socket.join(workspaceId);
     console.log(`User ${socket.id} joined workspace: ${workspaceId}`);
-    socket.emit('workspace_joined', { workspaceId });
+    socket.emit(SOCKET_EVENTS.WORKSPACE_JOINED, { workspaceId });
   });
 
-  socket.on('send_message', async (data) => {
+  socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data) => {
     try {
       const { workspaceId, content, reply, mentions, fileIds } = data;
       const senderusername = socket.user.username;
@@ -19,7 +20,7 @@ const registerChatHandlers = (io, socket) => {
       console.log(`📩 Received message from ${senderusername} in workspace ${workspaceId}: ${content}`);
 
       // 1. Broadcast immediately (snappy UI)
-      io.to(workspaceId).emit('receive_message', { 
+      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, { 
         ...data, 
         senderusername, 
         createdAt: new Date() 
@@ -42,7 +43,7 @@ const registerChatHandlers = (io, socket) => {
       console.log('✅ Message saved with ID:', newMessage.id);
 
       // 3. Broadcast the confirmed message with actual DB IDs and File metadata
-      io.to(workspaceId).emit('receive_message_confirmed', newMessage);
+      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, newMessage);
 
     } catch (error) {
       console.error('❌ Socket Error (send_message):', error.message);
@@ -51,12 +52,12 @@ const registerChatHandlers = (io, socket) => {
   });
 
   // T5.4: Handle AI Chatbot interaction
-  socket.on('ask_ai', async (data) => {
+  socket.on(SOCKET_EVENTS.ASK_AI, async (data) => {
     try {
       const { workspaceId, prompt, senderusername } = data;
       
       // Notify client that AI is typing
-      socket.emit('ai_status', { status: 'typing' });
+      socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'typing' });
 
       const aiResponse = await ragService.getAnswerFromKnowledge(workspaceId, prompt);
 
@@ -68,14 +69,14 @@ const registerChatHandlers = (io, socket) => {
         reply: null
       });
 
-      io.to(workspaceId).emit('receive_message', aiMessage);
-      socket.emit('ai_status', { status: 'done' });
+      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, aiMessage);
+      socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'done' });
 
     } catch (error) {
       console.error('❌ Socket Error (ask_ai):', error.message);
-      socket.emit('ai_status', { status: 'error', message: 'AI failed to respond' });
+      socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'error', message: 'AI failed to respond' });
     }
   });
 };
 
-module.exports = registerChatHandlers;
+module.exports = { registerChatHandlers };

@@ -8,6 +8,12 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - Cập nhật ảnh đại diện (Upload REAL Google Drive).
     - Đổi mật khẩu.
     - Cập nhật thông tin cá nhân (Họ tên, ngày sinh, địa chỉ, số điện thoại).
+- **Đăng xuất & Cưỡng chế đăng xuất (Force Logout):**
+   - **Đăng xuất tự nguyện:** Client xóa Token.
+   - **Force Logout (Admin):** 
+     - Admin tăng giá trị `tokenVersion` trong Database của User.
+     - Middleware `protect` so sánh `tokenVersion` trong JWT với DB. Nếu version trong JWT thấp hơn -> Token bị coi là hết hạn.
+     - Cơ chế này hoạt động cho cả API (HTTP) và kết nối Real-time (Socket.io).
 
 ## 2. Quản lý Không gian làm việc (Workspace)
 - **Tạo Workspace:** Trưởng nhóm (Leader) tạo nhóm làm việc mới.
@@ -39,8 +45,9 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Dashboard:** Theo dõi tài nguyên hệ thống (CPU, RAM, DB Storage, Google Drive Quota).
 - **Quản lý User:** Admin có quyền Khóa/Mở khóa tài khoản toàn cục.
 - **Hệ thống Log (System Logs):** 
-    - Ghi lại các thao tác thay đổi dữ liệu (**Audit log**).
-    - Lưu vết User, hành động, thời gian và sự thay đổi dữ liệu (Old/New values).
+    - Ghi lại bản ghi chi tiếp các thao tác thay đổi dữ liệu (**Audit log**).
+    - Lưu vết User, hành động, thời gian và sự thay đổi dữ liệu (So sánh giá trị **Old/New values**).
+- **Cưỡng chế đăng xuất (Force Logout):** Admin có quyền vô hiệu hóa phiên làm việc của bất kỳ người dùng nào ngay lập tức (Real-time).
 
 ## 6. Yêu cầu phi chức năng (Technical Excellence)
 - **Hiệu năng:** Phản hồi Chat < 1000ms, AI Chatbot < 10s (tùy thuộc vào tốc độ API ngoài).

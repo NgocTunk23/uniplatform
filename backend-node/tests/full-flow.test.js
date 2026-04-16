@@ -16,6 +16,7 @@ jest.setTimeout(30000); // Increase timeout for E2E flow
 const request = require('supertest');
 const ioc = require('socket.io-client');
 const { PrismaClient } = require('@prisma/client');
+const SOCKET_EVENTS = require('../src/constants/socket-events');
 const { server, io, app } = require('../index');
 
 // Mock AI Service
@@ -117,18 +118,18 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
       if (joined === 2) done();
     };
 
-    socketA.once('workspace_joined', checkJoined);
-    socketB.once('workspace_joined', checkJoined);
+    socketA.once(SOCKET_EVENTS.WORKSPACE_JOINED, checkJoined);
+    socketB.once(SOCKET_EVENTS.WORKSPACE_JOINED, checkJoined);
 
-    socketA.emit('join_workspace', workspaceId);
-    socketB.emit('join_workspace', workspaceId);
+    socketA.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    socketB.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
   });
 
   step('6. User A sends a message, User B receives it in real-time', (done) => {
     const messageContent = 'Hello Alpha Squad! Team meeting at 10.';
 
     // User B should receive it
-    socketB.once('receive_message_confirmed', async (data) => {
+    socketB.once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, async (data) => {
       try {
         expect(data.content).toBe(messageContent);
         expect(data.senderusername).toBe(userA.username);
@@ -142,7 +143,7 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
       }
     });
 
-    socketA.emit('send_message', {
+    socketA.emit(SOCKET_EVENTS.SEND_MESSAGE, {
       workspaceId,
       content: messageContent
     });
@@ -156,17 +157,17 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
       if (data.senderusername === 'UniBot') {
         receivedCount++;
         if (receivedCount === 2) {
-          socketA.off('receive_message', handleReceive);
-          socketB.off('receive_message', handleReceive);
+          socketA.off(SOCKET_EVENTS.RECEIVE_MESSAGE, handleReceive);
+          socketB.off(SOCKET_EVENTS.RECEIVE_MESSAGE, handleReceive);
           done();
         }
       }
     };
 
-    socketA.on('receive_message', handleReceive);
-    socketB.on('receive_message', handleReceive);
+    socketA.on(SOCKET_EVENTS.RECEIVE_MESSAGE, handleReceive);
+    socketB.on(SOCKET_EVENTS.RECEIVE_MESSAGE, handleReceive);
 
-    socketB.emit('ask_ai', {
+    socketB.emit(SOCKET_EVENTS.ASK_AI, {
       workspaceId,
       prompt: aiPrompt,
       senderusername: userB.username

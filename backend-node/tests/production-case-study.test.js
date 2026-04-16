@@ -5,6 +5,7 @@ const io = require('socket.io-client');
 const jwt = require('jsonwebtoken');
 const { app, server } = require('../index');
 const prisma = require('../src/config/prisma');
+const SOCKET_EVENTS = require('../src/constants/socket-events');
 
 // NOTE: We are NOT mocking aiService or gdrive.util to test REAL production flow
 // ensure your .env has valid GOOGLE_* and GEMINI_API_KEY credentials.
@@ -125,8 +126,8 @@ describe('UniPlatform Production-Grade Case Study', () => {
         const socket = createSocket(user.token);
         sockets[index] = socket;
 
-        socket.on('connect', () => socket.emit('join_workspace', workspaceId));
-        socket.on('workspace_joined', () => {
+        socket.on('connect', () => socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId));
+        socket.on(SOCKET_EVENTS.WORKSPACE_JOINED, () => {
           joined++;
           if (joined === 3) done();
         });
@@ -144,6 +145,9 @@ describe('UniPlatform Production-Grade Case Study', () => {
         .set('Authorization', `Bearer ${users[0].token}`)
         .attach('file', pdfBuffer, 'Project_Plan.pdf');
 
+      if (res.statusCode !== 201) {
+        console.error('❌ Phase 2.1 Upload Failed:', res.body);
+      }
       expect(res.statusCode).toBe(201);
       expect(res.body.file.ggid).toBeDefined();
       expect(res.body.file.ggid).not.toContain('mock');
@@ -152,7 +156,10 @@ describe('UniPlatform Production-Grade Case Study', () => {
     });
 
     test('2.2: Viewer Charlie tries to DELETE the plan (Should be REJECTED)', async () => {
-      const fileId = (await prisma.file.findFirst({ where: { filename: 'Project_Plan.pdf' } })).id;
+      const file = await prisma.file.findFirst({ where: { filename: 'Project_Plan.pdf' } });
+      if (!file) throw new Error('File "Project_Plan.pdf" not found. Upload likely failed.');
+      
+      const fileId = file.id;
       const res = await request(app)
         .delete(`/api/files/${fileId}`)
         .set('Authorization', `Bearer ${users[2].token}`); // Charlie
@@ -188,7 +195,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
       // Send message with 2 files
       const promise = new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Receive Multi-file message TIMEOUT')), 10000);
-        sockets[1].once('receive_message_confirmed', (msg) => {
+        sockets[1].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (msg) => {
           clearTimeout(timeout);
           try {
             expect(msg.files).toHaveLength(2);
@@ -199,7 +206,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
         });
       });
 
-      sockets[0].emit('send_message', {
+      sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
         workspaceId,
         content: 'Check these 2 logs',
         fileIds
@@ -219,14 +226,14 @@ describe('UniPlatform Production-Grade Case Study', () => {
       const onMessage = (msg) => {
         if (msg.content === announceText) {
           planMessageId = msg.id;
-          sockets[1].off('receive_message_confirmed', onMessage);
+          sockets[1].off(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onMessage);
           done();
         }
       };
       
-      sockets[1].on('receive_message_confirmed', onMessage);
+      sockets[1].on(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onMessage);
 
-      sockets[0].emit('send_message', {
+      sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
         workspaceId,
         content: announceText,
       });
@@ -238,14 +245,14 @@ describe('UniPlatform Production-Grade Case Study', () => {
       const onReply = (msg) => {
         if (msg.content === replyContent) {
           expect(msg.replyToId).toBe(planMessageId);
-          sockets[0].off('receive_message_confirmed', onReply);
+          sockets[0].off(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onReply);
           done();
         }
       };
 
-      sockets[0].on('receive_message_confirmed', onReply);
+      sockets[0].on(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onReply);
 
-      sockets[1].emit('send_message', {
+      sockets[1].emit(SOCKET_EVENTS.SEND_MESSAGE, {
         workspaceId,
         content: replyContent,
         reply: planMessageId,
@@ -259,20 +266,20 @@ describe('UniPlatform Production-Grade Case Study', () => {
       // REAL AI Call might take time
       const prompt = 'Who is the project leader and what did Alice just say?';
       
-      sockets[2].on('ai_status', (data) => {
+      sockets[2].on(SOCKET_EVENTS.AI_STATUS, (data) => {
         console.log(`🤖 AI Status: ${data.status}`);
       });
 
-      sockets[2].on('receive_message', (msg) => {
+      sockets[2].on(SOCKET_EVENTS.RECEIVE_MESSAGE, (msg) => {
         if (msg.senderusername === 'UniBot') {
           console.log(`🤖 UniBot Response: ${msg.content}`);
           expect(msg.content).toBeDefined();
-          sockets[2].off('receive_message');
+          sockets[2].off(SOCKET_EVENTS.RECEIVE_MESSAGE);
           done();
         }
       });
 
-      sockets[2].emit('ask_ai', {
+      sockets[2].emit(SOCKET_EVENTS.ASK_AI, {
         workspaceId,
         prompt,
         senderusername: 'charlie_viewer'

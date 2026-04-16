@@ -1,6 +1,8 @@
 const prisma = require('../config/prisma');
 const os = require('os');
 const ApiError = require('../utils/api-error');
+const { getStorageQuota } = require('../utils/gdrive.util');
+const { logChange } = require('../utils/audit-logger.util');
 
 /**
  * @swagger
@@ -23,6 +25,8 @@ const getDashboardStats = async (req, res, next) => {
     const freeMem = os.freemem() / 1024 / 1024 / 1024;
     const totalMem = os.totalmem() / 1024 / 1024 / 1024;
     
+    const quota = await getStorageQuota();
+    
     res.json({
       counts: {
         users: userCount,
@@ -37,7 +41,13 @@ const getDashboardStats = async (req, res, next) => {
           usage: ((1 - os.freemem() / os.totalmem()) * 100).toFixed(2) + '%'
         },
         platform: os.platform(),
-        uptime: (os.uptime() / 3600).toFixed(2) + ' hours'
+        uptime: (os.uptime() / 3600).toFixed(2) + ' hours',
+        googleDrive: quota ? {
+          limit: (quota.limit / 1024 / 1024 / 1024).toFixed(2) + ' GB',
+          usage: (quota.usage / 1024 / 1024 / 1024).toFixed(2) + ' GB',
+          remaining: (quota.remaining / 1024 / 1024 / 1024).toFixed(2) + ' GB',
+          usagePercent: ((quota.usage / quota.limit) * 100).toFixed(2) + '%'
+        } : 'Quota info unavailable'
       }
     });
   } catch (error) {
@@ -104,10 +114,17 @@ const getAllUsers = async (req, res, next) => {
 const updateUserStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
+    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!oldUser) throw new ApiError(404, 'User not found');
+
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { status },
     });
+
+    // Log the change
+    await logChange(req.user.username, 'User', user.id, oldUser, user);
+
     res.json(user);
   } catch (error) {
     next(error);
@@ -138,9 +155,32 @@ const getSystemLogs = async (req, res, next) => {
   }
 };
 
+/**
+ * Force logout a user by incrementing their tokenVersion
+ */
+const forceLogoutUser = async (req, res, next) => {
+  try {
+    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!oldUser) throw new ApiError(404, 'User not found');
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    // Log the change
+    await logChange(req.user.username, 'User', user.id, oldUser, user);
+
+    res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllUsers,
   updateUserStatus,
-  getSystemLogs
+  getSystemLogs,
+  forceLogoutUser
 };

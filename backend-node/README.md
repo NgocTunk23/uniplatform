@@ -142,10 +142,83 @@ Hỗ trợ đầy đủ các tính năng thông qua các module sau:
 - `PATCH /change-password`: Thay đổi mật khẩu định kỳ.
 
 ### 🛡️ Admin (`/api/admin`)
-- `GET /stats`: Xem chỉ số sức khỏe hệ thống (CPU, RAM, DB).
+- `GET /stats`: Xem chỉ số sức khỏe hệ thống (CPU, RAM, DB, **Google Drive Quota**).
 - `GET /users`: Quản lý danh sách toàn bộ người dùng.
-- `PATCH /users/:id/status`: Khóa hoặc mở khóa tài khoản người dùng.
-- `GET /logs`: Xem nhật ký thao tác hệ thống (Audit Logs).
+- `PATCH /users/:id/status`: Khóa hoặc mở khóa tài khoản người dùng (Ghi Audit Log).
+- `POST /users/:id/force-logout`: Cưỡng chế đăng xuất người dùng ngay lập tức.
+- `GET /logs`: Xem nhật ký thao tác chi tiết (**Audit Logs với Old/New values**).
+
+## 📡 Hướng dẫn Tích hợp Chat (Socket.io)
+
+Hệ thống sử dụng Socket.io cho giao tiếp thời gian thực. Dưới đây là cách tích hợp chính xác:
+
+### 1. Kết nối & Xác thực
+Phải truyền JWT Token trong phần `auth` khi khởi tạo kết nối.
+
+```javascript
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:5001", {
+  auth: {
+    token: "YOUR_JWT_TOKEN_HERE"
+  }
+});
+```
+
+### 2. Các Sự kiện chính (Events)
+
+| Sự kiện (Event) | Loại | Dữ liệu (Payload) | Mô tả |
+| :--- | :--- | :--- | :--- |
+| `join_workspace` | Emit | `workspaceId` (string) | Tham gia vào phòng chat của nhóm |
+| `send_message` | Emit | `{ workspaceId, content, reply, fileIds }` | Gửi tin nhắn mới |
+| `receive_message` | Listen | `MessageObject` | Nhận tin nhắn tức thì (Snappy UI) |
+| `receive_message_confirmed` | Listen | `FullMessageObject` | Tin nhắn đã lưu DB (có ID và metadata tệp) |
+| `ask_ai` | Emit | `{ workspaceId, prompt }` | Gửi câu hỏi cho UniBot (AI) |
+| `ai_status` | Listen | `{ status: 'typing'\|'done'\|'error' }` | Trạng thái xử lý của AI |
+
+### 3. Ví dụ tích hợp với React
+
+```jsx
+import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+// Tại Frontend, bạn cũng nên định nghĩa hoặc dùng chung file constants
+const SOCKET_EVENTS = {
+  JOIN_WORKSPACE: 'join_workspace',
+  SEND_MESSAGE: 'send_message',
+  RECEIVE_MESSAGE: 'receive_message'
+};
+
+function ChatRoom({ workspaceId, token }) {
+  const [messages, setMessages] = useState([]);
+  const [socket, setSocket] = useState(null);
+
+  useEffect(() => {
+    const s = io("http://localhost:5001", { auth: { token } });
+    
+    s.on('connect', () => {
+      s.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    });
+
+    s.on(SOCKET_EVENTS.RECEIVE_MESSAGE, (msg) => {
+      setMessages(prev => [...prev, msg]);
+    });
+
+    setSocket(s);
+    return () => s.disconnect();
+  }, [workspaceId, token]);
+
+  const sendMessage = (text) => {
+    socket.emit(SOCKET_EVENTS.SEND_MESSAGE, { workspaceId, content: text });
+  };
+```
+
+  return (
+    <div>
+      {/* Render UI Chat */}
+    </div>
+  );
+}
+```
 
 ## 🛡️ Hệ thống mã lỗi tập trung
 Hệ thống sử dụng các mã lỗi chuẩn (e.g., `AUTH_INVALID`, `USER_EXISTS`) giúp Frontend dễ dàng bắt lỗi và hiển thị thông báo chính xác cho người dùng. Toàn bộ định nghĩa có tại `src/constants/error-codes.js`.

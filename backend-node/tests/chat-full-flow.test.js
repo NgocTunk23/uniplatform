@@ -10,6 +10,7 @@ jest.mock('../src/services/ai.service', () => ({
 
 const { app, server } = require('../index');
 const prisma = require('../src/config/prisma');
+const SOCKET_EVENTS = require('../src/constants/socket-events');
 
 let users = [];
 let workspaceId;
@@ -92,10 +93,10 @@ describe('3-User Chat Full Flow Integration Test', () => {
       sockets[index] = socket;
 
       socket.on('connect', () => {
-        socket.emit('join_workspace', workspaceId);
+        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
       });
 
-      socket.on('workspace_joined', (data) => {
+      socket.on(SOCKET_EVENTS.WORKSPACE_JOINED, (data) => {
         expect(data.workspaceId).toBe(workspaceId);
         connectedCount++;
         if (connectedCount === 3) done();
@@ -108,21 +109,21 @@ describe('3-User Chat Full Flow Integration Test', () => {
     let receivedCount = 0;
 
     // Wait for CONFIRMED event which means it's saved in DB
-    sockets[1].once('receive_message_confirmed', (data) => {
+    sockets[1].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (data) => {
       expect(data.content).toBe(messageContent);
       expect(data.senderusername).toBe('alice');
       receivedCount++;
       if (receivedCount === 2) done();
     });
 
-    sockets[2].once('receive_message_confirmed', (data) => {
+    sockets[2].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (data) => {
       expect(data.content).toBe(messageContent);
       expect(data.senderusername).toBe('alice');
       receivedCount++;
       if (receivedCount === 2) done();
     });
 
-    sockets[0].emit('send_message', {
+    sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
       workspaceId,
       content: messageContent
     });
@@ -140,7 +141,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
 
     // 2. Bob sends message with fileId via Socket
     const promise = new Promise((resolve) => {
-      sockets[0].once('receive_message_confirmed', (data) => {
+      sockets[0].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (data) => {
         expect(data.senderusername).toBe('bob');
         expect(data.files).toHaveLength(1);
         expect(data.files[0].filename).toBe('bob_report.pdf');
@@ -148,7 +149,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
       });
     });
 
-    sockets[1].emit('send_message', {
+    sockets[1].emit(SOCKET_EVENTS.SEND_MESSAGE, {
       workspaceId,
       content: 'Here is the report',
       fileIds: [fileId]
@@ -171,16 +172,19 @@ describe('3-User Chat Full Flow Integration Test', () => {
     expect(bobMsg.files[0].ggid).toBeDefined();
   });
 
-  test('Step 5: Alice only sends a file (no text)', async () => {
+  test('Step 5: Alice sends a file-only message', async () => {
+    // 1. Upload file
     const uploadRes = await request(app)
       .post('/api/files/upload')
       .set('Authorization', `Bearer ${users[0].token}`)
-      .attach('file', Buffer.from('alice image'), 'photo.jpg');
+      .attach('file', Buffer.from('photo data'), 'photo.jpg');
+    
+    expect(uploadRes.status).toBe(201);
     
     const fileId = uploadRes.body.file.id;
 
     const promise = new Promise((resolve) => {
-      sockets[2].once('receive_message_confirmed', (data) => {
+      sockets[2].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (data) => {
         expect(data.senderusername).toBe('alice');
         expect(data.content).toBe('');
         expect(data.files).toHaveLength(1);
@@ -189,7 +193,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
       });
     });
 
-    sockets[0].emit('send_message', {
+    sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
       workspaceId,
       content: '',
       fileIds: [fileId]

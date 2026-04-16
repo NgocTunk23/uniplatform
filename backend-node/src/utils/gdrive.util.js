@@ -131,8 +131,33 @@ const getDownloadLink = (fileId) => {
   return `https://drive.google.com/uc?export=download&id=${fileId}`;
 };
 
+/**
+ * Get Google Drive storage quota info
+ * @returns {Promise<Object>} Quota info (total, used, remaining)
+ */
+const getStorageQuota = async () => {
+  try {
+    const drive = getDriveClient();
+    const response = await drive.about.get({
+      fields: 'storageQuota',
+    });
+    
+    const quota = response.data.storageQuota;
+    return {
+      limit: parseInt(quota.limit),
+      usage: parseInt(quota.usage),
+      usageInDrive: parseInt(quota.usageInDrive),
+      remaining: parseInt(quota.limit) - parseInt(quota.usage)
+    };
+  } catch (error) {
+    console.error('Error fetching Drive quota:', error);
+    return null;
+  }
+};
+
 module.exports = {
   uploadFile,
   deleteFile,
-  getDownloadLink
+  getDownloadLink,
+  getStorageQuota
 };

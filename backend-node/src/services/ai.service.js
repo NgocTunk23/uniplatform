@@ -22,7 +22,7 @@ const generateResponse = async (prompt, context = []) => {
       return `[MOCK] Phản hồi từ AI cho: "${prompt}". (Vui lòng thêm GEMINI_API_KEY vào .env để sử dụng AI thật).`;
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
     
     // Format context for better response
     const formattedContext = context.map(c => `${c.senderusername}: ${c.content}`).join('\n');
@@ -48,7 +48,7 @@ const getEmbedding = async (text) => {
       return Array.from({ length: 768 }, () => Math.random());
     }
 
-    const model = genAI.getGenerativeModel({ model: "embedding-001" });
+    const model = genAI.getGenerativeModel({ model: "models/text-embedding-004" });
     const result = await model.embedContent(text);
     return result.embedding.values;
   } catch (error) {
