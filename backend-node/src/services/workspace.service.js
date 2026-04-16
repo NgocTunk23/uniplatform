@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const ROLES = require('../constants/roles');
 const permissionUtil = require('../utils/permission.util');
+const { logChange } = require('../utils/audit-logger.util');
 
 const createWorkspace = async (workspaceData) => {
   return await prisma.workspace.create({
@@ -76,7 +77,7 @@ const addMember = async (workspaceId, memberData, currentUser) => {
     return workspace;
   }
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -88,6 +89,11 @@ const addMember = async (workspaceId, memberData, currentUser) => {
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+  
+  return result;
 };
 
 const removeMember = async (workspaceId, username, currentUser) => {
@@ -97,7 +103,7 @@ const removeMember = async (workspaceId, username, currentUser) => {
   const members = workspace.members || [];
   const updatedMembers = members.filter(m => m.username !== username);
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -105,6 +111,11 @@ const removeMember = async (workspaceId, username, currentUser) => {
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+
+  return result;
 };
 
 const updateMemberRole = async (workspaceId, username, workspacerole, currentUser) => {
@@ -116,7 +127,7 @@ const updateMemberRole = async (workspaceId, username, workspacerole, currentUse
     m.username === username ? { ...m, workspacerole } : m
   );
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -124,6 +135,11 @@ const updateMemberRole = async (workspaceId, username, workspacerole, currentUse
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+
+  return result;
 };
 
 module.exports = {
