@@ -55,45 +55,18 @@ const createWorkspace = async (req, res, next) => {
   }
 };
 
-/**
- * @swagger
- * /api/workspaces:
- *   get:
- *     summary: Get all workspaces
- *     tags: [Workspace]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of workspaces
- */
 const getWorkspaces = async (req, res, next) => {
   try {
-    const workspaces = await workspaceService.getAllWorkspaces();
+    const workspaces = await workspaceService.getAllWorkspaces(req.user);
     res.json(workspaces);
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * @swagger
- * /api/workspaces/{id}:
- *   get:
- *     summary: Get workspace details by ID
- *     tags: [Workspace]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Workspace details
- */
 const getWorkspaceById = async (req, res, next) => {
   try {
-    const workspace = await workspaceService.getWorkspaceById(req.params.id);
+    const workspace = await workspaceService.getWorkspaceById(req.params.id, req.user);
     if (!workspace) throw new ApiError(404, 'Workspace not found', ERROR_CODES.WORKSPACE.WKS_NOT_FOUND);
     res.json(workspace);
   } catch (error) {
@@ -101,33 +74,9 @@ const getWorkspaceById = async (req, res, next) => {
   }
 };
 
-/**
- * @swagger
- * /api/workspaces/{id}/members:
- *   post:
- *     summary: Add member to workspace
- *     tags: [Workspace]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               username: { type: string }
- *               workspacerole: { type: string }
- *     responses:
- *       200:
- *         description: Member added
- */
 const addMember = async (req, res, next) => {
   try {
-    const workspace = await workspaceService.addMember(req.params.id, req.body);
+    const workspace = await workspaceService.addMember(req.params.id, req.body, req.user);
     res.json(workspace);
   } catch (error) {
     next(error);
@@ -136,7 +85,7 @@ const addMember = async (req, res, next) => {
 
 const removeMember = async (req, res, next) => {
   try {
-    const workspace = await workspaceService.removeMember(req.params.id, req.params.username);
+    const workspace = await workspaceService.removeMember(req.params.id, req.params.username, req.user);
     res.json(workspace);
   } catch (error) {
     next(error);
@@ -146,7 +95,7 @@ const removeMember = async (req, res, next) => {
 const updateMemberRole = async (req, res, next) => {
   try {
     const { workspacerole } = req.body;
-    const workspace = await workspaceService.updateMemberRole(req.params.id, req.params.username, workspacerole);
+    const workspace = await workspaceService.updateMemberRole(req.params.id, req.params.username, workspacerole, req.user);
     res.json(workspace);
   } catch (error) {
     next(error);

@@ -1,10 +1,14 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
 const prisma = require('./src/config/prisma');
+const SOCKET_EVENTS = require('./src/constants/socket-events');
+const { registerChatHandlers } = require('./src/socket/chat.socket');
+const { protect } = require('./src/middlewares/auth.middleware');
 const { swaggerUi, specs } = require('./src/config/swagger');
 const errorMiddleware = require('./src/middlewares/error.middleware');
 
@@ -52,7 +56,6 @@ app.use(errorMiddleware);
 // Create HTTP Server
 const server = http.createServer(app);
 
-const registerChatHandlers = require('./src/socket/chat.socket');
 
 // Initialize Socket.io
 const io = new Server(server, {
@@ -62,11 +65,46 @@ const io = new Server(server, {
   }
 });
 
+// Socket.io Middleware for Authentication
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
+
+    if (!user) {
+      return next(new Error('Authentication error: User not found'));
+    }
+
+    if (user.status === 'locked') {
+      return next(new Error('Authentication error: Account is locked'));
+    }
+
+    // Check if token version matches (for Force Logout)
+    if (typeof decoded.tokenVersion !== 'undefined' && decoded.tokenVersion < user.tokenVersion) {
+      return next(new Error('Authentication error: Session expired'));
+    }
+
+    // Attach user to socket
+    const { password, ...userData } = user;
+    socket.user = userData;
+    next();
+  } catch (err) {
+    next(new Error('Authentication error: Invalid token'));
+  }
+});
+
 // Socket.io Handlers
-io.on('connection', (socket) => {
+io.on(SOCKET_EVENTS.CONNECTION, (socket) => {
   registerChatHandlers(io, socket);
 
-  socket.on('disconnect', () => {
+  socket.on(SOCKET_EVENTS.DISCONNECT, () => {
     console.log('🔥 User disconnected');
   });
 });

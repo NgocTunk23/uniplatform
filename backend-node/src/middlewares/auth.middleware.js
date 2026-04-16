@@ -30,6 +30,11 @@ const protect = async (req, res, next) => {
         throw new ApiError(401, 'Account is locked', ERROR_CODES.AUTH.AUTH_LOCKED);
       }
 
+      // Check if token version matches (for Force Logout)
+      if (typeof decoded.tokenVersion !== 'undefined' && decoded.tokenVersion < user.tokenVersion) {
+        throw new ApiError(401, 'Session expired, please login again', ERROR_CODES.AUTH.AUTH_INVALID);
+      }
+
       const { password, ...userData } = user;
       req.user = userData;
 

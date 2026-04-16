@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 const ROLES = require('../constants/roles');
+const permissionUtil = require('../utils/permission.util');
+const { logChange } = require('../utils/audit-logger.util');
 
 const createWorkspace = async (workspaceData) => {
   return await prisma.workspace.create({
@@ -13,18 +15,34 @@ const createWorkspace = async (workspaceData) => {
   });
 };
 
-const getAllWorkspaces = async () => {
+const getAllWorkspaces = async (currentUser) => {
+  // If not System Admin, only show workspaces user is a member of
+  if (currentUser.role === ROLES.SYSTEM.ADMIN) {
+    return await prisma.workspace.findMany({
+      include: {
+        members: true,
+        _count: { select: { messages: true } }
+      }
+    });
+  }
+
   return await prisma.workspace.findMany({
+    where: {
+      members: {
+        some: { username: currentUser.username }
+      }
+    },
     include: {
       members: true,
-      _count: {
-        select: { messages: true }
-      }
+      _count: { select: { messages: true } }
     }
   });
 };
 
-const getWorkspaceById = async (id) => {
+const getWorkspaceById = async (id, currentUser) => {
+  // Membership check
+  await permissionUtil.getWorkspaceMembership(id, currentUser);
+
   return await prisma.workspace.findUnique({
     where: { id },
     include: {
@@ -33,20 +51,24 @@ const getWorkspaceById = async (id) => {
   });
 };
 
-const updateWorkspace = async (id, updateData) => {
+const updateWorkspace = async (id, updateData, currentUser) => {
+  await permissionUtil.ensureLeader(id, currentUser);
   return await prisma.workspace.update({
     where: { id },
     data: updateData,
   });
 };
 
-const deleteWorkspace = async (id) => {
+const deleteWorkspace = async (id, currentUser) => {
+  await permissionUtil.ensureLeader(id, currentUser);
   return await prisma.workspace.delete({
     where: { id },
   });
 };
 
-const addMember = async (workspaceId, memberData) => {
+const addMember = async (workspaceId, memberData, currentUser) => {
+  await permissionUtil.ensureLeader(workspaceId, currentUser);
+  
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
   const members = workspace.members || [];
   
@@ -55,7 +77,7 @@ const addMember = async (workspaceId, memberData) => {
     return workspace;
   }
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -67,14 +89,21 @@ const addMember = async (workspaceId, memberData) => {
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+  
+  return result;
 };
 
-const removeMember = async (workspaceId, username) => {
+const removeMember = async (workspaceId, username, currentUser) => {
+  await permissionUtil.ensureLeader(workspaceId, currentUser);
+
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
   const members = workspace.members || [];
   const updatedMembers = members.filter(m => m.username !== username);
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -82,16 +111,23 @@ const removeMember = async (workspaceId, username) => {
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+
+  return result;
 };
 
-const updateMemberRole = async (workspaceId, username, workspacerole) => {
+const updateMemberRole = async (workspaceId, username, workspacerole, currentUser) => {
+  await permissionUtil.ensureLeader(workspaceId, currentUser);
+
   const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
   const members = workspace.members || [];
   const updatedMembers = members.map(m => 
     m.username === username ? { ...m, workspacerole } : m
   );
 
-  return await prisma.workspace.update({
+  const result = await prisma.workspace.update({
     where: { id: workspaceId },
     data: {
       members: {
@@ -99,6 +135,11 @@ const updateMemberRole = async (workspaceId, username, workspacerole) => {
       }
     }
   });
+
+  // Audit Log
+  await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
+
+  return result;
 };
 
 module.exports = {
