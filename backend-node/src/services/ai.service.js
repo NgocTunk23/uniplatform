@@ -23,7 +23,7 @@ const generateResponse = async (prompt, context = []) => {
     }
 
     const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
-    
+
     // Format context for better response
     const formattedContext = context.map(c => `${c.senderusername}: ${c.content}`).join('\n');
     const fullPrompt = `Ngữ cảnh các tin nhắn trước:\n${formattedContext}\n\nCâu hỏi: ${prompt}`;
@@ -32,7 +32,7 @@ const generateResponse = async (prompt, context = []) => {
     const response = await result.response;
     return response.text();
   } catch (error) {
-    console.error('❌ Gemini Response Error:', error.message);
+    console.error('Gemini Response Error:', error.message);
     throw error;
   }
 };

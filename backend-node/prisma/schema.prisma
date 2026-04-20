@@ -87,3 +87,16 @@ type LogChange {
   new   Json?
   old   Json?
 }
+
+model Schedule {
+  id         String   @id @default(uuid()) @map("_id") // MongoDB bắt buộc dùng _id
+  scheduleid String   @unique
+  username   String
+  title      String
+  starttime  DateTime
+  endtime    DateTime
+  type       String   @default("Lịch họp")
+  createat   DateTime @default(now())
+
+  @@map("schedules") 
+}

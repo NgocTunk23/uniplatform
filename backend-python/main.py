@@ -7,6 +7,84 @@ from google import genai
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 
+# ----------------------BEGIN module 1---------------------
+
+app = FastAPI(title="UniPlatform AI Service - Schedule Module")
+
+mock_schedules = [
+    {
+        "username": "ton_nguyen",
+        "starttime": datetime(2026, 5, 10, 8, 0),
+        "endtime": datetime(2026, 5, 10, 10, 0),
+        "type": "Bận"
+    },
+    {
+        "username": "trang_vo",
+        "starttime": datetime(2026, 5, 10, 9, 0),
+        "endtime": datetime(2026, 5, 10, 11, 0),
+        "type": "Bận"
+    }
+]
+
+# 2. Định nghĩa Model yêu cầu từ Frontend/Node.js [cite: 301]
+class MeetingRequest(BaseModel):
+    usernames: List[str]
+    duration_minutes: int
+    search_date: str  # Format: "YYYY-MM-DD"
+
+@app.post("/suggest-free-slots")
+async def suggest_slots(req: MeetingRequest):
+    # Xác định khung thời gian tìm kiếm (ví dụ 8h sáng đến 18h tối của ngày đó) [cite: 301]
+    day = datetime.strptime(req.search_date, "%Y-%m-%d")
+    work_start = day.replace(hour=8, minute=0)
+    work_end = day.replace(hour=18, minute=0)
+    
+    # Bước 1: Lọc lịch bận của các thành viên trong danh sách [cite: 301]
+    busy_intervals = []
+    for sch in mock_schedules:
+        if sch["username"] in req.usernames and sch["type"] == "Bận":
+            busy_intervals.append((sch["starttime"], sch["endtime"]))
+            
+    # Bước 2: Hợp nhất các khoảng bận (Merge Intervals)
+    busy_intervals.sort()
+    merged_busy = []
+    if busy_intervals:
+        curr_start, curr_end = busy_intervals[0]
+        for next_start, next_end in busy_intervals[1:]:
+            if next_start <= curr_end:
+                curr_end = max(curr_end, next_end)
+            else:
+                merged_busy.append((curr_start, curr_end))
+                curr_start, curr_end = next_start, next_end
+        merged_busy.append((curr_start, curr_end))
+
+    # Bước 3: Tìm khoảng trống (Free Slots) [cite: 301, 146]
+    free_slots = []
+    current_time = work_start
+    duration = timedelta(minutes=req.duration_minutes)
+
+    for b_start, b_end in merged_busy:
+        if b_start - current_time >= duration:
+            free_slots.append({
+                "start": current_time.strftime("%H:%M"),
+                "end": b_start.strftime("%H:%M")
+            })
+        current_time = max(current_time, b_end)
+
+    if work_end - current_time >= duration:
+        free_slots.append({
+            "start": current_time.strftime("%H:%M"),
+            "end": work_end.strftime("%H:%M")
+        })
+
+    if not free_slots:
+        # Xử lý Exception Flow: Không có giờ trống [cite: 301]
+        return {"message": "Không tìm thấy khung giờ phù hợp", "suggest": "Giảm thời lượng hoặc bớt thành viên"}
+
+    return {"free_slots": free_slots}
+
+# ---------------------END module 1---------------------
+
 # 1. Cấu hình các biến môi trường
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://root:password@mongodb:27017")

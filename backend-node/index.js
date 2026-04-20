@@ -17,8 +17,8 @@ dotenv.config();
 
 // Prisma Connection Check
 prisma.$connect()
-  .then(() => console.log('🛡️  Prisma connected to MongoDB'))
-  .catch((err) => console.error('❌ Prisma connection error:', err));
+  .then(() => console.log('Prisma connected to MongoDB'))
+  .catch((err) => console.error('Prisma connection error:', err));
 
 const workspaceRoutes = require('./src/routes/workspace.routes');
 const messageRoutes = require('./src/routes/message.routes');
@@ -60,7 +60,7 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -105,7 +105,7 @@ io.on(SOCKET_EVENTS.CONNECTION, (socket) => {
   registerChatHandlers(io, socket);
 
   socket.on(SOCKET_EVENTS.DISCONNECT, () => {
-    console.log('🔥 User disconnected');
+    console.log('User disconnected');
   });
 });
 
@@ -113,8 +113,48 @@ const PORT = process.env.PORT || 5001;
 
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
   });
-}
+};
+
+// module1
+const mongoose = require('mongoose');
+const ScheduleSchema = new mongoose.Schema({
+  scheduleid: String,
+  username: String,
+  title: String,
+  starttime: Date,
+  endtime: Date,
+  type: { type: String, default: 'Lịch họp' }, // Ban / Lich hop / Tu do
+  createat: { type: Date, default: Date.now }
+});
+
+const Schedule = mongoose.model('Schedule', ScheduleSchema);
+app.post('/api/meetings/create', async (req, res) => {
+  try {
+    const { title, username, starttime, endtime } = req.body;
+
+    // new record
+    const newSchedule = new Schedule({
+      scheduleid: 'SCH' + Date.now(), // ID created by timestamp
+      username,
+      title,
+      starttime: new Date(starttime),
+      endtime: new Date(endtime),
+      type: 'Lịch họp'
+    });
+
+    // Luu xuong MongoDB Atlas
+    await newSchedule.save();
+
+    res.json({
+      success: true,
+      message: "Đã tạo lịch họp thành công và lưu vào hệ thống!",
+      data: newSchedule
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Lỗi khi lưu lịch: " + error.message });
+  }
+});
 
 module.exports = { app, server, io };
