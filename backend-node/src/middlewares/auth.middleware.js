@@ -16,10 +16,18 @@ const protect = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+
+
+      // Kiểm tra xem decoded.id (lúc này chứa username) có tồn tại không
+      if (!decoded || !decoded.id) {
+          throw new ApiError(401, 'Token không hợp lệ hoặc thiếu thông tin định danh', ERROR_CODES.AUTH.AUTH_INVALID);
+      }
+
 
       // Get user from the token
       const user = await prisma.user.findUnique({
-        where: { id: decoded.id },
+        where: { username: decoded.id },
       });
 
       if (!user) {
@@ -40,6 +48,7 @@ const protect = async (req, res, next) => {
 
       next();
     } catch (error) {
+      console.log("JWT Error Details:", error.message);
       next(error instanceof ApiError ? error : new ApiError(401, 'Not authorized, token failed', ERROR_CODES.AUTH.AUTH_INVALID));
     }
   }

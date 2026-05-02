@@ -38,7 +38,7 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
         role: 'Member'
       }
     });
-    leaderToken = generateToken(leaderUser.id, leaderUser.tokenVersion);
+    leaderToken = generateToken(leaderuser.username, leaderUser.tokenVersion);
 
     // Create Workspace
     const ws = await prisma.workspace.create({

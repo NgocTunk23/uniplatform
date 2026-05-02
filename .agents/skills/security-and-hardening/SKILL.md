@@ -112,7 +112,7 @@ app.patch('/api/tasks/:id', authenticate, async (req, res) => {
   const task = await taskService.findById(req.params.id);
 
   // Check that the authenticated user owns this resource
-  if (task.ownerId !== req.user.id) {
+  if (task.ownerId !== req.user.username) {
     return res.status(403).json({
       error: { code: 'FORBIDDEN', message: 'Not authorized to modify this task' }
     });

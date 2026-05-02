@@ -6,7 +6,7 @@ const ERROR_CODES = require('../constants/error-codes');
 const getProfile = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { username: req.user.username },
     });
 
     if (!user) {
@@ -37,7 +37,7 @@ const updateProfile = async (req, res, next) => {
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
+      where: { username: req.user.username },
       data: updateData,
     });
 
@@ -52,13 +52,13 @@ const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { username: req.user.username },
     });
 
     if (user && (await bcrypt.compare(currentPassword, user.password))) {
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       await prisma.user.update({
-        where: { id: req.user.id },
+        where: { username: req.user.username },
         data: { password: hashedPassword },
       });
       res.json({ message: 'Password updated successfully' });

@@ -28,7 +28,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
         role: 'Admin'
       }
     });
-    adminToken = generateToken(adminUser.id, adminUser.tokenVersion);
+    adminToken = generateToken(adminuser.username, adminUser.tokenVersion);
 
     // 2. Setup regular User
     const user = await prisma.user.create({
@@ -40,8 +40,8 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
         role: 'Member'
       }
     });
-    userId = user.id;
-    userToken = generateToken(user.id, user.tokenVersion);
+    userId = user.username;
+    userToken = generateToken(user.username, user.tokenVersion);
   });
 
   afterAll(async () => {

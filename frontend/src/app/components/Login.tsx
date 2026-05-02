@@ -48,11 +48,13 @@ export function Login() {
       const token = data.token || data.data?.token;
       const userEmail = data.email || data.data?.user?.email || '';
       const username = data.username || data.data?.user?.username || '';
-
+      const fullname = data.fullname || data.data?.user?.fullname || 'User';
+      
       localStorage.setItem('uniplatform_authenticated', 'true');
       localStorage.setItem('uniplatform_user_token', token);
       localStorage.setItem('uniplatform_user_email', userEmail);
       localStorage.setItem('uniplatform_username', username);
+      localStorage.setItem('uniplatform_fullname', fullname);
       
       // 5. Chuyển hướng người dùng
       navigate('/chat');

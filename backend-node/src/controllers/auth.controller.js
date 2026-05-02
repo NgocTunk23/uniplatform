@@ -85,12 +85,12 @@ const registerUser = async (req, res, next) => {
     });
 
     res.status(201).json({
-      id: user.id,
+      id: user.username,
       username: user.username,
       email: user.email,
       fullname: user.fullname,
       role: user.role,
-      token: generateToken(user.id, user.tokenVersion),
+      token: generateToken(user.username, user.tokenVersion),
     });
   } catch (error) {
     next(error);
@@ -142,12 +142,12 @@ const loginUser = async (req, res, next) => {
       }
 
       res.json({
-        id: user.id,
+        id: user.username,
         username: user.username,
         email: user.email,
         fullname: user.fullname,
         role: user.role,
-        token: generateToken(user.id, user.tokenVersion),
+        token: generateToken(user.username, user.tokenVersion),
       });
     } else {
       throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);
@@ -174,7 +174,7 @@ const loginUser = async (req, res, next) => {
 const getMe = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: req.user.username },
     });
     
     if (user) {
