@@ -104,6 +104,97 @@ async function main() {
     });
   }
 
+  const workspaces = [
+    {
+      name: "Phòng Công tác Sinh viên",
+      admin: "admin1",
+      members: [
+        { username: "admin1", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2152392", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2313522", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+    {
+      name: "Nhóm Nghiên cứu AI",
+      admin: "2033364",
+      members: [
+        { username: "2033364", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "admin2", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "admin3", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+    {
+      name: "Câu lạc bộ IT",
+      admin: "2115302",
+      members: [
+        { username: "2115302", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2033364", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2152392", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+    {
+      name: "Đội Tình nguyện Xung kích",
+      admin: "2152392",
+      members: [
+        { username: "2152392", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2313522", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "admin1", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2313508", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+    {
+      name: "Ban Chấp hành Đoàn khoa",
+      admin: "2313522",
+      members: [
+        { username: "2313522", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "admin3", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+    {
+      name: "Dự án UniPlatform",
+      admin: "admin3",
+      members: [
+        { username: "admin3", workspacerole: ROLES.WORKSPACE.LEADER },
+        { username: "2033364", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
+        { username: "admin1", workspacerole: ROLES.WORKSPACE.VIEWER },
+      ],
+    },
+  ];
+
+  for (const ws of workspaces) {
+    const existing = await prisma.workspace.findFirst({
+      where: { name: ws.name }
+    });
+
+    if (existing) {
+      await prisma.workspace.update({
+        where: { id: existing.id },
+        data: {
+          admin: ws.admin,
+          members: {
+            set: ws.members
+          }
+        }
+      });
+    } else {
+      await prisma.workspace.create({
+        data: {
+          name: ws.name,
+          admin: ws.admin,
+          members: {
+            set: ws.members
+          }
+        }
+      });
+    }
+  }
+
   console.log("✅ Seeding completed!");
 }
 
