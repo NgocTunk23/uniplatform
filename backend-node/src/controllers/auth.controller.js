@@ -125,10 +125,14 @@ const loginUser = async (req, res, next) => {
   const { identifier, password } = req.body;
 
   try {
+    // backend-node/src/controllers/auth.controller.js
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: identifier }, { username: identifier }],
-      },
+        OR: [
+          { email: identifier },
+          { username: identifier }
+        ]
+      }
     });
 
     const isPasswordValid = password === user.password || await bcrypt.compare(password, user.password);
@@ -138,12 +142,12 @@ const loginUser = async (req, res, next) => {
       }
 
       res.json({
-        id: user.username,
+        id: user.id,
         username: user.username,
         email: user.email,
         fullname: user.fullname,
         role: user.role,
-        token: generateToken(user.username, user.tokenVersion),
+        token: generateToken(user.id, user.tokenVersion),
       });
     } else {
       throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);

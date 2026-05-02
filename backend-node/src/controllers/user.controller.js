@@ -3,29 +3,24 @@ const bcrypt = require('bcryptjs');
 const ApiError = require('../utils/api-error');
 const ERROR_CODES = require('../constants/error-codes');
 
-/**
- * @swagger
- * /api/users/profile:
- *   put:
- *     summary: Update current user profile
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               fullname: { type: string }
- *               dateofbirth: { type: string, format: date }
- *               address: { type: string }
- *               phone: { type: string }
- *     responses:
- *       200:
- *         description: Profile updated
- */
+const getProfile = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!user) {
+      throw new ApiError(404, 'User not found', ERROR_CODES.USER?.NOT_FOUND || 'USER_NOT_FOUND');
+    }
+
+    const { password: _, ...userData } = user;
+    
+    res.json({ data: userData });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateProfile = async (req, res, next) => {
   try {
     const { fullname, dateofbirth, address, phone, password } = req.body;
@@ -47,36 +42,12 @@ const updateProfile = async (req, res, next) => {
     });
 
     const { password: _, ...userData } = updatedUser;
-    res.json(userData);
+    res.json({ data: userData, message: 'Profile updated successfully' });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * @swagger
- * /api/users/change-password:
- *   patch:
- *     summary: Change current user password
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - currentPassword
- *               - newPassword
- *             properties:
- *               currentPassword: { type: string }
- *               newPassword: { type: string }
- *     responses:
- *       200:
- *         description: Password changed
- */
 const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -92,7 +63,7 @@ const changePassword = async (req, res, next) => {
       });
       res.json({ message: 'Password updated successfully' });
     } else {
-      throw new ApiError(401, 'Invalid current password', ERROR_CODES.USER.PASS_INVALID);
+      throw new ApiError(401, 'Invalid current password', ERROR_CODES.USER?.PASS_INVALID || 'INVALID_PASSWORD');
     }
   } catch (error) {
     next(error);
@@ -100,6 +71,7 @@ const changePassword = async (req, res, next) => {
 };
 
 module.exports = {
+  getProfile,
   updateProfile,
   changePassword,
 };
