@@ -125,10 +125,14 @@ const loginUser = async (req, res, next) => {
   const { identifier, password } = req.body;
 
   try {
+    // backend-node/src/controllers/auth.controller.js
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: identifier }, { username: identifier }],
-      },
+        OR: [
+          { email: identifier },
+          { username: identifier }
+        ]
+      }
     });
 
     const isPasswordValid = password === user.password || await bcrypt.compare(password, user.password);

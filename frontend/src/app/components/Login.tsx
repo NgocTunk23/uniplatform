@@ -4,27 +4,27 @@ import { Mail, Lock, Eye, EyeOff, LogIn, GraduationCap } from 'lucide-react';
 
 export function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  // Đã gộp chung thành identifier dùng cho cả email và username
+  const [identifier, setIdentifier] = useState(''); 
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
+  
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Basic validation
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    // 1. Validate form
+    if (!identifier || !password) {
+      setError('Vui lòng nhập Email hoặc Username và mật khẩu');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Gọi API đăng nhập thật
-      // Lưu ý: Nếu dùng Vite thì dùng import.meta.env.VITE_API_URL
+      // 2. Gọi API đăng nhập
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
       
       const response = await fetch(`${apiUrl}/api/auth/login`, {
@@ -32,25 +32,29 @@ export function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
-        // Backend đang mong đợi "identifier" (có thể là email) và "password"
         body: JSON.stringify({ 
-          identifier: email, 
-          password: password 
+          identifier: identifier, 
+          password: password
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Đăng nhập thất bại');
+        throw new Error(data.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
       }
 
-      // Lưu trữ trạng thái và thông tin nếu gọi API thành công
+      // 4. Lưu trữ trạng thái và thông tin
+      const token = data.token || data.data?.token;
+      const userEmail = data.email || data.data?.user?.email || '';
+      const username = data.username || data.data?.user?.username || '';
+
       localStorage.setItem('uniplatform_authenticated', 'true');
-      localStorage.setItem('uniplatform_user_token', data.token);
-      localStorage.setItem('uniplatform_user_email', data.email);
-      localStorage.setItem('uniplatform_username', data.username);
+      localStorage.setItem('uniplatform_user_token', token);
+      localStorage.setItem('uniplatform_user_email', userEmail);
+      localStorage.setItem('uniplatform_username', username);
       
+      // 5. Chuyển hướng người dùng
       navigate('/chat');
     } catch (err: any) {
       setError(err.message);
@@ -75,21 +79,22 @@ export function Login() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm shadow-gray-100/80 overflow-hidden">
           <div className="p-8">
             <form onSubmit={handleLogin} className="space-y-5">
-              {/* Email Input */}
+              
+              {/* Identifier (Email/Username) Input */}
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address
+                <label htmlFor="identifier" className="block text-sm font-medium text-gray-700 mb-2">
+                  Email / Username
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <Mail className="w-5 h-5" />
                   </div>
                   <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="student@university.edu"
+                    id="identifier"
+                    type="text" // Phải là text để nhập được username
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="student@university.edu hoặc username"
                     className="w-full pl-11 pr-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 transition-all"
                     disabled={isLoading}
                   />
