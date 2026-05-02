@@ -12,9 +12,9 @@ import {
 
 // Bổ sung interface để nhận Props từ DashboardLayout truyền xuống
 interface RightPanelProps {
-  groupName: string;
-  isCoordinationOpen: boolean;
-  onToggleCoordination: () => void;
+  groupName?: string;
+  isCoordinationOpen?: boolean;
+  onToggleCoordination?: () => void;
 }
 
 const scheduleData = [
@@ -25,7 +25,7 @@ const scheduleData = [
   { time: '01:00 PM', status: 'free', names: ['JS', 'AC'], partial: true },
 ];
 
-export function RightPanel({ groupName, isCoordinationOpen, onToggleCoordination }: RightPanelProps) {
+export function RightPanel({ groupName = "General", isCoordinationOpen = false, onToggleCoordination = () => {} }: RightPanelProps) {
   return (
     <div className="flex flex-col h-full bg-white p-6 overflow-y-auto w-full">
       

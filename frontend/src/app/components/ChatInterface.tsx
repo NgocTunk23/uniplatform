@@ -64,10 +64,10 @@ const messages = [
 ];
 
 interface ChatInterfaceProps {
-  groupName: string;
+  groupName?: string;
 }
 
-export function ChatInterface({ groupName }: ChatInterfaceProps) {
+export function ChatInterface({ groupName = "General Chat"}: ChatInterfaceProps) {
   const [inputText, setInputText] = useState('');
 
   return (

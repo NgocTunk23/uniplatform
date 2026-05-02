@@ -31,7 +31,7 @@ beforeAll(async () => {
     const user = await prisma.user.create({
       data: { ...u, password: 'password123', fullname: u.username }
     });
-    tokens[u.username] = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+    tokens[u.username] = jwt.sign({ id: user.username }, process.env.JWT_SECRET);
   }
 
   adminToken = tokens['admin_god'];
