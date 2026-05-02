@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction } from 'react';
+import React, { useState, useEffect, Dispatch, SetStateAction } from 'react'; // Thêm useState, useEffect
 import { useLocation, useNavigate } from 'react-router';
 import { 
   // MessageSquare, 
@@ -37,6 +37,33 @@ const chatGroups = [
 export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Tạo state để lưu thông tin người dùng
+  const [userInfo, setUserInfo] = useState({
+    fullname: 'Loading...',
+    username: '',
+    initials: 'U'
+  });
+
+  useEffect(() => {
+    // Lấy dữ liệu từ localStorage
+    const storedName = localStorage.getItem('uniplatform_fullname') || 'User';
+    const storedUsername = localStorage.getItem('uniplatform_username') || '';
+    
+    // Tạo initials (chữ cái đầu) từ tên
+    const initials = storedName
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+
+    setUserInfo({
+      fullname: storedName,
+      username: storedUsername,
+      initials: initials
+    });
+  }, []);
 
   const handleNavClick = (path: string) => {
     onSelectGroup(null);
@@ -131,12 +158,19 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
             location.pathname.startsWith('/profile') ? 'bg-purple-50' : 'hover:bg-gray-50'
           }`}
         >
+          {/* Hiển thị initials thay cho "JS" */}
           <div className="w-8 h-8 rounded-full bg-purple-200 border-2 border-white shadow-sm flex items-center justify-center text-purple-700 font-semibold text-xs shrink-0">
-            JS
+            {userInfo.initials}
           </div>
           <div className="flex-1 text-left min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">Jane Smith</p>
-            <p className="text-xs text-gray-500 truncate">Computer Science</p>
+            {/* Hiển thị fullname thực tế */}
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {userInfo.fullname}
+            </p>
+            {/* Hiển thị username hoặc email phía dưới */}
+            <p className="text-xs text-gray-500 truncate">
+              @{userInfo.username}
+            </p>
           </div>
           <Settings size={16} className="text-gray-400 shrink-0" />
         </button>

@@ -57,7 +57,7 @@ beforeAll(async () => {
     }
   });
 
-  const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+  const token = jwt.sign({ id: user.username }, process.env.JWT_SECRET);
 
   await prisma.workspace.create({
     data: {

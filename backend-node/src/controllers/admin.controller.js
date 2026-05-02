@@ -123,7 +123,7 @@ const updateUserStatus = async (req, res, next) => {
     });
 
     // Log the change
-    await logChange(req.user.username, 'User', user.id, oldUser, user);
+    await logChange(req.user.username, 'User', user.username, oldUser, user);
 
     res.json(user);
   } catch (error) {
@@ -169,7 +169,7 @@ const forceLogoutUser = async (req, res, next) => {
     });
 
     // Log the change
-    await logChange(req.user.username, 'User', user.id, oldUser, user);
+    await logChange(req.user.username, 'User', user.username, oldUser, user);
 
     res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion });
   } catch (error) {

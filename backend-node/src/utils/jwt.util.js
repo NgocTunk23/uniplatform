@@ -6,8 +6,8 @@ const jwt = require('jsonwebtoken');
  * @param {number} tokenVersion - The version of the token
  * @returns {string} The signed JWT
  */
-const generateToken = (id, tokenVersion = 0) => {
-  return jwt.sign({ id, tokenVersion }, process.env.JWT_SECRET, {
+const generateToken = (identifier, tokenVersion = 0) => {
+  return jwt.sign({ id: identifier, tokenVersion }, process.env.JWT_SECRET, {
     expiresIn: '30d',
   });
 };

@@ -11,30 +11,46 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(auto()) @map("_id") @db.ObjectId
-  username     String    @unique
-  password     String
-  fullname     String
-  role         String    @default("Member")
-  dateofbirth  DateTime?
-  address      String?
-  email        String    @unique
-  phone        String?
-  status       String    @default("active")
-  imageuser    String?
-  tokenVersion Int       @default(0)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  username    String    @id @map("_id") 
+  password    String
+  fullname    String
+  role        String    @default("Member")
+  dateofbirth DateTime?
+  address     String?
+  email       String    @unique
+  phone       String?
+  status      String    @default("active")
+  createdat   DateTime  @default(now())
+  imageuser   String?
+
+  // Navigation properties for relationships
+  schedules      Schedules[]
+  systemLogs     SystemLog[]
+  meetingMinutes MeetingMinutes[]
+}
+
+model Schedules {
+  scheduleid  String   @id @default(auto()) @map("_id") @db.ObjectId
+  username    String
+  title       String
+  description String?
+  starttime   DateTime
+  endtime     DateTime
+  type        String
+  createat    DateTime @default(now())
+
+  user        User     @relation(fields: [username], references: [username])
 }
 
 model Workspace {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  admin     String    // Refers to User.username
-  members   Member[]
-  messages  Message[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  workspaceid String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  admin       String
+  member      Member[]
+  createdat   DateTime @default(now())
+
+  messages    Messages[]
+  meetings    Meeting[]
 }
 
 type Member {
@@ -43,43 +59,82 @@ type Member {
   joinedat      DateTime @default(now())
 }
 
-model Message {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  workspaceId     String   @db.ObjectId
+model Messages {
+  messageid       String   @id @default(auto()) @map("_id") @db.ObjectId
+  workspaceid     String   @db.ObjectId
   senderusername  String
   content         String
-  replyToId       String?  @db.ObjectId
-  mentions        String[]
+  createat        DateTime @default(now())
+  reply           String?
+  userid          String[]
   vectorembedding Float[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
 
-  workspace       Workspace @relation(fields: [workspaceId], references: [id])
-  files           File[]
+  workspace       Workspace @relation(fields: [workspaceid], references: [workspaceid])
+  files           Files[]
 }
 
-model File {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  uploader        String   // Refers to User.username
-  messageId       String?  @db.ObjectId
-  meetingminuteid String?
+model Meeting {
+  meetingid      String   @id @default(auto()) @map("_id") @db.ObjectId
+  workspaceid    String   @db.ObjectId
+  title          String
+  starttime      DateTime
+  endtime        DateTime
+  organizer      String
+  participants   String[]
+  status         String
+  createat       DateTime @default(now())
+  link           String?
+  place          String?
+  bot_status     String?
+  recording_file String?
+
+  workspace      Workspace       @relation(fields: [workspaceid], references: [workspaceid])
+  meetingMinute  MeetingMinutes?
+}
+
+model MeetingMinutes {
+  meetingminuteid String   @id @default(auto()) @map("_id") @db.ObjectId
+  meetingid       String   @unique @db.ObjectId
+  createby        String
+  content         String?
+  task            String[]
+  createat        DateTime @default(now())
+  updateat        DateTime @updatedAt
+  raw_transcript  String?
+  summary         String?
+  decisions       String[]
+  isbotgenerated  Boolean?
+  vectorembedding Float[]
+
+  meeting         Meeting  @relation(fields: [meetingid], references: [meetingid])
+  user            User     @relation(fields: [createby], references: [username])
+  files           Files[]
+}
+
+model Files {
+  fileid          String   @id @default(auto()) @map("_id") @db.ObjectId
+  uploader        String
+  messageid       String?  @db.ObjectId
+  meetingminuteid String?  @db.ObjectId
   filename        String
-  ggid            String   @unique
+  ggid            String
   typefile        String?
   sizefile        String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createat        DateTime @default(now())
 
-  message         Message? @relation(fields: [messageId], references: [id])
+  message         Messages?       @relation(fields: [messageid], references: [messageid])
+  meetingMinute   MeetingMinutes? @relation(fields: [meetingminuteid], references: [meetingminuteid])
 }
 
 model SystemLog {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  logid          String      @id @default(auto()) @map("_id") @db.ObjectId
   actorusername  String
   targetresource String
   targetid       String?
   changes        LogChange[]
-  createdAt      DateTime @default(now())
+  createat       DateTime    @default(now())
+
+  user           User        @relation(fields: [actorusername], references: [username])
 }
 
 type LogChange {
