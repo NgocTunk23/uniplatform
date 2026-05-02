@@ -14,9 +14,18 @@ function App() {
           });
           
           if (!response.ok) {
-            // Nếu API /me báo lỗi (token fake/hết hạn), xóa dữ liệu cũ
-            localStorage.removeItem('uniplatform_authenticated');
-            localStorage.removeItem('uniplatform_user_token');
+            // Chỉ xóa token khi server trả về 401 (Unauthorized) hoặc 403 (Forbidden)
+            // Không xóa nếu lỗi mạng (500) hoặc các lỗi khác
+            if (response.status === 401 || response.status === 403) {
+              localStorage.removeItem('uniplatform_authenticated');
+              localStorage.removeItem('uniplatform_user_token');
+              localStorage.removeItem('uniplatform_user_email');
+              localStorage.removeItem('uniplatform_username');
+              localStorage.removeItem('uniplatform_fullname');
+              
+              // Force reload or redirect if needed, but currently ProtectedRoute handles it if state changes
+              // window.location.href = '/login'; 
+            }
           }
         } catch (error) {
           console.error("Auth check failed", error);

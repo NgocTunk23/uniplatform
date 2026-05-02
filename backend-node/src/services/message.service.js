@@ -26,7 +26,7 @@ const getMessagesByWorkspace = async (workspaceId, currentUser, limit = 50, skip
   // Security check: must be member
   await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
 
-  return await prisma.message.findMany({
+  const messages = await prisma.message.findMany({
     where: { workspaceId: workspaceId },
     take: limit,
     skip: skip,
@@ -35,6 +35,20 @@ const getMessagesByWorkspace = async (workspaceId, currentUser, limit = 50, skip
       files: true
     }
   });
+
+  const senders = [...new Set(messages.map(m => m.senderusername))];
+  const users = await prisma.user.findMany({
+    where: { username: { in: senders } },
+    select: { username: true, fullname: true }
+  });
+  
+  const userMap = {};
+  users.forEach(u => userMap[u.username] = u.fullname);
+
+  return messages.map(m => ({
+    ...m,
+    senderfullname: userMap[m.senderusername] || m.senderusername
+  }));
 };
 
 module.exports = {

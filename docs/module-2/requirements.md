@@ -60,3 +60,21 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Validation:** Sử dụng **Zod** làm thư viện validate tập trung.
 - **Testing:** Đảm bảo độ tin cậy bằng bộ test tích hợp thực tế (Production-grade integration tests) phủ mọi kịch bản quan trọng.
 - **Documentation:** Tự động hóa tài liệu API chuyên nghiệp bằng **Swagger (OpenAPI 3.0)**.
+
+## 7. Frontend Architecture & Implementation (React + Vite)
+- **State Management & Auth:**
+    - Sử dụng `localStorage` để lưu trữ token (`uniplatform_user_token`) và thông tin người dùng.
+    - Component `App.tsx` tự động kiểm tra token hợp lệ khi khởi tạo ứng dụng thông qua `/api/auth/me`. Xử lý log out an toàn khi nhận `401/403` từ API, ngăn chặn lỗi mất phiên làm việc do network error.
+    - Sử dụng `ProtectedRoute` để bảo vệ các route yêu cầu xác thực.
+- **Quản lý Workspace (Sidebar):**
+    - Component `Sidebar.tsx` gọi API `/api/workspaces` để load danh sách Work Groups động.
+    - Workspace ID được truyền qua context/props sang `ChatInterface` và `RightPanel`.
+- **Real-time Chat (`ChatInterface.tsx`):**
+    - Sử dụng `socket.io-client` để kết nối với server.
+    - Cấu trúc tin nhắn hỗ trợ văn bản, tệp đính kèm (UI Drive mockup), và trả lời theo luồng.
+    - Tự động fetch lịch sử tin nhắn từ `/api/messages/:workspaceId`.
+    - Lắng nghe event `receive_message` và `receive_message_confirmed` để cập nhật UI mượt mà.
+- **Tích hợp AI Chatbot (`UniBot`):**
+    - Hỗ trợ command `/ai [câu hỏi]` trực tiếp trong input box.
+    - Nút "Sparkles" dùng để gọi lệnh tóm tắt toàn bộ nội dung chat hiện tại thông qua event `ASK_AI`.
+    - Phân tách giao diện tin nhắn của `UniBot` (màu gradient) để dễ phân biệt với người dùng.

@@ -37,6 +37,7 @@ const registerChatHandlers = (io, socket) => {
       io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, { 
         ...data, 
         senderusername, 
+        senderfullname: user.fullname,
         createdAt: new Date() 
       });
 

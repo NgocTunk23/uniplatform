@@ -27,23 +27,47 @@ const navItems = [
   { icon: Bot,           label: 'AI Assistant',      path: '/ai-assistant' },
 ];
 
-const chatGroups = [
-  { name: 'Software Eng Project', unread: 3 },
-  { name: 'Marketing Team', unread: 0 },
-  { name: 'Design Capstone', unread: 1 },
-];
-
-// 2. Cập nhật lại phần khai báo component Sidebar để sử dụng interface vừa tạo
 export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Tạo state để lưu thông tin người dùng
+  const [chatGroups, setChatGroups] = useState<{ id: string; name: string; unread: number }[]>([]);
   const [userInfo, setUserInfo] = useState({
     fullname: 'Loading...',
     username: '',
     initials: 'U'
   });
+
+  useEffect(() => {
+    const fetchWorkspaces = async () => {
+      const token = localStorage.getItem('uniplatform_user_token');
+      if (!token) return;
+
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const response = await fetch(`${apiUrl}/api/workspaces`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // Assume data is an array of workspaces: { id, name, ... }
+          const formattedGroups = data.map((ws: any) => ({
+            id: ws.id || ws._id,
+            name: ws.name,
+            unread: 0 // Mock unread count for now
+          }));
+          setChatGroups(formattedGroups);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workspaces:", error);
+      }
+    };
+
+    fetchWorkspaces();
+  }, []);
 
   useEffect(() => {
     // Lấy dữ liệu từ localStorage
@@ -113,18 +137,18 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
             Work Groups
           </h2>
           <div className="space-y-1">
-            {chatGroups.map((group, i) => {
-              const isGroupActive = activeGroup === group.name; // Kiểm tra xem group này có đang được chọn không
+            {chatGroups.length === 0 ? (
+               <div className="px-3 py-2 text-sm text-gray-400 italic">No workspaces found</div>
+            ) : chatGroups.map((group, i) => {
+              const isGroupActive = activeGroup === group.id; // Thay bằng id thay vì name để chắc chắn unique
               
               return (
                 <button
                   key={i}
-                  // THÊM SỰ KIỆN CLICK Ở ĐÂY:
                   onClick={() => {
-                    onSelectGroup(group.name); // Báo cho Dashboard biết group nào đang được chọn
+                    onSelectGroup(group.id); // Trả về ID thay vì name
                     onCloseMobile?.();
                   }}
-                  // Cập nhật class để có màu nền khi được active
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl group transition-colors ${
                     isGroupActive ? 'bg-purple-50' : 'hover:bg-gray-50'
                   }`}
