@@ -1,19 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router'; // Thêm useNavigate để chuyển hướng nếu lỗi token
 import {
   User, Mail, Building2, Shield, Smartphone, Clock, Bell, Globe,
   AlertTriangle, CheckCircle, ChevronRight, Camera, LogIn, LogOut, Key,
   Monitor, Edit3, X, Check, BookOpen, Loader2
 } from 'lucide-react';
-
-// ─── Mock Data cho các phần chưa có trong schema ──────────────────────────────
-const recentLogins = [
-  { device: 'MacBook Pro (Chrome)',   location: 'Singapore, SG',   time: '2 hours ago', current: true  },
-  { device: 'iPhone 15 Pro (Safari)', location: 'Singapore, SG',   time: '1 day ago',   current: false },
-];
-
-const managedDevices = [
-  { name: 'MacBook Pro',   type: 'Desktop', lastActive: 'Now',        trusted: true  },
-];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -74,6 +65,8 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function UserProfile() {
+  const navigate = useNavigate();
+
   // Trạng thái load dữ liệu
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -102,8 +95,6 @@ export function UserProfile() {
 
   // Settings
   const [language, setLanguage]                         = useState('English');
-  const [emailNotifications, setEmailNotifications]     = useState(true);
-  const [meetingReminders, setMeetingReminders]         = useState(true);
   const [profilePublic, setProfilePublic]               = useState(false);
   const [showDeactivateModal, setShowDeactivateModal]   = useState(false);
 
@@ -112,33 +103,50 @@ export function UserProfile() {
     const fetchUserData = async () => {
       try {
         setLoading(true);
-        // Lấy token từ localStorage (kiểm tra lại tên key của bạn)
         const token = localStorage.getItem('uniplatform_user_token'); 
+        
+        if (!token) {
+          navigate('/login');
+          return;
+        }
 
-        const response = await fetch('http://localhost:5000/api/users/profile', {
+        // CHÚ Ý: Đã đổi thành port 5001 hoặc dùng biến môi trường
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        
+        const response = await fetch(`${apiUrl}/api/users/profile`, {
           headers: {
-            'Authorization': `Bearer ${token}` //
+            'Authorization': `Bearer ${token}`
           }
         });
 
+        if (response.status === 401) {
+          localStorage.clear();
+          navigate('/login');
+          return;
+        }
+
         if (!response.ok) {
-          // Nếu không phải JSON, in ra text để debug
           const errorText = await response.text();
-          throw new Error(`Server error: ${response.status}. Check console.`);
+          throw new Error(`Lỗi tải dữ liệu: ${response.status}`);
         }
 
         const result = await response.json();
-        const userData = result.data; // Backend thường bọc dữ liệu trong field 'data'
+        const userData = result.data || result; // Phòng hờ cấu trúc backend trả về
 
         // Ánh xạ dữ liệu từ API vào State
-        setFullName(userData.fullname);
-        setEmail(userData.email);
-        setPhone(userData.phone);
-        setAddress(userData.address);
-        setAvatarUrl(userData.imageuser);
-        setUsername(userData.username);
-        setRole(userData.role);
-        setStatus(userData.status);
+        setUserId(userData._id || '');
+        setFullName(userData.fullname || '');
+        setEmail(userData.email || '');
+        setPhone(userData.phone || '');
+        setAddress(userData.address || '');
+        setAvatarUrl(userData.imageuser || 'https://via.placeholder.com/150');
+        setUsername(userData.username || '');
+        setRole(userData.role || 'user');
+        setStatus(userData.status || 'active');
+
+        if (userData.dateofbirth) {
+          setDob(userData.dateofbirth.split('T')[0]);
+        }
 
       } catch (err: any) {
         setError(err.message);
@@ -148,14 +156,16 @@ export function UserProfile() {
     };
 
     fetchUserData();
-  }, []);
+  }, [navigate]);
 
   // 2. Cập nhật Profile
   const handleSaveProfile = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('uniplatform_user_token');
-      const response = await fetch('/api/users/profile', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      const response = await fetch(`${apiUrl}/api/users/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +184,7 @@ export function UserProfile() {
       
       setSuccessMsg('Cập nhật thông tin thành công!');
       setEditingProfile(false);
-      setTimeout(() => setSuccessMsg(''), 3000); // Ẩn thông báo sau 3s
+      setTimeout(() => setSuccessMsg(''), 3000);
 
     } catch (err: any) {
       setError(err.message);
@@ -192,7 +202,9 @@ export function UserProfile() {
     
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const response = await fetch('/api/users/change-password', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      const response = await fetch(`${apiUrl}/api/auth/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -204,7 +216,7 @@ export function UserProfile() {
         })
       });
 
-      if (!response.ok) throw new Error('Đổi mật khẩu thất bại');
+      if (!response.ok) throw new Error('Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu cũ.');
       
       setSuccessMsg('Đổi mật khẩu thành công!');
       setShowChangePassword(false);
@@ -215,6 +227,13 @@ export function UserProfile() {
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  // 4. Đăng xuất
+  const handleLogout = () => {
+    localStorage.clear();
+    setIsLoggedIn(false);
+    navigate('/login');
   };
 
   if (loading && !userId) {
@@ -334,14 +353,11 @@ export function UserProfile() {
               </div>
 
               {!isLoggedIn ? (
-                <button onClick={() => setIsLoggedIn(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors">
+                <button onClick={() => navigate('/login')} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors">
                   <LogIn size={15} />Log In
                 </button>
               ) : (
-                <button onClick={() => {
-                   // Thêm logic xóa token ở đây: localStorage.removeItem('token')
-                   setIsLoggedIn(false);
-                }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition-colors">
+                <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition-colors">
                   <LogOut size={15} />Secure Log Out
                 </button>
               )}
@@ -376,7 +392,7 @@ export function UserProfile() {
             </div>
           </SectionCard>
 
-          {/* ── 4. Account Security (Giữ nguyên giao diện) ───────────────────────────────── */}
+          {/* ── 4. Account Security ───────────────────────────────── */}
           <SectionCard title="Account Security" icon={<Shield size={15} />}>
             <div className="space-y-4">
               {/* Security Status */}
@@ -473,9 +489,10 @@ export function UserProfile() {
               </button>
               <button
                 onClick={() => { 
-                  // Logic gọi API deactivate account ở đây
+                  // Logic gọi API deactivate account ở đây (nếu có)
                   setIsLoggedIn(false); 
                   setShowDeactivateModal(false); 
+                  handleLogout();
                 }}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors"
               >
