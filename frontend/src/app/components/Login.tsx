@@ -20,24 +20,43 @@ export function Login() {
       return;
     }
 
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      // For demo purposes, accept any email/password
-      // In production, this would validate against a backend
+    try {
+      // Gọi API đăng nhập thật
+      // Lưu ý: Nếu dùng Vite thì dùng import.meta.env.VITE_API_URL
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      
+      const response = await fetch(`${apiUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Backend đang mong đợi "identifier" (có thể là email) và "password"
+        body: JSON.stringify({ 
+          identifier: email, 
+          password: password 
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Đăng nhập thất bại');
+      }
+
+      // Lưu trữ trạng thái và thông tin nếu gọi API thành công
       localStorage.setItem('uniplatform_authenticated', 'true');
-      localStorage.setItem('uniplatform_user_email', email);
-      setIsLoading(false);
+      localStorage.setItem('uniplatform_user_token', data.token);
+      localStorage.setItem('uniplatform_user_email', data.email);
+      localStorage.setItem('uniplatform_username', data.username);
+      
       navigate('/chat');
-    }, 800);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
