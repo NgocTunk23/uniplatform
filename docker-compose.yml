@@ -4,7 +4,9 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - REACT_APP_API_URL=http://localhost:5000
+      - REACT_APP_API_URL=http://localhost:5001
+      # Nếu dự án frontend dùng Vite (thấy port 5173), bạn nên khai báo thêm biến VITE_
+      - VITE_API_URL=http://localhost:5001
     depends_on:
       - backend-node
 

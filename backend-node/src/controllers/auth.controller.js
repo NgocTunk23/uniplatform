@@ -137,12 +137,12 @@ const loginUser = async (req, res, next) => {
       }
 
       res.json({
-        id: user.id,
+        id: user.username,
         username: user.username,
         email: user.email,
         fullname: user.fullname,
         role: user.role,
-        token: generateToken(user.id, user.tokenVersion),
+        token: generateToken(user.username, user.tokenVersion),
       });
     } else {
       throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);
