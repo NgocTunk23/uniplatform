@@ -26,6 +26,7 @@ const fileRoutes = require('./src/routes/file.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const authRoutes = require('./src/routes/auth.routes');
 const userRoutes = require('./src/routes/user.routes');
+const meetingRoutes = require('./src/routes/meeting.routes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/meetings', meetingRoutes);
 
 // Basic Health Check Route
 app.get('/health', (req, res) => {

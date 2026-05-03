@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ChatInterface } from './ChatInterface';
 import {
   Video,
   VideoOff,
@@ -79,55 +80,57 @@ const mockChatMessages: ChatMessage[] = [
   },
 ];
 
+
+
+interface MeetingDetails {
+  meetingid: string;
+  title: string;
+  workspaceid: string;
+  starttime: string;
+  endtime: string;
+  status: string;
+}
+
 export function MeetingRoom() {
   const { meetingId } = useParams();
   const navigate = useNavigate();
+  const [meeting, setMeeting] = useState<MeetingDetails | null>(null);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [showChat, setShowChat] = useState(true);
   const [showParticipants, setShowParticipants] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(mockChatMessages);
-  const [newMessage, setNewMessage] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+  const token = localStorage.getItem('uniplatform_user_token');
 
-  const handleLeaveMeeting = () => {
+  useEffect(() => {
+    if (meetingId) {
+      fetchMeetingDetails();
+    }
+  }, [meetingId]);
+
+  const fetchMeetingDetails = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/meetings/${meetingId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMeeting(data);
+      }
+    } catch (err) {
+      console.error("Fetch meeting details error", err);
+    }
+  };
+
+  const handleLeaveMeeting = async () => {
+    // If it's ongoing and I'm the organizer, I could end it, but for now just leave.
     navigate('/meetings');
   };
 
-  const handleSendMessage = () => {
-    if (!newMessage.trim()) return;
-
-    const message: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'Jane Smith (You)',
-      senderId: '1',
-      message: newMessage,
-      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    };
-
-    setChatMessages([...chatMessages, message]);
-    setNewMessage('');
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const message: ChatMessage = {
-      id: Date.now().toString(),
-      sender: 'Jane Smith (You)',
-      senderId: '1',
-      message: 'Shared a file',
-      timestamp: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      file: {
-        name: file.name,
-        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-        type: file.name.split('.').pop() || 'file'
-      }
-    };
-
-    setChatMessages([...chatMessages, message]);
-  };
+  if (!meeting) {
+    return <div className="flex items-center justify-center h-full bg-gray-900 text-white">Loading meeting...</div>;
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-900">
@@ -136,7 +139,7 @@ export function MeetingRoom() {
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse flex-shrink-0" />
-            <span className="text-white font-medium text-sm md:text-base truncate">Software Engineering Sprint Planning</span>
+            <span className="text-white font-medium text-sm md:text-base truncate">{meeting.title}</span>
           </div>
           <span className="text-gray-400 text-xs md:text-sm hidden sm:block">2:15:32</span>
         </div>
@@ -224,8 +227,7 @@ export function MeetingRoom() {
               onClick={() => setShowChat(false)}
             />
 
-            {/* Chat Panel */}
-            <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-80 bg-white border-l border-gray-200 flex flex-col z-50 shadow-2xl md:shadow-none">
+            <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-[360px] bg-white border-l border-gray-200 flex flex-col z-50 shadow-2xl md:shadow-none">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">Meeting Chat</h3>
                 <button
@@ -236,66 +238,8 @@ export function MeetingRoom() {
                 </button>
               </div>
 
-              {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {chatMessages.map((msg) => (
-                  <div key={msg.id} className="space-y-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-medium text-sm text-gray-900">{msg.sender}</span>
-                      <span className="text-xs text-gray-500">{msg.timestamp}</span>
-                    </div>
-                    <div className={`${msg.senderId === '1' ? 'bg-purple-50 border border-purple-100' : 'bg-gray-50 border border-gray-100'} rounded-lg p-3`}>
-                      <p className="text-sm text-gray-900">{msg.message}</p>
-                      {msg.file && (
-                        <div className="mt-2 flex items-center gap-2 p-2 bg-white border border-gray-200 rounded-lg">
-                          <div className="p-2 bg-purple-50 rounded">
-                            <Paperclip size={16} className="text-purple-500" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{msg.file.name}</p>
-                            <p className="text-xs text-gray-500">{msg.file.size}</p>
-                          </div>
-                          <button className="p-1.5 hover:bg-gray-100 rounded transition-colors">
-                            <Download size={16} className="text-gray-600" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Chat Input */}
-              <div className="p-4 border-t border-gray-200">
-                <div className="flex gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-                  >
-                    <Paperclip size={20} className="text-gray-600" />
-                  </button>
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    placeholder="Type a message..."
-                    className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent min-w-0"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!newMessage.trim()}
-                    className="p-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex-shrink-0"
-                  >
-                    <Send size={20} />
-                  </button>
-                </div>
+              <div className="flex-1 overflow-hidden">
+                <ChatInterface workspaceId={meeting.workspaceid} hideHeader={true} />
               </div>
             </div>
           </>

@@ -18,10 +18,12 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 ## 2. Quản lý Không gian làm việc (Workspace)
 - **Tạo Workspace:** Trưởng nhóm (Leader) tạo nhóm làm việc mới.
 - **Quản lý thành viên:**
-    - Mời thành viên vào Workspace.
-    - Xóa thành viên khỏi Workspace.
+    - Mời thành viên vào Workspace: Cho phép **mọi thành viên** (ngoại trừ Viewer) có thể mời người mới vào nhóm để tăng tính cộng tác.
+    - Xóa thành viên khỏi Workspace: Chỉ có **Leader** hoặc **System Admin** mới có quyền trục xuất thành viên.
+    - Hiển thị danh sách: Ưu tiên hiển thị **Họ và tên (Full Name)** của thành viên để tăng tính chuyên nghiệp, username được hiển thị phụ trợ.
     - Phân quyền nghiêm ngặt trong Workspace: `Leader`, `Member`, `Viewer`.
-    - **Viewer Role:** Chế độ **Read-only**. Chỉ có quyền xem tin nhắn và tài liệu, không có quyền gửi tin nhắn, đặt câu hỏi cho AI, hoặc tải lên/xóa tệp tin.
+    - **Bảo mật phân quyền (Role Assignment Security):** Chỉ có **Leader** hoặc **System Admin** mới có quyền chỉ định người khác làm `Leader`. Thành viên bình thường khi mời người mới chỉ được chọn role `Member` hoặc `Viewer`.
+    - **Viewer Role:** Chế độ **Read-only**. Hệ thống tự động vô hiệu hóa (disable) toàn bộ khung nhập chat, nút đính kèm tệp và các tính năng tương tác (AI Summarize) đối với người dùng có vai trò này.
 - **Quyền Quản trị tối cao (System Admin):** Vai trò `Admin` hệ thống được cấp quyền Superuser, có thể truy cập mọi Workspace và xóa bất kỳ tệp tin nào để hỗ trợ quản trị và bảo trì.
 
 ## 3. Nhắn tin nhóm (Real-time Chat)
@@ -78,3 +80,22 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - Hỗ trợ command `/ai [câu hỏi]` trực tiếp trong input box.
     - Nút "Sparkles" dùng để gọi lệnh tóm tắt toàn bộ nội dung chat hiện tại thông qua event `ASK_AI`.
     - Phân tách giao diện tin nhắn của `UniBot` (màu gradient) để dễ phân biệt với người dùng.
+
+## 8. Quản lý Cuộc họp (Meeting System)
+### Backend Requirements:
+- **Quản lý lịch họp:** Hỗ trợ tạo, cập nhật trạng thái (`upcoming`, `ongoing`, `ended`) cho các cuộc họp trong Workspace.
+- **Biên bản cuộc họp (Meeting Minutes):** Lưu trữ nội dung tóm tắt, quyết định và nhiệm vụ từ cuộc họp (hỗ trợ lưu trữ dữ liệu do Bot tạo ra).
+- **API Endpoints:**
+    - `GET /api/meetings`: Lấy danh sách tất cả cuộc họp của người dùng.
+    - `POST /api/meetings`: Lập lịch cuộc họp mới.
+    - `GET /api/meetings/:id`: Chi tiết cuộc họp.
+    - `PUT /api/meetings/:id/status`: Cập nhật trạng thái cuộc họp.
+
+### Frontend Implementation:
+- **Lịch biểu cuộc họp (`MeetingsSchedule.tsx`):**
+    - Hiển thị danh sách cuộc họp theo tab: Tất cả, Sắp tới, Đã diễn ra.
+    - Chức năng "Schedule Meeting" cho phép Leader tạo cuộc họp mới thông qua Modal.
+- **Phòng họp (`MeetingRoom.tsx`):**
+    - Giao diện Video Grid mockup với điều khiển Mic/Camera.
+    - **Tích hợp Chat Workspace:** Nhúng trực tiếp `ChatInterface` vào phòng họp để người dùng trao đổi trong lúc thảo luận, đảm bảo tính đồng bộ dữ liệu với Workspace chính.
+

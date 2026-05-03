@@ -93,6 +93,8 @@ const uploadFile = async (fileObject) => {
       },
     });
 
+    console.log('📦 Drive create response:', response ? 'exists' : 'null');
+    if (response) console.log('📦 Response data:', response.data ? 'exists' : 'null');
     return response.data;
   } catch (error) {
     if (error.response) {

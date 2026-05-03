@@ -2,85 +2,120 @@ const prisma = require('../config/prisma');
 const ROLES = require('../constants/roles');
 const permissionUtil = require('../utils/permission.util');
 const { logChange } = require('../utils/audit-logger.util');
+const ApiError = require('../utils/api-error');
+const ERROR_CODES = require('../constants/error-codes');
+
+const enrichWorkspaceMembers = async (workspace) => {
+  if (!workspace || !workspace.member || workspace.member.length === 0) return workspace;
+
+  const usernames = workspace.member.map(m => m.username);
+  const users = await prisma.user.findMany({
+    where: { username: { in: usernames } },
+    select: { username: true, fullname: true, imageuser: true }
+  });
+
+  const userMap = users.reduce((acc, user) => {
+    acc[user.username] = user;
+    return acc;
+  }, {});
+
+  workspace.member = workspace.member.map(m => ({
+    ...m,
+    fullname: userMap[m.username]?.fullname || m.username,
+    imageuser: userMap[m.username]?.imageuser
+  }));
+
+  return workspace;
+};
 
 const createWorkspace = async (workspaceData) => {
-  return await prisma.workspace.create({
+  const workspace = await prisma.workspace.create({
     data: {
       name: workspaceData.name,
       admin: workspaceData.admin,
-      members: {
+      member: {
         set: [{ username: workspaceData.admin, workspacerole: ROLES.WORKSPACE.LEADER }]
       }
     }
   });
+  return await enrichWorkspaceMembers(workspace);
 };
 
 const getAllWorkspaces = async (currentUser) => {
+  let workspaces;
   // If not System Admin, only show workspaces user is a member of
   if (currentUser.role === ROLES.SYSTEM.ADMIN) {
-    return await prisma.workspace.findMany({
+    workspaces = await prisma.workspace.findMany({
       include: {
-        members: true,
+        _count: { select: { messages: true } }
+      }
+    });
+  } else {
+    workspaces = await prisma.workspace.findMany({
+      where: {
+        member: {
+          some: { username: currentUser.username }
+        }
+      },
+      include: {
         _count: { select: { messages: true } }
       }
     });
   }
 
-  return await prisma.workspace.findMany({
-    where: {
-      members: {
-        some: { username: currentUser.username }
-      }
-    },
-    include: {
-      members: true,
-      _count: { select: { messages: true } }
-    }
-  });
+  return await Promise.all(workspaces.map(w => enrichWorkspaceMembers(w)));
 };
 
-const getWorkspaceById = async (id, currentUser) => {
+const getWorkspaceById = async (workspaceid, currentUser) => {
   // Membership check
-  await permissionUtil.getWorkspaceMembership(id, currentUser);
+  await permissionUtil.getWorkspaceMembership(workspaceid, currentUser);
 
-  return await prisma.workspace.findUnique({
-    where: { id },
-    include: {
-      members: true,
-    }
+  const workspace = await prisma.workspace.findUnique({
+    where: { workspaceid }
   });
+
+  return await enrichWorkspaceMembers(workspace);
 };
 
-const updateWorkspace = async (id, updateData, currentUser) => {
-  await permissionUtil.ensureLeader(id, currentUser);
-  return await prisma.workspace.update({
-    where: { id },
+const updateWorkspace = async (workspaceid, updateData, currentUser) => {
+  await permissionUtil.ensureLeader(workspaceid, currentUser);
+  const result = await prisma.workspace.update({
+    where: { workspaceid },
     data: updateData,
   });
+  return await enrichWorkspaceMembers(result);
 };
 
-const deleteWorkspace = async (id, currentUser) => {
-  await permissionUtil.ensureLeader(id, currentUser);
+const deleteWorkspace = async (workspaceid, currentUser) => {
+  await permissionUtil.ensureLeader(workspaceid, currentUser);
   return await prisma.workspace.delete({
-    where: { id },
+    where: { workspaceid },
   });
 };
 
 const addMember = async (workspaceId, memberData, currentUser) => {
-  await permissionUtil.ensureLeader(workspaceId, currentUser);
+  // Allow all members to add members, but check membership first
+  const callerMembership = await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
   
-  const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
-  const members = workspace.members || [];
+  // Security: Only Leaders can assign the 'Leader' role
+  if (memberData.workspacerole === ROLES.WORKSPACE.LEADER) {
+    if (!callerMembership.isSystemAdmin && callerMembership.workspacerole !== ROLES.WORKSPACE.LEADER) {
+      throw new ApiError(403, 'Authority denied. Only Leaders can assign the Leader role.', ERROR_CODES.AUTH.AUTH_ERROR);
+    }
+  }
+
+  const workspace = await prisma.workspace.findUnique({ where: { workspaceid: workspaceId } });
+  const member = workspace.member || [];
   
   // Check if already a member
-  if (members.find(m => m.username === memberData.username)) {
-    return workspace;
+  if (member.find(m => m.username === memberData.username)) {
+    return await enrichWorkspaceMembers(workspace);
   }
 
   const result = await prisma.workspace.update({
-    where: { id: workspaceId },
+    where: { workspaceid: workspaceId },
     data: {
-      members: {
+      member: {
         push: [{
           username: memberData.username,
           workspacerole: memberData.workspacerole || ROLES.WORKSPACE.MEMBER,
@@ -93,20 +128,20 @@ const addMember = async (workspaceId, memberData, currentUser) => {
   // Audit Log
   await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
   
-  return result;
+  return await enrichWorkspaceMembers(result);
 };
 
 const removeMember = async (workspaceId, username, currentUser) => {
   await permissionUtil.ensureLeader(workspaceId, currentUser);
 
-  const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
-  const members = workspace.members || [];
-  const updatedMembers = members.filter(m => m.username !== username);
+  const workspace = await prisma.workspace.findUnique({ where: { workspaceid: workspaceId } });
+  const member = workspace.member || [];
+  const updatedMembers = member.filter(m => m.username !== username);
 
   const result = await prisma.workspace.update({
-    where: { id: workspaceId },
+    where: { workspaceid: workspaceId },
     data: {
-      members: {
+      member: {
         set: updatedMembers
       }
     }
@@ -115,22 +150,22 @@ const removeMember = async (workspaceId, username, currentUser) => {
   // Audit Log
   await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
 
-  return result;
+  return await enrichWorkspaceMembers(result);
 };
 
 const updateMemberRole = async (workspaceId, username, workspacerole, currentUser) => {
   await permissionUtil.ensureLeader(workspaceId, currentUser);
 
-  const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
-  const members = workspace.members || [];
-  const updatedMembers = members.map(m => 
+  const workspace = await prisma.workspace.findUnique({ where: { workspaceid: workspaceId } });
+  const member = workspace.member || [];
+  const updatedMembers = member.map(m => 
     m.username === username ? { ...m, workspacerole } : m
   );
 
   const result = await prisma.workspace.update({
-    where: { id: workspaceId },
+    where: { workspaceid: workspaceId },
     data: {
-      members: {
+      member: {
         set: updatedMembers
       }
     }
@@ -139,7 +174,7 @@ const updateMemberRole = async (workspaceId, username, workspacerole, currentUse
   // Audit Log
   await logChange(currentUser.username, 'Workspace', workspaceId, workspace, result);
 
-  return result;
+  return await enrichWorkspaceMembers(result);
 };
 
 module.exports = {

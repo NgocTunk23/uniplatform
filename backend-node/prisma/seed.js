@@ -167,29 +167,98 @@ async function main() {
     },
   ];
 
+  const seededWorkspaces = [];
+
   for (const ws of workspaces) {
     const existing = await prisma.workspace.findFirst({
       where: { name: ws.name }
     });
 
+    let currentWs;
     if (existing) {
-      await prisma.workspace.update({
-        where: { id: existing.id },
+      currentWs = await prisma.workspace.update({
+        where: { workspaceid: existing.workspaceid },
         data: {
           admin: ws.admin,
-          members: {
+          member: {
             set: ws.members
           }
         }
       });
     } else {
-      await prisma.workspace.create({
+      currentWs = await prisma.workspace.create({
         data: {
           name: ws.name,
           admin: ws.admin,
-          members: {
+          member: {
             set: ws.members
           }
+        }
+      });
+    }
+    seededWorkspaces.push({
+      ...currentWs,
+      memberUsernames: ws.members.map(m => m.username)
+    });
+  }
+
+  // Seed Meetings
+  console.log("📅 Seeding Meetings...");
+  const meetingTitles = [
+    "Sprint Planning", "Design Review", "Marketing Sync", 
+    "Weekly Sync", "Client Presentation", "Tech Debt Review",
+    "Product Brainstorming", "All Hands", "Retrospective"
+  ];
+  const statuses = ["ongoing", "upcoming", "ended", "upcoming", "ended"];
+  
+  for (let i = 0; i < 20; i++) {
+    const ws = seededWorkspaces[i % seededWorkspaces.length];
+    const status = statuses[i % statuses.length];
+    
+    let starttime = new Date();
+    let endtime = new Date();
+    
+    if (status === "ongoing") {
+      starttime.setMinutes(starttime.getMinutes() - 30);
+      endtime.setMinutes(endtime.getMinutes() + 30);
+    } else if (status === "upcoming") {
+      starttime.setDate(starttime.getDate() + (i % 5) + 1);
+      endtime = new Date(starttime);
+      endtime.setHours(endtime.getHours() + 1);
+    } else { // ended
+      starttime.setDate(starttime.getDate() - (i % 5) - 1);
+      endtime = new Date(starttime);
+      endtime.setHours(endtime.getHours() + 1);
+    }
+
+    const meetingTitle = `${ws.name} - ${meetingTitles[i % meetingTitles.length]}`;
+    
+    const meeting = await prisma.meeting.create({
+      data: {
+        workspaceid: ws.workspaceid,
+        title: meetingTitle,
+        starttime,
+        endtime,
+        organizer: ws.admin,
+        participants: ws.memberUsernames,
+        status: status,
+        link: `https://meet.uniplatform.com/${Math.random().toString(36).substring(2, 10)}`,
+        bot_status: status === "ongoing" ? "recording" : (status === "ended" ? "completed" : "idle"),
+        recording_file: status === "ended" ? "recording_v1.mp4" : null
+      }
+    });
+
+    if (status === "ended" && i % 2 === 0) {
+      await prisma.meetingMinutes.create({
+        data: {
+          meetingid: meeting.meetingid,
+          createby: ws.admin,
+          content: "Discussed key deliverables and project timeline.",
+          task: ["Update design mockups", "Fix API bug"],
+          decisions: ["Approved Q3 budget"],
+          summary: "A productive meeting focusing on the next sprint.",
+          isbotgenerated: true,
+          vectorembedding: []
         }
       });
     }

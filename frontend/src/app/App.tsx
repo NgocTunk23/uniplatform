@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { RouterProvider } from 'react-router';
 import { router } from './routes'; // Import đúng biến router từ file routes.tsx
+import { Toaster } from 'sonner';
 
 function App() {
   useEffect(() => {
@@ -36,7 +37,12 @@ function App() {
   }, []);
 
   // Sử dụng RouterProvider với biến router đã cấu hình
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <Toaster position="top-right" richColors />
+      <RouterProvider router={router} />
+    </>
+  );
 }
 
 export default App;
