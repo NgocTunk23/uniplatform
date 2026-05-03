@@ -13,7 +13,7 @@ const prisma = require('../src/config/prisma');
 const SOCKET_EVENTS = require('../src/constants/socket-events');
 
 let users = [];
-let workspaceId;
+let workspaceid;
 let sockets = [];
 const TEST_PORT = 5003; 
 const serverUrl = `http://localhost:${TEST_PORT}`;
@@ -21,16 +21,20 @@ const serverUrl = `http://localhost:${TEST_PORT}`;
 jest.setTimeout(30000);
 
 beforeAll(async () => {
-  // 1. Clean up
-  await prisma.file.deleteMany({});
-  await prisma.message.deleteMany({});
+  // 1. Clean up in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
-  // 2. Start Server
+  // 2. Start Server on random port
   await new Promise((resolve) => {
-    server.listen(TEST_PORT, () => {
-      console.log(`📡 Test Server listening on port ${TEST_PORT}`);
+    server.listen(0, () => {
+      const port = server.address().port;
+      console.log(`📡 Test Server listening on port ${port}`);
       resolve();
     });
   });
@@ -56,16 +60,16 @@ beforeAll(async () => {
     .post('/api/workspaces')
     .set('Authorization', `Bearer ${users[0].token}`)
     .send({ name: 'Full Flow Workspace', admin: 'alice' });
-  workspaceId = workspaceRes.body.id;
+  workspaceid = workspaceRes.body.id;
 
   // 5. Add Bob and Charlie to workspace
   await request(app)
-    .post(`/api/workspaces/${workspaceId}/members`)
+    .post(`/api/workspaces/${workspaceid}/members`)
     .set('Authorization', `Bearer ${users[0].token}`)
     .send({ username: 'bob', workspacerole: 'Member' });
 
   await request(app)
-    .post(`/api/workspaces/${workspaceId}/members`)
+    .post(`/api/workspaces/${workspaceid}/members`)
     .set('Authorization', `Bearer ${users[0].token}`)
     .send({ username: 'charlie', workspacerole: 'Member' });
 });
@@ -77,7 +81,8 @@ afterAll(async () => {
 });
 
 function createSocket(token) {
-  return io(serverUrl, {
+  const port = server.address().port;
+  return io(`http://localhost:${port}`, {
     auth: { token },
     transports: ['websocket'],
     forceNew: true
@@ -93,11 +98,11 @@ describe('3-User Chat Full Flow Integration Test', () => {
       sockets[index] = socket;
 
       socket.on('connect', () => {
-        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
       });
 
       socket.on(SOCKET_EVENTS.WORKSPACE_JOINED, (data) => {
-        expect(data.workspaceId).toBe(workspaceId);
+        expect(data.workspaceid).toBe(workspaceid);
         connectedCount++;
         if (connectedCount === 3) done();
       });
@@ -124,7 +129,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
     });
 
     sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-      workspaceId,
+      workspaceid,
       content: messageContent
     });
   });
@@ -137,7 +142,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
       .attach('file', Buffer.from('bob file content'), 'bob_report.pdf');
     
     expect(uploadRes.statusCode).toBe(201);
-    const fileId = uploadRes.body.file.id;
+    const fileId = uploadRes.body.file.fileid;
 
     // 2. Bob sends message with fileId via Socket
     const promise = new Promise((resolve) => {
@@ -150,7 +155,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
     });
 
     sockets[1].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-      workspaceId,
+      workspaceid,
       content: 'Here is the report',
       fileIds: [fileId]
     });
@@ -160,7 +165,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
 
   test('Step 4: Charlie verifies chat history with attachments', async () => {
     const res = await request(app)
-      .get(`/api/messages/${workspaceId}`)
+      .get(`/api/messages/${workspaceid}`)
       .set('Authorization', `Bearer ${users[2].token}`);
 
     expect(res.statusCode).toBe(200);
@@ -181,7 +186,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
     
     expect(uploadRes.status).toBe(201);
     
-    const fileId = uploadRes.body.file.id;
+    const fileId = uploadRes.body.file.fileid;
 
     const promise = new Promise((resolve) => {
       sockets[2].once(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, (data) => {
@@ -194,7 +199,7 @@ describe('3-User Chat Full Flow Integration Test', () => {
     });
 
     sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-      workspaceId,
+      workspaceid,
       content: '',
       fileIds: [fileId]
     });
@@ -204,12 +209,12 @@ describe('3-User Chat Full Flow Integration Test', () => {
 
   test('Step 6: Final history check for all 3 messages', async () => {
     const res = await request(app)
-      .get(`/api/messages/${workspaceId}`)
+      .get(`/api/messages/${workspaceid}`)
       .set('Authorization', `Bearer ${users[1].token}`);
 
     expect(res.body).toHaveLength(3);
     // Sort by date to verify sequence
-    const sorted = res.body.sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const sorted = res.body.sort((a,b) => new Date(a.createdat) - new Date(b.createdat));
     expect(sorted[0].content).toBe('Hello everyone!');
     expect(sorted[1].content).toBe('Here is the report');
     expect(sorted[2].files[0].filename).toBe('photo.jpg');

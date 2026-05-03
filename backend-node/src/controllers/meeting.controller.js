@@ -31,6 +31,7 @@ const getAllMeetings = async (req, res, next) => {
       const room = meetingRooms.get(meeting.meetingid);
       return {
         ...meeting,
+        id: meeting.meetingid,
         activeParticipantsCount: room ? room.size : 0
       };
     });
@@ -50,6 +51,7 @@ const getMeetingsByWorkspace = async (req, res, next) => {
       const room = meetingRooms.get(meeting.meetingid);
       return {
         ...meeting,
+        id: meeting.meetingid,
         activeParticipantsCount: room ? room.size : 0
       };
     });
@@ -64,7 +66,7 @@ const getMeetingById = async (req, res, next) => {
   try {
     const meeting = await meetingService.getMeetingById(req.params.id, req.user);
     if (!meeting) throw new ApiError(404, 'Meeting not found');
-    res.json(meeting);
+    res.json({ ...meeting, id: meeting.meetingid });
   } catch (error) {
     next(error);
   }
@@ -73,7 +75,7 @@ const getMeetingById = async (req, res, next) => {
 const createMeeting = async (req, res, next) => {
   try {
     const meeting = await meetingService.createMeeting(req.body, req.user);
-    res.status(201).json(meeting);
+    res.status(201).json({ ...meeting, id: meeting.meetingid });
   } catch (error) {
     next(error);
   }
@@ -83,7 +85,7 @@ const updateMeetingStatus = async (req, res, next) => {
   try {
     const meeting = await meetingService.updateMeetingStatus(req.params.id, req.body, req.user);
     if (!meeting) throw new ApiError(404, 'Meeting not found');
-    res.json(meeting);
+    res.json({ ...meeting, id: meeting.meetingid });
   } catch (error) {
     next(error);
   }

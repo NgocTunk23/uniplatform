@@ -20,7 +20,7 @@ const getDashboardStats = async (req, res, next) => {
   try {
     const userCount = await prisma.user.count();
     const workspaceCount = await prisma.workspace.count();
-    const messageCount = await prisma.message.count();
+    const messageCount = await prisma.messages.count();
     
     const freeMem = os.freemem() / 1024 / 1024 / 1024;
     const totalMem = os.totalmem() / 1024 / 1024 / 1024;
@@ -71,13 +71,13 @@ const getAllUsers = async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       select: {
-        id: true,
+        username: true,
         username: true,
         email: true,
         fullname: true,
         role: true,
         status: true,
-        createdAt: true,
+        createdat: true,
       }
     });
     res.json(users);
@@ -114,18 +114,21 @@ const getAllUsers = async (req, res, next) => {
 const updateUserStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const oldUser = await prisma.user.findUnique({ where: { username: req.params.id } });
     if (!oldUser) throw new ApiError(404, 'User not found');
 
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { username: req.params.id },
       data: { status },
     });
 
     // Log the change
     await logChange(req.user.username, 'User', user.username, oldUser, user);
 
-    res.json(user);
+    res.json({
+      ...user,
+      tokenVersion: user.tokenVersion ? user.tokenVersion.toString() : '0'
+    });
   } catch (error) {
     next(error);
   }
@@ -147,7 +150,7 @@ const getSystemLogs = async (req, res, next) => {
   try {
     const logs = await prisma.systemLog.findMany({
       take: 100,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdat: 'desc' },
     });
     res.json(logs);
   } catch (error) {
@@ -155,23 +158,24 @@ const getSystemLogs = async (req, res, next) => {
   }
 };
 
+
 /**
  * Force logout a user by incrementing their tokenVersion
  */
 const forceLogoutUser = async (req, res, next) => {
   try {
-    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const oldUser = await prisma.user.findUnique({ where: { username: req.params.id } });
     if (!oldUser) throw new ApiError(404, 'User not found');
 
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { username: req.params.id },
       data: { tokenVersion: { increment: 1 } },
     });
 
     // Log the change
     await logChange(req.user.username, 'User', user.username, oldUser, user);
 
-    res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion });
+    res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion.toString() });
   } catch (error) {
     next(error);
   }

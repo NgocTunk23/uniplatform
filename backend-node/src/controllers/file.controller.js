@@ -32,6 +32,9 @@ const uploadFile = async (req, res, next) => {
       throw new ApiError(400, 'No file uploaded', ERROR_CODES.FILE.FILE_MISSING);
     }
 
+    // Fix UTF-8 encoding for originalname (Multer default is latin1)
+    req.file.originalname = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+
     // Upload to Google Drive
     console.log('📤 Uploading file to Drive:', req.file.originalname);
     const driveData = await gdriveUtil.uploadFile(req.file);

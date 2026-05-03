@@ -94,15 +94,8 @@ const deleteWorkspace = async (workspaceid, currentUser) => {
 };
 
 const addMember = async (workspaceId, memberData, currentUser) => {
-  // Allow all members to add members, but check membership first
-  const callerMembership = await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
-  
-  // Security: Only Leaders can assign the 'Leader' role
-  if (memberData.workspacerole === ROLES.WORKSPACE.LEADER) {
-    if (!callerMembership.isSystemAdmin && callerMembership.workspacerole !== ROLES.WORKSPACE.LEADER) {
-      throw new ApiError(403, 'Authority denied. Only Leaders can assign the Leader role.', ERROR_CODES.AUTH.AUTH_ERROR);
-    }
-  }
+  // Only Leaders and System Admins can add members
+  await permissionUtil.ensureLeader(workspaceId, currentUser);
 
   const workspace = await prisma.workspace.findUnique({ where: { workspaceid: workspaceId } });
   const member = workspace.member || [];

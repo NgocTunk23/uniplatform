@@ -17,18 +17,25 @@ const io = require('socket.io-client');
 describe('Reliability & Edge Cases (Production Hardening)', () => {
   let leaderToken;
   let leaderUser;
-  let workspaceId;
+  let workspaceid;
   const TEST_PORT = 5006;
 
   beforeAll(async () => {
-    // Clean DB
-    await prisma.file.deleteMany({});
-    await prisma.message.deleteMany({});
+    // Clean DB in correct order
+    await prisma.files.deleteMany({});
+    await prisma.messages.deleteMany({});
+    await prisma.meetingMinutes.deleteMany({});
+    await prisma.meeting.deleteMany({});
     await prisma.workspace.deleteMany({});
     await prisma.systemLog.deleteMany({});
     await prisma.user.deleteMany({});
 
-    // Create Leader
+    // Start server on dynamic port
+    await new Promise((resolve) => {
+      server.listen(0, () => {
+        resolve();
+      });
+    });
     leaderUser = await prisma.user.create({
       data: {
         username: 'edge_leader',
@@ -38,30 +45,23 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
         role: 'Member'
       }
     });
-    leaderToken = generateToken(leaderuser.username, leaderUser.tokenVersion);
+    leaderToken = generateToken(leaderUser.username);
 
     // Create Workspace
     const ws = await prisma.workspace.create({
       data: {
         name: 'Empty Workspace',
         admin: 'edge_leader',
-        members: {
+        member: {
           set: [{ username: 'edge_leader', workspacerole: 'Leader' }]
         }
       }
     });
-    workspaceId = ws.id;
+    workspaceid = ws.workspaceid;
 
-    // Start server for socket tests
-    if (!server.listening) {
-      await new Promise(resolve => server.listen(TEST_PORT, resolve));
-    }
   });
 
-  afterAll(async () => {
-    if (server.listening) await new Promise(resolve => server.close(resolve));
-    await prisma.user.deleteMany({ where: { username: { in: ['edge_leader', 'edge_member'] } } });
-  });
+
 
   describe('CASE 1: Workspace Audit Logs', () => {
     test('Leader adding a member should trigger a SystemLog', async () => {
@@ -72,7 +72,7 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
 
       // 2. Add member via API
       const res = await request(app)
-        .post(`/api/workspaces/${workspaceId}/members`)
+        .post(`/api/workspaces/${workspaceid}/members`)
         .set('Authorization', `Bearer ${leaderToken}`)
         .send({ username: 'edge_member', workspacerole: 'Member' });
 
@@ -80,14 +80,14 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
 
       // 3. Verify Log
       const logs = await prisma.systemLog.findMany({
-        where: { targetresource: 'Workspace', targetid: workspaceId }
+        where: { targetresource: 'Workspace', targetid: workspaceid }
       });
 
       expect(logs.length).toBeGreaterThan(0);
       const lastLog = logs[logs.length - 1];
       expect(lastLog.actorusername).toBe('edge_leader');
       
-      const memberChanges = lastLog.changes.find(c => c.field === 'members');
+      const memberChanges = lastLog.changes.find(c => c.field === 'member');
       expect(memberChanges).toBeDefined();
       expect(JSON.stringify(memberChanges.new)).toContain('edge_member');
     });
@@ -122,15 +122,16 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
     let socket;
 
     test('AI should respond gracefully in an empty workspace', (done) => {
-      socket = io(`http://localhost:${TEST_PORT}`, { auth: { token: leaderToken } });
+      const port = server.address().port;
+      socket = io(`http://localhost:${port}`, { auth: { token: leaderToken } });
       
       socket.on('connect', () => {
-        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
         
         // Wait a bit to ensure joined
         setTimeout(() => {
           socket.emit(SOCKET_EVENTS.ASK_AI, {
-            workspaceId,
+            workspaceid,
             prompt: 'What is the goal of this workspace?',
             senderusername: 'edge_leader'
           });
@@ -156,5 +157,10 @@ describe('Reliability & Edge Cases (Production Hardening)', () => {
         }
       });
     }, 15000); // 15s for AI
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+    server.close();
   });
 });

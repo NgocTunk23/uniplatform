@@ -17,6 +17,10 @@ const permissionUtil = {
       return { username: user.username, workspacerole: ROLES.WORKSPACE.LEADER, isSystemAdmin: true };
     }
 
+    if (!workspaceId) {
+      throw new ApiError(400, 'Missing workspace identifier', ERROR_CODES.SYSTEM.VALIDATION_ERROR);
+    }
+
     // 2. Query workspace with member list
     const workspace = await prisma.workspace.findUnique({
       where: { workspaceid: workspaceId },

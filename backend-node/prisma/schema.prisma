@@ -11,7 +11,8 @@ datasource db {
 }
 
 model User {
-  username    String    @id @map("_id") 
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  username    String    @unique
   password    String
   fullname    String
   role        String    @default("Member")
@@ -21,6 +22,7 @@ model User {
   phone       String?
   status      String    @default("active")
   createdat   DateTime  @default(now())
+  tokenVersion BigInt   @default(0)
   imageuser   String?
 
   // Navigation properties for relationships
@@ -37,7 +39,7 @@ model Schedules {
   starttime   DateTime
   endtime     DateTime
   type        String
-  createat    DateTime @default(now())
+  createdat    DateTime @default(now())
 
   user        User     @relation(fields: [username], references: [username])
 }
@@ -64,7 +66,7 @@ model Messages {
   workspaceid     String   @db.ObjectId
   senderusername  String
   content         String
-  createat        DateTime @default(now())
+  createdat        DateTime @default(now())
   reply           String?
   userid          String[]
   vectorembedding Float[]
@@ -82,7 +84,7 @@ model Meeting {
   organizer      String
   participants   String[]
   status         String
-  createat       DateTime @default(now())
+  createdat       DateTime @default(now())
   link           String?
   place          String?
   bot_status     String?
@@ -98,8 +100,8 @@ model MeetingMinutes {
   createby        String
   content         String?
   task            String[]
-  createat        DateTime @default(now())
-  updateat        DateTime @updatedAt
+  createdat        DateTime @default(now())
+  updatedat        DateTime @updatedAt
   raw_transcript  String?
   summary         String?
   decisions       String[]
@@ -120,7 +122,7 @@ model Files {
   ggid            String
   typefile        String?
   sizefile        String?
-  createat        DateTime @default(now())
+  createdat        DateTime @default(now())
 
   message         Messages?       @relation(fields: [messageid], references: [messageid])
   meetingMinute   MeetingMinutes? @relation(fields: [meetingminuteid], references: [meetingminuteid])
@@ -132,7 +134,7 @@ model SystemLog {
   targetresource String
   targetid       String?
   changes        LogChange[]
-  createat       DateTime    @default(now())
+  createdat       DateTime    @default(now())
 
   user           User        @relation(fields: [actorusername], references: [username])
 }

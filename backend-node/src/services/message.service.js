@@ -2,13 +2,13 @@ const prisma = require('../config/prisma');
 const permissionUtil = require('../utils/permission.util');
 
 const saveMessage = async (messageData) => {
-  const { fileIds, workspaceId, ...otherData } = messageData;
+  const { fileIds, workspaceid, ...otherData } = messageData;
   
   const newMessage = await prisma.messages.create({
     data: {
       content: otherData.content,
       senderusername: otherData.senderusername,
-      workspaceid: workspaceId,
+      workspace: { connect: { workspaceid: workspaceid } },
       reply: otherData.reply,
       userid: otherData.mentions || [],
       vectorembedding: [], // Embedding disabled
@@ -27,15 +27,15 @@ const saveMessage = async (messageData) => {
   };
 };
 
-const getMessagesByWorkspace = async (workspaceId, currentUser, limit = 50, skip = 0) => {
+const getMessagesByWorkspace = async (workspaceid, currentUser, limit = 50, skip = 0) => {
   // Security check: must be member
-  await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
+  await permissionUtil.getWorkspaceMembership(workspaceid, currentUser);
 
   const messages = await prisma.messages.findMany({
-    where: { workspaceid: workspaceId },
+    where: { workspaceid: workspaceid },
     take: limit,
     skip: skip,
-    orderBy: { createat: 'desc' },
+    orderBy: { createdat: 'desc' },
     include: {
       files: true
     }
