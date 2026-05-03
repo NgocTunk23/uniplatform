@@ -33,7 +33,9 @@ const uploadFile = async (req, res, next) => {
     }
 
     // Upload to Google Drive
+    console.log('📤 Uploading file to Drive:', req.file.originalname);
     const driveData = await gdriveUtil.uploadFile(req.file);
+    console.log('✅ Drive response:', driveData);
 
     // Sanitize input fields to prevent Prisma Malformed ObjectID errors
     // If a string is empty or not a valid 24-char hex string, set as undefined so Prisma ignores it
@@ -41,21 +43,33 @@ const uploadFile = async (req, res, next) => {
     const sanitizedMeetingMinuteId = req.body.meetingminuteid || undefined;
 
     // Save metadata to database via Prisma
-    const newFile = await prisma.file.create({
+    if (!driveData) {
+      throw new ApiError(500, 'Failed to get data from Google Drive', ERROR_CODES.FILE.UPLOAD_FAILED);
+    }
+
+    if (!prisma.files) {
+      console.error('❌ prisma.files is undefined! Available models:', Object.keys(prisma).filter(k => !k.startsWith('_')));
+      throw new ApiError(500, 'Database model "Files" not found', ERROR_CODES.SYSTEM.INTERNAL_SERVER_ERROR);
+    }
+
+    const newFile = await prisma.files.create({
       data: {
         uploader: req.user.username,
         filename: driveData.name,
         ggid: driveData.id,
         typefile: req.file.mimetype,
         sizefile: req.file.size.toString(),
-        messageId: sanitizedMessageId,
+        messageid: sanitizedMessageId,
         meetingminuteid: sanitizedMeetingMinuteId,
       },
     });
 
     res.status(201).json({
       message: 'File uploaded successfully',
-      file: newFile,
+      file: {
+        ...newFile,
+        id: newFile.fileid // Provide 'id' for frontend compatibility
+      },
       webViewLink: driveData.webViewLink,
       downloadLink: gdriveUtil.getDownloadLink(driveData.id)
     });
@@ -84,8 +98,8 @@ const uploadFile = async (req, res, next) => {
  */
 const deleteFile = async (req, res, next) => {
   try {
-    const file = await prisma.file.findUnique({
-      where: { id: req.params.id },
+    const file = await prisma.files.findUnique({
+      where: { fileid: req.params.id },
     });
     
     if (!file) throw new ApiError(404, 'File not found', ERROR_CODES.FILE.FILE_NOT_FOUND);
@@ -102,13 +116,13 @@ const deleteFile = async (req, res, next) => {
       isAuthorized = true;
     }
     // 3. Workspace Leader bypass
-    else if (file.messageId) {
-      const message = await prisma.message.findUnique({
-        where: { id: file.messageId },
-        select: { workspaceId: true }
+    else if (file.messageid) {
+      const message = await prisma.messages.findUnique({
+        where: { messageid: file.messageid },
+        select: { workspaceid: true }
       });
       if (message) {
-        const membership = await permissionUtil.getWorkspaceMembership(message.workspaceId, req.user);
+        const membership = await permissionUtil.getWorkspaceMembership(message.workspaceid, req.user);
         if (membership.workspacerole === ROLES.WORKSPACE.LEADER) {
           isAuthorized = true;
         }
@@ -123,8 +137,8 @@ const deleteFile = async (req, res, next) => {
     await gdriveUtil.deleteFile(file.ggid);
 
     // Delete from database
-    await prisma.file.delete({
-      where: { id: req.params.id },
+    await prisma.files.delete({
+      where: { fileid: req.params.id },
     });
 
     res.json({ message: 'File deleted successfully' });

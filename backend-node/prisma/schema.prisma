@@ -47,7 +47,7 @@ model Workspace {
   name        String
   admin       String
   member      Member[]
-  createdat   DateTime @default(now())
+  createdat   DateTime? @default(now())
 
   messages    Messages[]
   meetings    Meeting[]

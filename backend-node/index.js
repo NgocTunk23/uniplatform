@@ -8,6 +8,7 @@ const dotenv = require('dotenv');
 const prisma = require('./src/config/prisma');
 const SOCKET_EVENTS = require('./src/constants/socket-events');
 const { registerChatHandlers } = require('./src/socket/chat.socket');
+const { registerMeetingHandlers } = require('./src/socket/meeting.socket');
 const { protect } = require('./src/middlewares/auth.middleware');
 const { swaggerUi, specs } = require('./src/config/swagger');
 const errorMiddleware = require('./src/middlewares/error.middleware');
@@ -26,6 +27,7 @@ const fileRoutes = require('./src/routes/file.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const authRoutes = require('./src/routes/auth.routes');
 const userRoutes = require('./src/routes/user.routes');
+const meetingRoutes = require('./src/routes/meeting.routes');
 
 const app = express();
 
@@ -44,6 +46,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/meetings', meetingRoutes);
 
 // Basic Health Check Route
 app.get('/health', (req, res) => {
@@ -75,7 +78,7 @@ io.use(async (socket, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { username: decoded.id },
     });
 
     if (!user) {
@@ -103,6 +106,7 @@ io.use(async (socket, next) => {
 // Socket.io Handlers
 io.on(SOCKET_EVENTS.CONNECTION, (socket) => {
   registerChatHandlers(io, socket);
+  registerMeetingHandlers(io, socket);
 
   socket.on(SOCKET_EVENTS.DISCONNECT, () => {
     console.log('🔥 User disconnected');

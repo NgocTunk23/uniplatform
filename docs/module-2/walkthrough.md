@@ -14,6 +14,10 @@ Tài liệu này ghi chép lại hành trình phát triển Module 2, từ việ
 - **Workspace:** Triển khai quản lý nhóm và phân quyền Leader/Member/Viewer.
 - **Real-time Chat:** Xây dựng hệ thống Chat qua Socket.io, hỗ trợ Threaded Replies và Mentions.
 - **Cloud Storage:** Tích hợp Google Drive API cho việc lưu trữ tệp tin đính kèm.
+- **Workspace UI/UX Refinement:** 
+    - Tái cấu trúc toàn bộ giao diện quản lý Workspace với phong cách **Premium Glassmorphism**.
+    - Triển khai Role-based logic mới: Chỉ Leader/Admin mới được gán quyền Leader; tự động disable chat input cho Viewer.
+    - Cải thiện trải nghiệm người dùng với việc hiển thị Full Name và cập nhật trạng thái thành viên thời gian thực.
 
 ### 🛡️ Admin (`/api/admin`)
 - `GET /stats`: Xem chỉ số sức khỏe hệ thống (CPU, RAM, DB, **Google Drive Quota**).

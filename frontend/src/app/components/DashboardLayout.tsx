@@ -52,7 +52,7 @@ export function DashboardLayout() {
             {/* Cột giữa hiển thị dựa theo state groupView */}
             <div className="flex-1 min-w-0 h-full relative flex flex-col bg-white">
                {groupView === 'chat' ? (
-                 <ChatInterface groupName={activeGroup} />
+                 <ChatInterface workspaceId={activeGroup} />
                ) : (
                  <TeamCoordination />
                )}
@@ -61,7 +61,7 @@ export function DashboardLayout() {
             {/* Cột RightPanel bên phải */}
             <div className="hidden lg:block w-80 shrink-0 h-full border-l border-gray-100">
                <RightPanel 
-                 groupName={activeGroup}
+                 workspaceId={activeGroup}
                  isCoordinationOpen={groupView === 'coordination'}
                  onToggleCoordination={() => setGroupView(prev => prev === 'chat' ? 'coordination' : 'chat')}
                />

@@ -174,7 +174,7 @@ const loginUser = async (req, res, next) => {
 const getMe = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.username },
+      where: { username: req.user.username },
     });
     
     if (user) {
