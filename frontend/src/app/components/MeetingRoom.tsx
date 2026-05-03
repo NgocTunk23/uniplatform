@@ -107,8 +107,7 @@ export function MeetingRoom() {
   const [meeting, setMeeting] = useState<MeetingDetails | null>(null);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [showParticipants, setShowParticipants] = useState(false);
+  const [activePanel, setActivePanel] = useState<'chat' | 'participants' | 'layout' | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -387,8 +386,8 @@ export function MeetingRoom() {
         // Cập nhật lên WebRTC bằng replaceTrack (Không phá vỡ kết nối P2P)
         peersRef.current.forEach(peer => {
           // Tìm "đường ống" (transceiver) đang quản lý loại track này
-          const transceiver = peer.getTransceivers().find(t => 
-            (t.sender.track && t.sender.track.kind === type) || 
+          const transceiver = peer.getTransceivers().find(t =>
+            (t.sender.track && t.sender.track.kind === type) ||
             (t.receiver.track && t.receiver.track.kind === type)
           );
 
@@ -418,7 +417,7 @@ export function MeetingRoom() {
             track.stop();
             localStream.removeTrack(track);
           });
-          
+
           const updatedStream = new MediaStream(localStream.getTracks());
           setLocalStream(updatedStream);
           localStreamRef.current = updatedStream;
@@ -546,118 +545,142 @@ export function MeetingRoom() {
           </div>
         </div>
 
-        {/* Panels */}
-        {showChat && (
-          <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-[400px] bg-white flex flex-col z-50 shadow-2xl transition-all animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
-              <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Workspace Sync</h3>
-              <button onClick={() => setShowChat(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X size={20} className="text-gray-500" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden min-h-0">
-              <ChatInterface workspaceId={meeting.workspaceid} hideHeader={true} />
-            </div>
-          </div>
-        )}
-
-        {showParticipants && (
-          <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-xs md:w-80 bg-white flex flex-col z-50 shadow-2xl transition-all animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
-              <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Attendance ({participants.length})</h3>
-              <button onClick={() => setShowParticipants(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                <X size={20} className="text-gray-500" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar min-h-0">
-              {participants.map((participant) => (
-                <div key={participant.socketId} className="flex items-center gap-4 p-3 hover:bg-purple-50 rounded-2xl transition-all group">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 text-sm font-black shadow-sm group-hover:scale-110 transition-transform">
-                    {participant.initials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{participant.name}</p>
-                    <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{participant.socketId === socketRef.current?.id ? 'You' : 'Member'}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-purple-500" />}
-                    {!(participant.socketId === socketRef.current?.id ? isVideoOn : participant.isVideoOn) && <VideoOff size={16} className="text-gray-300" />}
-                  </div>
+        {/* Flexible Sidebar Area - Modular structure for future expansion */}
+        {activePanel && (
+          <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-[400px] bg-white flex flex-col z-50 shadow-2xl transition-all animate-in slide-in-from-right duration-300 border-l border-gray-100">
+            {activePanel === 'chat' && (
+              <>
+                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+                  <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Workspace Sync</h3>
+                  <button onClick={() => setActivePanel(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                    <X size={20} className="text-gray-500" />
+                  </button>
                 </div>
-              ))}
-            </div>
+                <div className="flex-1 overflow-hidden min-h-0">
+                  <ChatInterface workspaceId={meeting.workspaceid} hideHeader={true} />
+                </div>
+              </>
+            )}
+
+            {activePanel === 'participants' && (
+              <>
+                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+                  <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Attendance ({participants.length})</h3>
+                  <button onClick={() => setActivePanel(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                    <X size={20} className="text-gray-500" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar min-h-0">
+                  {participants.map((participant) => (
+                    <div key={participant.socketId} className="flex items-center gap-4 p-3 hover:bg-purple-50 rounded-2xl transition-all group">
+                      <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 text-sm font-black shadow-sm group-hover:scale-110 transition-transform">
+                        {participant.initials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate">{participant.name}</p>
+                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{participant.socketId === socketRef.current?.id ? 'You' : 'Member'}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-purple-500" />}
+                        {!(participant.socketId === socketRef.current?.id ? isVideoOn : participant.isVideoOn) && <VideoOff size={16} className="text-gray-300" />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {activePanel === 'layout' && (
+              <>
+                <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+                  <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Layout Options</h3>
+                  <button onClick={() => setActivePanel(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                    <X size={20} className="text-gray-500" />
+                  </button>
+                </div>
+                <div className="flex-1 p-8 flex flex-col items-center justify-center text-center text-gray-400">
+                  <Grid3x3 size={48} className="mb-4 opacity-20" />
+                  <p className="text-sm font-medium">Layout features placeholder</p>
+                  <p className="text-xs mt-2 italic">Space reserved for future developers</p>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* Bottom Control Bar */}
-      <div className="px-6 py-6 md:py-8 bg-gray-900/95 backdrop-blur-xl border-t border-white/5 z-20 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
-        <div className="max-w-[1200px] mx-auto flex items-center justify-between">
-          <div className="hidden lg:flex items-center gap-4 flex-1">
-            <div className="bg-white/5 rounded-2xl px-4 py-2.5 border border-white/5">
-              <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em] mb-0.5">Session ID</p>
-              <p className="text-white font-mono text-sm tracking-widest uppercase">{meetingId?.slice(-8)}</p>
-            </div>
+      {/* Bottom Control Bar - Updated to match minimal design */}
+      <div className="px-6 py-4 bg-gray-900/98 backdrop-blur-xl border-t border-white/5 z-20">
+        <div className="flex items-center justify-between w-full h-14">
+          {/* Left: Meeting ID */}
+          <div className="flex-1 hidden md:flex items-center">
+            <span className="text-white/40 text-[11px] font-medium tracking-tight">Meeting ID: <span className="text-white/70 font-mono tracking-wider uppercase ml-1.5">{meetingId}</span></span>
           </div>
 
-          {/* Center Controls */}
-          <div className="flex items-center gap-4 md:gap-6">
+          {/* Center: Controls */}
+          <div className="flex items-center gap-3 md:gap-4">
             <button
               onClick={() => toggleMedia('audio')}
-              className={`group relative p-4 md:p-5 rounded-3xl transition-all duration-300 shadow-xl ${isMicOn ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500 hover:bg-red-600 scale-110'
-                }`}
+              className={`p-3 rounded-full transition-all duration-300 ${isMicOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-red-500 text-white hover:bg-red-600'}`}
             >
-              {isMicOn ? <Mic size={24} className="text-white" /> : <MicOff size={24} className="text-white" />}
-              <span className="absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gray-800 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                {isMicOn ? 'Mute' : 'Unmute'}
-              </span>
+              {isMicOn ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
 
             <button
               onClick={() => toggleMedia('video')}
-              className={`group relative p-4 md:p-5 rounded-3xl transition-all duration-300 shadow-xl ${isVideoOn ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500 hover:bg-red-600 scale-110'
-                }`}
+              className={`p-3 rounded-full transition-all duration-300 ${isVideoOn ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-red-500 text-white hover:bg-red-600'}`}
             >
-              {isVideoOn ? <Video size={24} className="text-white" /> : <VideoOff size={24} className="text-white" />}
-              <span className="absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gray-800 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                {isVideoOn ? 'Camera Off' : 'Camera On'}
-              </span>
+              {isVideoOn ? <Video size={20} /> : <VideoOff size={20} />}
             </button>
 
-            <button className="p-4 md:p-5 bg-white/10 hover:bg-white/20 text-white rounded-3xl transition-all hidden sm:block">
-              <Monitor size={24} />
+            <button className="p-3 bg-gray-800 text-white hover:bg-gray-700 rounded-full transition-all">
+              <Monitor size={20} />
             </button>
 
             <button
               onClick={handleLeaveMeeting}
-              className="px-8 md:px-10 py-4 md:py-5 bg-red-600 hover:bg-red-700 text-white rounded-3xl font-black uppercase tracking-widest text-sm transition-all shadow-2xl hover:scale-105 active:scale-95 flex items-center gap-3"
+              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-red-500/20"
             >
-              <PhoneOff size={20} />
-              <span>Leave</span>
+              <PhoneOff size={18} />
+              <span className="hidden sm:inline">Leave</span>
             </button>
           </div>
 
-          {/* Right Controls */}
-          <div className="flex items-center gap-3 flex-1 justify-end">
+          {/* Right: Feature Toggles */}
+          <div className="flex-1 flex items-center justify-end gap-2">
             <button
-              onClick={() => setShowParticipants(!showParticipants)}
-              className={`relative p-4 rounded-2xl transition-all ${showParticipants ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
+              onClick={() => setActivePanel(activePanel === 'participants' ? null : 'participants')}
+              className={`p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
             >
-              <Users size={22} />
-              <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white border-2 border-gray-900">
-                {participants.length}
-              </div>
+              <Users size={20} />
             </button>
 
             <button
-              onClick={() => setShowChat(!showChat)}
-              className={`p-4 rounded-2xl transition-all ${showChat ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
+              onClick={() => setActivePanel(activePanel === 'chat' ? null : 'chat')}
+              className={`p-2.5 rounded-2xl transition-all ${activePanel === 'chat' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
             >
-              <MessageSquare size={22} />
+              <MessageSquare size={20} />
+            </button>
+
+            <button
+              onClick={() => setActivePanel(activePanel === 'layout' ? null : 'layout')}
+              className={`p-2.5 rounded-2xl transition-all ${activePanel === 'layout' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+            >
+              <Grid3x3 size={20} />
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* RESERVED SPACE FOR FUTURE FEATURES - Percentage-based height for responsiveness */}
+      <div className="h-[30%] bg-white border-t border-gray-200 flex items-center justify-center shrink-0">
+        <div className="flex flex-col items-center gap-1 opacity-20">
+          <div className="flex gap-2">
+            <div className="w-8 h-2 bg-gray-300 rounded-full" />
+            <div className="w-12 h-2 bg-gray-300 rounded-full" />
+            <div className="w-8 h-2 bg-gray-300 rounded-full" />
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400">Future Feature Area</span>
         </div>
       </div>
     </div>
