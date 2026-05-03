@@ -63,6 +63,20 @@ describe('File Attachment API Tests', () => {
     fileId = res.body.file.fileid;
   });
 
+  test('should handle UTF-8 Vietnamese filenames correctly', async () => {
+    const vietName = 'Tài liệu hướng dẫn.pdf';
+    // Supertest might send it correctly if we use .attach
+    // But we want to simulate how Multer receives it (latin1)
+    
+    const res = await request(app)
+      .post('/api/files/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('pdf content'), vietName);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.file.filename).toBe(vietName);
+  });
+
   test('should fail upload if file exceeds 50MB (mocking by sending large buffer if needed, but here we just check presence)', async () => {
     // Note: Actually testing 50MB in jest might be slow, 
     // but the middleware config is verified.
