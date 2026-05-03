@@ -125,10 +125,7 @@ const updateUserStatus = async (req, res, next) => {
     // Log the change
     await logChange(req.user.username, 'User', user.username, oldUser, user);
 
-    res.json({
-      ...user,
-      tokenVersion: user.tokenVersion ? user.tokenVersion.toString() : '0'
-    });
+    res.json(user);
   } catch (error) {
     next(error);
   }
@@ -175,7 +172,7 @@ const forceLogoutUser = async (req, res, next) => {
     // Log the change
     await logChange(req.user.username, 'User', user.username, oldUser, user);
 
-    res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion.toString() });
+    res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion });
   } catch (error) {
     next(error);
   }
