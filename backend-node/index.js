@@ -8,6 +8,7 @@ const dotenv = require('dotenv');
 const prisma = require('./src/config/prisma');
 const SOCKET_EVENTS = require('./src/constants/socket-events');
 const { registerChatHandlers } = require('./src/socket/chat.socket');
+const { registerMeetingHandlers } = require('./src/socket/meeting.socket');
 const { protect } = require('./src/middlewares/auth.middleware');
 const { swaggerUi, specs } = require('./src/config/swagger');
 const errorMiddleware = require('./src/middlewares/error.middleware');
@@ -105,6 +106,7 @@ io.use(async (socket, next) => {
 // Socket.io Handlers
 io.on(SOCKET_EVENTS.CONNECTION, (socket) => {
   registerChatHandlers(io, socket);
+  registerMeetingHandlers(io, socket);
 
   socket.on(SOCKET_EVENTS.DISCONNECT, () => {
     console.log('🔥 User disconnected');

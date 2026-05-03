@@ -14,6 +14,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    global: 'window',
+    'process.env': {},
+  },
   assetsInclude: ['**/*.svg', '**/*.csv'],
   
   // ADD THIS SERVER BLOCK

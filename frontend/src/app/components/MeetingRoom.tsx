@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChatInterface } from './ChatInterface';
+import { io, Socket } from 'socket.io-client';
 import {
   Video,
   VideoOff,
@@ -20,6 +21,7 @@ import {
   Maximize2,
   Bot
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Participant {
   id: string;
@@ -28,59 +30,9 @@ interface Participant {
   isAudioMuted: boolean;
   isVideoOn: boolean;
   isSpeaking: boolean;
+  socketId: string;
+  stream?: MediaStream;
 }
-
-interface ChatMessage {
-  id: string;
-  sender: string;
-  senderId: string;
-  message: string;
-  timestamp: string;
-  file?: {
-    name: string;
-    size: string;
-    type: string;
-  };
-}
-
-const mockParticipants: Participant[] = [
-  { id: '1', name: 'Jane Smith (You)', initials: 'JS', isAudioMuted: false, isVideoOn: true, isSpeaking: false },
-  { id: '2', name: 'Alex Johnson', initials: 'AJ', isAudioMuted: false, isVideoOn: true, isSpeaking: true },
-  { id: '3', name: 'Sam Chen', initials: 'SC', isAudioMuted: false, isVideoOn: false, isSpeaking: false },
-  { id: '4', name: 'Morgan Taylor', initials: 'MT', isAudioMuted: true, isVideoOn: true, isSpeaking: false },
-  { id: '5', name: 'Jordan Lee', initials: 'JL', isAudioMuted: false, isVideoOn: true, isSpeaking: false },
-];
-
-const mockChatMessages: ChatMessage[] = [
-  {
-    id: '1',
-    sender: 'Alex Johnson',
-    senderId: '2',
-    message: 'Hey everyone! Ready to start?',
-    timestamp: '2:01 PM'
-  },
-  {
-    id: '2',
-    sender: 'Sam Chen',
-    senderId: '3',
-    message: "Yes, let me share the design mockups",
-    timestamp: '2:02 PM',
-    file: {
-      name: 'mobile-app-mockups.pdf',
-      size: '2.4 MB',
-      type: 'pdf'
-    }
-  },
-  {
-    id: '3',
-    sender: 'Morgan Taylor',
-    senderId: '4',
-    message: 'Great! I reviewed the initial designs and have some feedback',
-    timestamp: '2:03 PM'
-  },
-];
-
-
 
 interface MeetingDetails {
   meetingid: string;
@@ -91,23 +43,310 @@ interface MeetingDetails {
   status: string;
 }
 
+const PEER_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ]
+};
+
+// Separate component for remote video to manage stream attachment
+const RemoteVideo = ({ stream, participant, isLocal, localVideoOn }: { stream: MediaStream | null, participant: Participant, isLocal: boolean, localVideoOn?: boolean }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // SỬA LỖI ĐỨNG HÌNH: Chỉ tin tưởng state từ Socket làm nguồn chân lý (Source of Truth).
+  const effectivelyVideoOn = isLocal ? localVideoOn : participant.isVideoOn;
+
+  useEffect(() => {
+    if (videoRef.current) {
+      // Nếu có stream và trạng thái đang bật camera
+      if (stream && effectivelyVideoOn) {
+        if (videoRef.current.srcObject !== stream) {
+          videoRef.current.srcObject = stream;
+        }
+        videoRef.current.play().catch(e => {
+          console.warn("Autoplay blocked, attempting muted play:", e);
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            videoRef.current.play().catch(err => console.error("Still cannot play:", err));
+          }
+        });
+      } else {
+        // QUAN TRỌNG: Xóa hẳn stream khỏi thẻ video khi tắt cam để tránh kẹt frame (đứng hình)
+        videoRef.current.srcObject = null;
+      }
+    }
+  }, [stream, effectivelyVideoOn]);
+
+  return (
+    <div className="relative w-full h-full bg-gray-900 overflow-hidden">
+      {/* Avatar Fallback */}
+      <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-950 transition-opacity duration-500 ${effectivelyVideoOn ? 'opacity-0 z-0' : 'opacity-100 z-10'}`}>
+        <div className={`w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center text-white text-3xl md:text-5xl font-black mb-4 shadow-2xl ${isLocal ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gray-800 border-4 border-white/5'}`}>
+          {participant.initials}
+        </div>
+        <p className="text-white/60 text-sm font-medium">{isLocal ? 'You (Camera Off)' : participant.name}</p>
+      </div>
+
+      {/* Video Element */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal}
+        className={`w-full h-full object-cover transition-opacity duration-500 ${effectivelyVideoOn ? 'opacity-100 z-20' : 'opacity-0 z-0'} ${isLocal ? 'scale-x-[-1]' : ''}`}
+      />
+    </div>
+  );
+};
+
 export function MeetingRoom() {
   const { meetingId } = useParams();
   const navigate = useNavigate();
   const [meeting, setMeeting] = useState<MeetingDetails | null>(null);
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [showChat, setShowChat] = useState(true);
+  const [isMicOn, setIsMicOn] = useState(false);
+  const [isVideoOn, setIsVideoOn] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
-  
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+
+  useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  const socketRef = useRef<Socket | null>(null);
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const participantsRef = useRef<Participant[]>([]);
+
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
   const token = localStorage.getItem('uniplatform_user_token');
+  const currentUser = localStorage.getItem('uniplatform_username') || '';
+
+  const PEER_CONFIG: RTCConfiguration = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ]
+  };
 
   useEffect(() => {
     if (meetingId) {
       fetchMeetingDetails();
+      initSocket();
     }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.emit('leave_meeting', { meetingId });
+        socketRef.current.disconnect();
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      peersRef.current.forEach(peer => peer.close());
+      peersRef.current.clear();
+    };
   }, [meetingId]);
+
+  const initSocket = () => {
+    const socket = io(apiUrl, {
+      auth: { token }
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('✅ Socket connected, emitting join_meeting for:', meetingId);
+      socket.emit('join_meeting', { meetingId });
+    });
+
+    if (socket.connected) {
+      console.log('✅ Socket already connected, joining meeting...');
+      socket.emit('join_meeting', { meetingId });
+    }
+
+    socket.on('meeting_participants_update', async (updatedParticipants: Participant[]) => {
+      try {
+        console.log('👥 Participants updated:', updatedParticipants.length, updatedParticipants.map(p => p.id));
+
+        const prevCount = participantsRef.current.length;
+        if (updatedParticipants.length > prevCount && updatedParticipants.length > 1) {
+          toast.success(`Connected with ${updatedParticipants.length - 1} other(s)`);
+        }
+
+        updatedParticipants.forEach(async (p) => {
+          if (p.socketId !== socket.id && !peersRef.current.has(p.socketId)) {
+            // The peer with the lexicographically smaller socketId will initiate the connection
+            if (socket.id! < p.socketId) {
+              console.log('🔗 I am the initiator for:', p.socketId);
+              const peer = await createPeer(p.socketId);
+
+              // Initiator adds tracks immediately
+              addLocalTracksToPeer(peer);
+
+              // Ensure we always negotiate audio and video m-lines as the initiator
+              // By calling addTransceiver, onnegotiationneeded WILL BE FIRED automatically!
+              // This guarantees the offer will create exactly 1 audio and 1 video transceiver
+              // on the Responder side when setRemoteDescription is called.
+              const currentLocalStream = localStreamRef.current;
+              const hasAudio = currentLocalStream && currentLocalStream.getAudioTracks().length > 0;
+              const hasVideo = currentLocalStream && currentLocalStream.getVideoTracks().length > 0;
+
+              if (!hasAudio) peer.addTransceiver('audio', { direction: 'recvonly' });
+              if (!hasVideo) peer.addTransceiver('video', { direction: 'recvonly' });
+            }
+          }
+        });
+
+        const updatedSocketIds = new Set(updatedParticipants.map(p => p.socketId));
+        peersRef.current.forEach((peer, socketId) => {
+          if (!updatedSocketIds.has(socketId)) {
+            console.log('✂️ Cleaning up disconnected peer:', socketId);
+            peer.close();
+            peersRef.current.delete(socketId);
+          }
+        });
+
+        participantsRef.current = updatedParticipants;
+        setParticipants(updatedParticipants);
+      } catch (updateErr) {
+        console.error('❌ Error in meeting_participants_update handler:', updateErr);
+      }
+    });
+
+    socket.on('webrtc_signal', async ({ senderSocketId, signalData }: any) => {
+      try {
+        let peer = peersRef.current.get(senderSocketId);
+        if (!peer) {
+          console.log('➕ Creating peer for incoming signal:', senderSocketId);
+          peer = await createPeer(senderSocketId);
+
+          // QUAN TRỌNG: Thêm local tracks NGAY KHI TẠO PEER để chuẩn bị cho Answer
+          addLocalTracksToPeer(peer);
+        }
+
+        const isPolite = socket.id! > senderSocketId;
+        const offerCollision = (signalData.type === 'offer') &&
+          (peer.signalingState !== 'stable' || (peer as any).makingOffer);
+
+        if (offerCollision) {
+          if (!isPolite) return;
+          console.log('🤝 Resolving offer collision (I am polite)');
+        }
+
+        // Signaling Queue to prevent race conditions
+        (peer as any).signalingQueue = ((peer as any).signalingQueue || Promise.resolve())
+          .then(async () => {
+            if (signalData.type) {
+              await peer.setRemoteDescription(new RTCSessionDescription(signalData));
+              if (signalData.type === 'offer') {
+                await peer.setLocalDescription();
+                socket.emit('webrtc_signal', {
+                  targetSocketId: senderSocketId,
+                  signalData: peer.localDescription,
+                  meetingId
+                });
+              }
+            } else if (signalData.candidate) {
+              try {
+                await peer.addIceCandidate(new RTCIceCandidate(signalData));
+              } catch (err) {
+                if (!offerCollision) console.error('❌ ICE error:', err);
+              }
+            }
+          })
+          .catch((err: any) => console.error('❌ Signaling queue error:', err));
+      } catch (signalErr) {
+        console.error('❌ Error in webrtc_signal handler:', signalErr);
+      }
+    });
+
+    socket.on('disconnect', () => console.log('❌ Socket disconnected'));
+  };
+
+  const setupPeerEvents = (peer: RTCPeerConnection, targetSocketId: string) => {
+    peer.onnegotiationneeded = async () => {
+      try {
+        console.log('🔄 Negotiation needed for:', targetSocketId);
+        (peer as any).makingOffer = true;
+        await peer.setLocalDescription();
+        socketRef.current?.emit('webrtc_signal', {
+          targetSocketId,
+          signalData: peer.localDescription,
+          meetingId
+        });
+      } catch (err) {
+        console.error('❌ Negotiation error:', err);
+      } finally {
+        (peer as any).makingOffer = false;
+      }
+    };
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current?.emit('webrtc_signal', {
+          targetSocketId,
+          signalData: event.candidate,
+          meetingId
+        });
+      }
+    };
+
+    peer.ontrack = (event) => {
+      console.log('🎬 Received remote track from:', targetSocketId, event.track.kind);
+      setRemoteStreams(prev => {
+        const next = new Map(prev);
+        const existingStream = next.get(targetSocketId);
+
+        // CRITICAL FIX: Always create a NEW MediaStream reference. 
+        // If we mutate the existing stream, React won't trigger the useEffect in RemoteVideo, leaving the screen black.
+        const newStream = new MediaStream(existingStream ? existingStream.getTracks() : []);
+
+        if (!newStream.getTracks().some(t => t.id === event.track.id)) {
+          newStream.addTrack(event.track);
+        }
+
+        next.set(targetSocketId, newStream);
+        return next;
+      });
+    };
+
+    peer.onconnectionstatechange = () => {
+      console.log(`📡 Connection state with ${targetSocketId}:`, peer.connectionState);
+      if (peer.connectionState === 'failed') {
+        console.log('♻️ Restarting ICE for:', targetSocketId);
+        peer.restartIce();
+      }
+    };
+  };
+
+  const addLocalTracksToPeer = (peer: RTCPeerConnection) => {
+    const currentLocalStream = localStreamRef.current;
+    if (currentLocalStream) {
+      currentLocalStream.getTracks().forEach(track => {
+        const senderExists = peer.getSenders().some(s => s.track === track);
+        if (!senderExists) {
+          peer.addTrack(track, currentLocalStream);
+        }
+      });
+    }
+  };
+
+  const createPeer = async (targetSocketId: string) => {
+    console.log('🏗️ Initializing peer for:', targetSocketId);
+    const peer = new RTCPeerConnection(PEER_CONFIG);
+    peersRef.current.set(targetSocketId, peer);
+    (peer as any).signalingQueue = Promise.resolve();
+
+    setupPeerEvents(peer, targetSocketId);
+    return peer;
+  };
+
 
   const fetchMeetingDetails = async () => {
     try {
@@ -123,91 +362,169 @@ export function MeetingRoom() {
     }
   };
 
-  const handleLeaveMeeting = async () => {
-    // If it's ongoing and I'm the organizer, I could end it, but for now just leave.
+  const toggleMedia = async (type: 'audio' | 'video') => {
+    try {
+      // Xác định trạng thái chuẩn bị chuyển đổi: Bật hay Tắt?
+      const isTurningOn = type === 'video' ? !isVideoOn : !isMicOn;
+
+      if (isTurningOn) {
+        // --- 1. XỬ LÝ BẬT ---
+        const constraints = type === 'video' ? { video: true } : { audio: true };
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const newTrack = type === 'video' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
+
+        // Cập nhật Local Stream cho UI của bạn
+        let updatedStream = localStream;
+        if (updatedStream) {
+          updatedStream.addTrack(newTrack);
+          updatedStream = new MediaStream(updatedStream.getTracks());
+        } else {
+          updatedStream = newStream;
+        }
+        setLocalStream(updatedStream);
+        localStreamRef.current = updatedStream; // Cập nhật ref ngay lập tức để đồng bộ
+
+        // Cập nhật lên WebRTC bằng replaceTrack (Không phá vỡ kết nối P2P)
+        peersRef.current.forEach(peer => {
+          // Tìm "đường ống" (transceiver) đang quản lý loại track này
+          const transceiver = peer.getTransceivers().find(t => 
+            (t.sender.track && t.sender.track.kind === type) || 
+            (t.receiver.track && t.receiver.track.kind === type)
+          );
+
+          if (transceiver && transceiver.sender) {
+            // Thay thế track rỗng bằng track thực tế
+            transceiver.sender.replaceTrack(newTrack);
+            // Mở hướng truyền tải nếu trước đó đang là recvonly (chỉ xảy ra lần bật đầu tiên)
+            if (transceiver.direction === 'recvonly') {
+              transceiver.direction = 'sendrecv';
+            }
+          } else {
+            // Fallback: Lần đầu tiên join phòng mà chưa có đường ống
+            peer.addTrack(newTrack, updatedStream!);
+          }
+        });
+
+        if (type === 'video') setIsVideoOn(true);
+        else setIsMicOn(true);
+
+      } else {
+        // --- 2. XỬ LÝ TẮT ---
+        if (localStream) {
+          const tracksToStop = type === 'video' ? localStream.getVideoTracks() : localStream.getAudioTracks();
+
+          // Tắt phần cứng (tắt đèn camera / ngắt mic)
+          tracksToStop.forEach(track => {
+            track.stop();
+            localStream.removeTrack(track);
+          });
+          
+          const updatedStream = new MediaStream(localStream.getTracks());
+          setLocalStream(updatedStream);
+          localStreamRef.current = updatedStream;
+
+          // Thay thế track gửi đi bằng NULL (đối phương sẽ nhận được khung hình đen / im lặng)
+          peersRef.current.forEach(peer => {
+            const transceiver = peer.getTransceivers().find(t => t.sender.track?.kind === type);
+            if (transceiver && transceiver.sender) {
+              transceiver.sender.replaceTrack(null);
+            }
+          });
+        }
+
+        if (type === 'video') setIsVideoOn(false);
+        else setIsMicOn(false);
+      }
+
+      // --- 3. Báo cáo trạng thái mới cho toàn phòng qua Socket ---
+      if (socketRef.current) {
+        socketRef.current.emit('sync_meeting_state', {
+          meetingId,
+          isAudioMuted: type === 'audio' ? !isTurningOn : !isMicOn,
+          isVideoOn: type === 'video' ? isTurningOn : isVideoOn
+        });
+      }
+    } catch (err) {
+      toast.error(`Could not access ${type}. Please check permissions.`);
+      console.error(err);
+    }
+  };
+
+  const handleLeaveMeeting = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('leave_meeting', { meetingId });
+    }
     navigate('/meetings');
   };
 
   if (!meeting) {
-    return <div className="flex items-center justify-center h-full bg-gray-900 text-white">Loading meeting...</div>;
+    return <div className="flex items-center justify-center h-screen bg-gray-900 text-white font-medium overflow-hidden">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+        Preparing secure connection...
+      </div>
+    </div>;
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-screen bg-gray-950 font-sans selection:bg-purple-500/30 overflow-hidden">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-3 md:px-6 py-3 md:py-4 bg-gray-800/50 border-b border-gray-700/50">
-        <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse flex-shrink-0" />
-            <span className="text-white font-medium text-sm md:text-base truncate">{meeting.title}</span>
+      <div className="flex items-center justify-between px-4 md:px-8 py-4 bg-gray-900/80 backdrop-blur-md border-b border-white/5 z-10 shadow-xl">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <div className="flex items-center gap-3 min-w-0 group">
+            <div className="relative">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
+              <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-green-500 animate-ping opacity-50" />
+            </div>
+            <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
           </div>
-          <span className="text-gray-400 text-xs md:text-sm hidden sm:block">2:15:32</span>
+          <div className="h-4 w-px bg-white/10 hidden sm:block" />
+          <span className="text-gray-400 text-sm font-mono hidden sm:block bg-white/5 px-2 py-0.5 rounded tracking-widest">2:15:32</span>
         </div>
-        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-          {/* AI Recording Indicator */}
-          <div className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-purple-500/20 border border-purple-500/30 rounded-lg">
-            <Bot size={16} className="text-purple-400 animate-pulse" />
-            <span className="text-purple-300 text-xs hidden md:inline">AI Recording</span>
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-purple-500/15 border border-purple-500/20 rounded-full">
+            <Bot size={16} className="text-purple-400" />
+            <span className="text-purple-300 text-xs font-bold uppercase tracking-wider">AI Live Assistant</span>
           </div>
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
-            <Settings size={18} className="md:w-5 md:h-5" />
-          </button>
-          <button className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-300">
-            <MoreVertical size={18} className="md:w-5 md:h-5" />
+          <button className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-gray-400 hover:text-white">
+            <Settings size={20} />
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative min-h-0">
         {/* Video Grid */}
-        <div className="flex-1 p-2 md:p-4 overflow-y-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4 max-w-full">
-            {mockParticipants.map((participant) => (
+        <div className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 max-w-[1600px] mx-auto">
+            {participants.map((participant) => (
               <div
-                key={participant.id}
-                className={`relative bg-gray-800 rounded-lg md:rounded-xl overflow-hidden aspect-video w-full ${
-                  participant.isSpeaking ? 'ring-2 ring-purple-500' : ''
-                }`}
+                key={participant.socketId}
+                className={`group relative bg-gray-900 rounded-2xl md:rounded-3xl overflow-hidden aspect-video w-full transition-all duration-500 border border-white/5 shadow-2xl ${participant.isSpeaking ? 'ring-4 ring-purple-500/50 scale-[1.02] z-10' : 'hover:border-white/20'
+                  }`}
               >
-                {participant.isVideoOn ? (
-                  <div className="w-full h-full bg-gradient-to-br from-purple-900/20 to-gray-800 flex items-center justify-center">
-                    {participant.id === '1' ? (
-                      <div className="text-center">
-                        <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-purple-500 flex items-center justify-center text-white text-xl md:text-2xl mb-2">
-                          {participant.initials}
-                        </div>
-                        <p className="text-white text-xs md:text-sm">{participant.name}</p>
-                      </div>
-                    ) : (
-                      <div className="w-14 h-14 md:w-20 md:h-20 rounded-full bg-gray-700 flex items-center justify-center text-white text-lg md:text-xl">
-                        {participant.initials}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-14 h-14 md:w-20 md:h-20 rounded-full bg-gray-700 flex items-center justify-center text-white text-lg md:text-xl mb-2">
-                        {participant.initials}
-                      </div>
-                      <p className="text-gray-400 text-xs md:text-sm">{participant.name}</p>
-                    </div>
-                  </div>
-                )}
+                <RemoteVideo
+                  stream={participant.socketId === socketRef.current?.id ? localStream : (remoteStreams.get(participant.socketId) || null)}
+                  participant={participant}
+                  isLocal={participant.socketId === socketRef.current?.id}
+                  localVideoOn={isVideoOn}
+                />
 
                 {/* Participant Info Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-900/90 to-transparent p-2 md:p-3">
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 md:p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                   <div className="flex items-center justify-between">
-                    <span className="text-white text-xs md:text-sm font-medium truncate pr-2">{participant.name}</span>
-                    <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-                      {participant.isAudioMuted ? (
-                        <div className="p-1 bg-red-500 rounded">
-                          <MicOff size={12} className="text-white md:w-3.5 md:h-3.5" />
+                    <div className="flex flex-col">
+                      <span className="text-white text-sm md:text-base font-bold truncate tracking-tight">{participant.name}</span>
+                      {participant.socketId === socketRef.current?.id && <span className="text-purple-400 text-[10px] font-black uppercase tracking-[0.2em] mt-0.5">Host (You)</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? (
+                        <div className="p-2 bg-red-500/90 rounded-xl backdrop-blur-md shadow-lg">
+                          <MicOff size={14} className="text-white" />
                         </div>
                       ) : (
-                        <div className={`p-1 ${participant.isSpeaking ? 'bg-purple-500' : 'bg-gray-700'} rounded`}>
-                          <Mic size={12} className="text-white md:w-3.5 md:h-3.5" />
+                        <div className={`p-2 ${participant.isSpeaking ? 'bg-purple-500' : 'bg-white/10'} rounded-xl backdrop-blur-md shadow-lg transition-colors`}>
+                          <Mic size={14} className="text-white" />
                         </div>
                       )}
                     </div>
@@ -215,156 +532,135 @@ export function MeetingRoom() {
                 </div>
               </div>
             ))}
+
+            {/* If only 1 person, show a call to action or waiting message */}
+            {participants.length === 1 && (
+              <div className="aspect-video rounded-3xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-center p-8 opacity-40 hover:opacity-100 transition-opacity">
+                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                  <Users size={24} className="text-white" />
+                </div>
+                <h4 className="text-white font-bold mb-1">Waiting for others...</h4>
+                <p className="text-gray-400 text-xs">Share the meeting link with your team</p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right Sidebar - Chat (Overlay on mobile, sidebar on desktop) */}
+        {/* Panels */}
         {showChat && (
-          <>
-            {/* Backdrop for mobile */}
-            <div
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
-              onClick={() => setShowChat(false)}
-            />
-
-            <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-[360px] bg-white border-l border-gray-200 flex flex-col z-50 shadow-2xl md:shadow-none">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-                <h3 className="font-semibold text-gray-900">Meeting Chat</h3>
-                <button
-                  onClick={() => setShowChat(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
-                  <X size={18} className="text-gray-500" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-hidden">
-                <ChatInterface workspaceId={meeting.workspaceid} hideHeader={true} />
-              </div>
+          <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-sm md:w-[400px] bg-white flex flex-col z-50 shadow-2xl transition-all animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+              <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Workspace Sync</h3>
+              <button onClick={() => setShowChat(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                <X size={20} className="text-gray-500" />
+              </button>
             </div>
-          </>
+            <div className="flex-1 overflow-hidden min-h-0">
+              <ChatInterface workspaceId={meeting.workspaceid} hideHeader={true} />
+            </div>
+          </div>
         )}
 
-        {/* Participants Panel (Overlay on mobile, sidebar on desktop) */}
         {showParticipants && (
-          <>
-            {/* Backdrop for mobile */}
-            <div
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
-              onClick={() => setShowParticipants(false)}
-            />
-
-            {/* Participants Panel */}
-            <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-xs md:w-64 bg-white border-l border-gray-200 flex flex-col z-50 shadow-2xl md:shadow-none">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-                <h3 className="font-semibold text-gray-900">Participants ({mockParticipants.length})</h3>
-                <button
-                  onClick={() => setShowParticipants(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
-                  <X size={18} className="text-gray-500" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                {mockParticipants.map((participant) => (
-                  <div
-                    key={participant.id}
-                    className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 text-xs font-semibold flex-shrink-0">
-                      {participant.initials}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{participant.name}</p>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      {participant.isAudioMuted ? (
-                        <MicOff size={14} className="text-red-500" />
-                      ) : (
-                        <Mic size={14} className={participant.isSpeaking ? 'text-purple-500' : 'text-gray-400'} />
-                      )}
-                      {!participant.isVideoOn && <VideoOff size={14} className="text-gray-400" />}
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <div className="fixed md:relative right-0 top-0 bottom-0 w-full max-w-xs md:w-80 bg-white flex flex-col z-50 shadow-2xl transition-all animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
+              <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Attendance ({participants.length})</h3>
+              <button onClick={() => setShowParticipants(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                <X size={20} className="text-gray-500" />
+              </button>
             </div>
-          </>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar min-h-0">
+              {participants.map((participant) => (
+                <div key={participant.socketId} className="flex items-center gap-4 p-3 hover:bg-purple-50 rounded-2xl transition-all group">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 text-sm font-black shadow-sm group-hover:scale-110 transition-transform">
+                    {participant.initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate">{participant.name}</p>
+                    <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{participant.socketId === socketRef.current?.id ? 'You' : 'Member'}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-purple-500" />}
+                    {!(participant.socketId === socketRef.current?.id ? isVideoOn : participant.isVideoOn) && <VideoOff size={16} className="text-gray-300" />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
       {/* Bottom Control Bar */}
-      <div className="flex items-center justify-between px-2 md:px-6 py-3 md:py-4 bg-gray-800/50 border-t border-gray-700/50">
-        <div className="hidden md:flex items-center gap-2">
-          <span className="text-gray-400 text-sm">Meeting ID: {meetingId}</span>
-        </div>
+      <div className="px-6 py-6 md:py-8 bg-gray-900/95 backdrop-blur-xl border-t border-white/5 z-20 shadow-[0_-20px_50px_rgba(0,0,0,0.5)]">
+        <div className="max-w-[1200px] mx-auto flex items-center justify-between">
+          <div className="hidden lg:flex items-center gap-4 flex-1">
+            <div className="bg-white/5 rounded-2xl px-4 py-2.5 border border-white/5">
+              <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.2em] mb-0.5">Session ID</p>
+              <p className="text-white font-mono text-sm tracking-widest uppercase">{meetingId?.slice(-8)}</p>
+            </div>
+          </div>
 
-        {/* Center Controls */}
-        <div className="flex items-center gap-1.5 md:gap-3 mx-auto md:mx-0">
-          <button
-            onClick={() => setIsMicOn(!isMicOn)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              isMicOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
-            }`}
-          >
-            {isMicOn ? (
-              <Mic size={18} className="text-white md:w-5 md:h-5" />
-            ) : (
-              <MicOff size={18} className="text-white md:w-5 md:h-5" />
-            )}
-          </button>
+          {/* Center Controls */}
+          <div className="flex items-center gap-4 md:gap-6">
+            <button
+              onClick={() => toggleMedia('audio')}
+              className={`group relative p-4 md:p-5 rounded-3xl transition-all duration-300 shadow-xl ${isMicOn ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500 hover:bg-red-600 scale-110'
+                }`}
+            >
+              {isMicOn ? <Mic size={24} className="text-white" /> : <MicOff size={24} className="text-white" />}
+              <span className="absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gray-800 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                {isMicOn ? 'Mute' : 'Unmute'}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setIsVideoOn(!isVideoOn)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              isVideoOn ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'
-            }`}
-          >
-            {isVideoOn ? (
-              <Video size={18} className="text-white md:w-5 md:h-5" />
-            ) : (
-              <VideoOff size={18} className="text-white md:w-5 md:h-5" />
-            )}
-          </button>
+            <button
+              onClick={() => toggleMedia('video')}
+              className={`group relative p-4 md:p-5 rounded-3xl transition-all duration-300 shadow-xl ${isVideoOn ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500 hover:bg-red-600 scale-110'
+                }`}
+            >
+              {isVideoOn ? <Video size={24} className="text-white" /> : <VideoOff size={24} className="text-white" />}
+              <span className="absolute -top-12 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-gray-800 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                {isVideoOn ? 'Camera Off' : 'Camera On'}
+              </span>
+            </button>
 
-          <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
-            <Monitor size={18} className="text-white md:w-5 md:h-5" />
-          </button>
+            <button className="p-4 md:p-5 bg-white/10 hover:bg-white/20 text-white rounded-3xl transition-all hidden sm:block">
+              <Monitor size={24} />
+            </button>
 
-          <button
-            onClick={handleLeaveMeeting}
-            className="px-4 md:px-6 py-2.5 md:py-3 bg-red-500 hover:bg-red-600 rounded-full transition-colors flex items-center gap-1.5 md:gap-2"
-          >
-            <PhoneOff size={18} className="text-white md:w-5 md:h-5" />
-            <span className="text-white font-medium text-sm md:text-base">Leave</span>
-          </button>
-        </div>
+            <button
+              onClick={handleLeaveMeeting}
+              className="px-8 md:px-10 py-4 md:py-5 bg-red-600 hover:bg-red-700 text-white rounded-3xl font-black uppercase tracking-widest text-sm transition-all shadow-2xl hover:scale-105 active:scale-95 flex items-center gap-3"
+            >
+              <PhoneOff size={20} />
+              <span>Leave</span>
+            </button>
+          </div>
 
-        {/* Right Controls */}
-        <div className="flex items-center gap-1 md:gap-2">
-          <button
-            onClick={() => setShowParticipants(!showParticipants)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              showParticipants ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
-            }`}
-          >
-            <Users size={18} className="text-white md:w-5 md:h-5" />
-          </button>
+          {/* Right Controls */}
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <button
+              onClick={() => setShowParticipants(!showParticipants)}
+              className={`relative p-4 rounded-2xl transition-all ${showParticipants ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+            >
+              <Users size={22} />
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white border-2 border-gray-900">
+                {participants.length}
+              </div>
+            </button>
 
-          <button
-            onClick={() => setShowChat(!showChat)}
-            className={`p-2.5 md:p-3 rounded-full transition-colors ${
-              showChat ? 'bg-purple-500' : 'bg-gray-700 hover:bg-gray-600'
-            }`}
-          >
-            <MessageSquare size={18} className="text-white md:w-5 md:h-5" />
-          </button>
-
-          <button className="p-2.5 md:p-3 bg-gray-700 hover:bg-gray-600 rounded-full transition-colors hidden sm:block">
-            <Grid3x3 size={18} className="text-white md:w-5 md:h-5" />
-          </button>
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className={`p-4 rounded-2xl transition-all ${showChat ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+            >
+              <MessageSquare size={22} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+import './polyfills';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 // Import file App.tsx nằm trong thư mục app (do Figma tạo)
