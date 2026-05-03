@@ -80,13 +80,20 @@ const RemoteVideo = ({ stream, participant, isLocal, localVideoOn }: { stream: M
   }, [stream, effectivelyVideoOn]);
 
   return (
-    <div className="relative w-full h-full bg-gray-900 overflow-hidden">
+    <div className={`relative w-full h-full bg-gray-900 overflow-hidden transition-all duration-300 ${participant.isSpeaking ? 'ring-4 ring-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)] z-10' : 'ring-0'}`}>
       {/* Avatar Fallback */}
       <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-950 transition-opacity duration-500 ${effectivelyVideoOn ? 'opacity-0 z-0' : 'opacity-100 z-10'}`}>
-        <div className={`w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center text-white text-3xl md:text-5xl font-black mb-4 shadow-2xl ${isLocal ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gray-800 border-4 border-white/5'}`}>
+        <div className={`w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center text-white text-3xl md:text-5xl font-black mb-4 shadow-2xl transition-transform duration-300 ${participant.isSpeaking ? 'scale-110' : 'scale-100'} ${isLocal ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gray-800 border-4 border-white/5'}`}>
           {participant.initials}
         </div>
         <p className="text-white/60 text-sm font-medium">{isLocal ? 'You (Camera Off)' : participant.name}</p>
+        {participant.isSpeaking && (
+          <div className="mt-4 flex gap-1 items-center">
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce" />
+          </div>
+        )}
       </div>
 
       {/* Video Element */}
@@ -151,6 +158,69 @@ export function MeetingRoom() {
       peersRef.current.clear();
     };
   }, [meetingId]);
+
+  // Speaking Detection logic using Web Audio API
+  useEffect(() => {
+    if (!localStream || !isMicOn) {
+      if (socketRef.current && meetingId) {
+        socketRef.current.emit('sync_speaking_state', { meetingId, isSpeaking: false });
+      }
+      return;
+    }
+
+    let audioContext: AudioContext;
+    let analyser: AnalyserNode;
+    let source: MediaStreamAudioSourceNode;
+    let animationFrame: number;
+    let isCurrentlySpeaking = false;
+    let silenceStartTime = Date.now();
+
+    try {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      source = audioContext.createMediaStreamSource(localStream);
+      source.connect(analyser);
+
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const checkAudio = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        const speaking = average > 25; // Sensitivity threshold
+
+        if (speaking) {
+          silenceStartTime = Date.now();
+          if (!isCurrentlySpeaking) {
+            isCurrentlySpeaking = true;
+            socketRef.current?.emit('sync_speaking_state', { meetingId, isSpeaking: true });
+          }
+        } else {
+          // Add a small delay (400ms) before turning off speaking state to avoid flickering
+          if (isCurrentlySpeaking && Date.now() - silenceStartTime > 400) {
+            isCurrentlySpeaking = false;
+            socketRef.current?.emit('sync_speaking_state', { meetingId, isSpeaking: false });
+          }
+        }
+
+        animationFrame = requestAnimationFrame(checkAudio);
+      };
+
+      checkAudio();
+    } catch (err) {
+      console.error("Audio activity detection error:", err);
+    }
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (audioContext) audioContext.close();
+    };
+  }, [localStream, isMicOn, meetingId]);
 
   const initSocket = () => {
     const socket = io(apiUrl, {
@@ -475,7 +545,13 @@ export function MeetingRoom() {
               <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
               <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-green-500 animate-ping opacity-50" />
             </div>
-            <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                <Users size={12} className="text-gray-400" />
+                <span className="text-gray-300 text-[11px] font-bold">{participants.length}</span>
+              </div>
+            </div>
           </div>
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
           <span className="text-gray-400 text-sm font-mono hidden sm:block bg-white/5 px-2 py-0.5 rounded tracking-widest">2:15:32</span>
@@ -650,9 +726,14 @@ export function MeetingRoom() {
           <div className="flex-1 flex items-center justify-end gap-2">
             <button
               onClick={() => setActivePanel(activePanel === 'participants' ? null : 'participants')}
-              className={`p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+              className={`relative p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
             >
               <Users size={20} />
+              {participants.length > 0 && (
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white border-2 border-gray-900 shadow-lg">
+                  {participants.length}
+                </div>
+              )}
             </button>
 
             <button

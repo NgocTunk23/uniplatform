@@ -74,6 +74,19 @@ const registerMeetingHandlers = (io, socket) => {
       }
     }
   });
+
+  socket.on('sync_speaking_state', ({ meetingId, isSpeaking }) => {
+    if (meetingRooms.has(meetingId)) {
+      const participants = meetingRooms.get(meetingId);
+      if (participants.has(socket.id)) {
+        const p = participants.get(socket.id);
+        if (p.isSpeaking !== isSpeaking) {
+          p.isSpeaking = isSpeaking;
+          io.to(`meeting:${meetingId}`).emit(SOCKET_EVENTS.MEETING_PARTICIPANTS_UPDATE, Array.from(participants.values()));
+        }
+      }
+    }
+  });
 };
 
 const handleUserLeaving = (io, socket, meetingId) => {
@@ -97,4 +110,4 @@ const handleUserLeaving = (io, socket, meetingId) => {
   }
 };
 
-module.exports = { registerMeetingHandlers };
+module.exports = { registerMeetingHandlers, meetingRooms };

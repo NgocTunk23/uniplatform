@@ -1,5 +1,6 @@
 const meetingService = require('../services/meeting.service');
 const ApiError = require('../utils/api-error');
+const { meetingRooms } = require('../socket/meeting.socket');
 
 /**
  * @swagger
@@ -24,7 +25,17 @@ const ApiError = require('../utils/api-error');
 const getAllMeetings = async (req, res, next) => {
   try {
     const meetings = await meetingService.getAllMeetings(req.user);
-    res.json(meetings);
+    
+    // Add live participant count
+    const meetingsWithLiveCount = meetings.map(meeting => {
+      const room = meetingRooms.get(meeting.meetingid);
+      return {
+        ...meeting,
+        activeParticipantsCount: room ? room.size : 0
+      };
+    });
+    
+    res.json(meetingsWithLiveCount);
   } catch (error) {
     next(error);
   }
@@ -33,7 +44,17 @@ const getAllMeetings = async (req, res, next) => {
 const getMeetingsByWorkspace = async (req, res, next) => {
   try {
     const meetings = await meetingService.getMeetingsByWorkspace(req.params.workspaceId, req.user);
-    res.json(meetings);
+    
+    // Add live participant count
+    const meetingsWithLiveCount = meetings.map(meeting => {
+      const room = meetingRooms.get(meeting.meetingid);
+      return {
+        ...meeting,
+        activeParticipantsCount: room ? room.size : 0
+      };
+    });
+    
+    res.json(meetingsWithLiveCount);
   } catch (error) {
     next(error);
   }

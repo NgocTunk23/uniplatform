@@ -8,6 +8,7 @@ interface Meeting {
   starttime: string;
   endtime: string;
   participants: string[];
+  activeParticipantsCount?: number;
   status: 'upcoming' | 'ongoing' | 'ended';
   workspace?: { name: string };
   description?: string;
@@ -233,8 +234,13 @@ export function MeetingsSchedule() {
                         {duration} min
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <Users size={16} className="text-gray-400" />
-                        {meeting.participants.length} participants
+                        <Users size={16} className={meeting.activeParticipantsCount && meeting.activeParticipantsCount > 0 ? "text-purple-500" : "text-gray-400"} />
+                        <span className={meeting.activeParticipantsCount && meeting.activeParticipantsCount > 0 ? "text-purple-600 font-bold" : ""}>
+                          {meeting.activeParticipantsCount && meeting.activeParticipantsCount > 0 
+                            ? `${meeting.activeParticipantsCount} active / ${meeting.participants.length} total`
+                            : `${meeting.participants.length} participants`
+                          }
+                        </span>
                       </div>
                     </div>
                     <div className="mt-3">
