@@ -87,6 +87,11 @@ const registerMeetingHandlers = (io, socket) => {
       }
     }
   });
+
+  socket.on('end_meeting', ({ meetingId }) => {
+    // Broadcast to everyone that meeting is over
+    handleMeetingEnd(io, meetingId);
+  });
 };
 
 const handleUserLeaving = (io, socket, meetingId) => {
@@ -108,6 +113,11 @@ const handleUserLeaving = (io, socket, meetingId) => {
       }
     }
   }
+};
+
+const handleMeetingEnd = (io, meetingId) => {
+  io.to(`meeting:${meetingId}`).emit('meeting_ended', { meetingId });
+  console.log(`⏹️ Meeting ${meetingId} ended by authority. Notifying all participants.`);
 };
 
 module.exports = { registerMeetingHandlers, meetingRooms };

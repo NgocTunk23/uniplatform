@@ -81,8 +81,7 @@ const createMeeting = async (req, res, next) => {
 
 const updateMeetingStatus = async (req, res, next) => {
   try {
-    const { status } = req.body;
-    const meeting = await meetingService.updateMeetingStatus(req.params.id, status, req.user);
+    const meeting = await meetingService.updateMeetingStatus(req.params.id, req.body, req.user);
     if (!meeting) throw new ApiError(404, 'Meeting not found');
     res.json(meeting);
   } catch (error) {
