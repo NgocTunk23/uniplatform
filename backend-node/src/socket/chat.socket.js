@@ -41,10 +41,7 @@ const registerChatHandlers = (io, socket) => {
         createdAt: new Date() 
       });
 
-      // 2. Background: Generate Embedding and Save to DB
-      console.log('🧠 Generating embedding...');
-      const embedding = await aiService.getEmbedding(content);
-      
+      // 2. Background: Save to DB
       console.log('💾 Saving message to DB...');
       const newMessage = await messageService.saveMessage({
         workspaceId,
@@ -52,12 +49,11 @@ const registerChatHandlers = (io, socket) => {
         content,
         reply,
         mentions,
-        fileIds,
-        vectorembedding: embedding
+        fileIds
       });
-      console.log('✅ Message saved with ID:', newMessage.id);
+      console.log('✅ Message saved with ID:', newMessage.messageid);
 
-      // 3. Broadcast the confirmed message with actual DB IDs and File metadata
+      // 3. Broadcast confirmed message
       io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, newMessage);
 
     } catch (error) {

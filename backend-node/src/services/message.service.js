@@ -4,14 +4,14 @@ const permissionUtil = require('../utils/permission.util');
 const saveMessage = async (messageData) => {
   const { fileIds, workspaceId, ...otherData } = messageData;
   
-  return await prisma.messages.create({
+  const newMessage = await prisma.messages.create({
     data: {
       content: otherData.content,
       senderusername: otherData.senderusername,
       workspaceid: workspaceId,
       reply: otherData.reply,
       userid: otherData.mentions || [],
-      vectorembedding: otherData.vectorembedding || [],
+      vectorembedding: [], // Embedding disabled
       files: fileIds && fileIds.length > 0 ? {
         connect: fileIds.map(id => ({ fileid: id }))
       } : undefined
@@ -20,6 +20,11 @@ const saveMessage = async (messageData) => {
       files: true 
     }
   });
+
+  return {
+    ...newMessage,
+    id: newMessage.messageid
+  };
 };
 
 const getMessagesByWorkspace = async (workspaceId, currentUser, limit = 50, skip = 0) => {
