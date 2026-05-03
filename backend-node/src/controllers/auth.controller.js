@@ -90,6 +90,7 @@ const registerUser = async (req, res, next) => {
       email: user.email,
       fullname: user.fullname,
       role: user.role,
+      tokenVersion: user.tokenVersion.toString(),
       token: generateToken(user.username, user.tokenVersion),
     });
   } catch (error) {
@@ -147,6 +148,7 @@ const loginUser = async (req, res, next) => {
         email: user.email,
         fullname: user.fullname,
         role: user.role,
+        tokenVersion: user.tokenVersion.toString(),
         token: generateToken(user.username, user.tokenVersion),
       });
     } else {

@@ -4,7 +4,7 @@ const prisma = require('../config/prisma');
 /**
  * Retrieval-Augmented Generation (RAG) Service
  */
-const getAnswerFromKnowledge = async (workspaceId, userQuery) => {
+const getAnswerFromKnowledge = async (workspaceid, userQuery) => {
   try {
     // 1. Convert user query to vector
     const queryVector = await aiService.getEmbedding(userQuery);
@@ -12,9 +12,9 @@ const getAnswerFromKnowledge = async (workspaceId, userQuery) => {
     // 2. Search for relevant context in Messages
     // Note: On MongoDB Atlas, you would use $vectorSearch.
     // On local DB, we retrieve recent context as fallback.
-    const relevantMessages = await prisma.message.findMany({
-      where: { workspaceId: workspaceId },
-      orderBy: { createdAt: 'desc' },
+    const relevantMessages = await prisma.messages.findMany({
+      where: { workspaceid: workspaceid },
+      orderBy: { createdat: 'desc' },
       take: 20
     });
 

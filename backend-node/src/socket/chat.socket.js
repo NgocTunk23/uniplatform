@@ -8,14 +8,16 @@ const registerChatHandlers = (io, socket) => {
   const user = socket.user;
   console.log(`⚡ User connected to chat: ${socket.id}`);
 
-  socket.on(SOCKET_EVENTS.JOIN_WORKSPACE, async (workspaceId) => {
+  socket.on(SOCKET_EVENTS.JOIN_WORKSPACE, async (workspace_data) => {
     try {
+      const workspaceid = typeof workspace_data === 'string' ? workspace_data : (workspace_data?.workspaceid || workspace_data?.workspaceId);
+      if (!workspaceid) throw new Error('Missing workspaceid');
       // Security: Check if user is member of workspace
-      await permissionUtil.getWorkspaceMembership(workspaceId, user);
+      await permissionUtil.getWorkspaceMembership(workspaceid, user);
       
-      socket.join(workspaceId);
-      console.log(`User ${socket.id} joined workspace: ${workspaceId}`);
-      socket.emit(SOCKET_EVENTS.WORKSPACE_JOINED, { workspaceId });
+      socket.join(workspaceid);
+      console.log(`User ${socket.id} joined workspace: ${workspaceid}`);
+      socket.emit(SOCKET_EVENTS.WORKSPACE_JOINED, { workspaceid });
     } catch (error) {
       console.error(`❌ Join Workspace Error: ${error.message}`);
       socket.emit(SOCKET_EVENTS.ERROR, { message: error.message });
@@ -24,27 +26,28 @@ const registerChatHandlers = (io, socket) => {
 
   socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (data) => {
     try {
-      const { workspaceId, content, reply, mentions, fileIds } = data;
+      const workspaceid = data.workspaceid || data.workspaceId;
+      const { content, reply, mentions, fileIds } = data;
       
       // Security: Check if user can write
-      await permissionUtil.ensureCanWrite(workspaceId, user);
+      await permissionUtil.ensureCanWrite(workspaceid, user);
 
       const senderusername = user.username;
       
-      console.log(`📩 Received message from ${senderusername} in workspace ${workspaceId}: ${content}`);
+      console.log(`📩 Received message from ${senderusername} in workspace ${workspaceid}: ${content}`);
 
       // 1. Broadcast immediately (snappy UI)
-      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, { 
+      io.to(workspaceid).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, { 
         ...data, 
         senderusername, 
         senderfullname: user.fullname,
-        createdAt: new Date() 
+        createdat: new Date() 
       });
 
       // 2. Background: Save to DB
       console.log('💾 Saving message to DB...');
       const newMessage = await messageService.saveMessage({
-        workspaceId,
+        workspaceid,
         senderusername,
         content,
         reply,
@@ -54,7 +57,7 @@ const registerChatHandlers = (io, socket) => {
       console.log('✅ Message saved with ID:', newMessage.messageid);
 
       // 3. Broadcast confirmed message
-      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, newMessage);
+      io.to(workspaceid).emit(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, newMessage);
 
     } catch (error) {
       console.error('❌ Socket Error (send_message):', error.message);
@@ -65,25 +68,26 @@ const registerChatHandlers = (io, socket) => {
   // T5.4: Handle AI Chatbot interaction
   socket.on(SOCKET_EVENTS.ASK_AI, async (data) => {
     try {
-      const { workspaceId, prompt, senderusername } = data;
+      const workspaceid = data.workspaceid || data.workspaceId;
+      const { prompt, senderusername } = data;
       
       // Security: Check if user can write
-      await permissionUtil.ensureCanWrite(workspaceId, user);
+      await permissionUtil.ensureCanWrite(workspaceid, user);
       
       // Notify client that AI is typing
       socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'typing' });
 
-      const aiResponse = await ragService.getAnswerFromKnowledge(workspaceId, prompt);
+      const aiResponse = await ragService.getAnswerFromKnowledge(workspaceid, prompt);
 
       // Save AI response to DB (optional, but good for history)
       const aiMessage = await messageService.saveMessage({
-        workspaceId,
+        workspaceid,
         senderusername: 'UniBot',
         content: aiResponse,
         reply: null
       });
 
-      io.to(workspaceId).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, aiMessage);
+      io.to(workspaceid).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, aiMessage);
       socket.emit(SOCKET_EVENTS.AI_STATUS, { status: 'done' });
 
     } catch (error) {

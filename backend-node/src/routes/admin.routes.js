@@ -86,7 +86,7 @@ router.patch('/users/:id/status', adminController.updateUserStatus);
  *       200:
  *         description: Người dùng đã bị cưỡng chế đăng xuất
  */
-router.post('/users/:id/force-logout', protect, authorize(ROLES.SYSTEM.ADMIN), adminController.forceLogoutUser);
+router.post('/users/:id/force-logout', adminController.forceLogoutUser);
 
 /**
  * @swagger
