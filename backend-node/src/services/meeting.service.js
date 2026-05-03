@@ -80,16 +80,26 @@ const createMeeting = async (meetingData, currentUser) => {
   });
 };
 
-const updateMeetingStatus = async (meetingId, status, currentUser) => {
+const updateMeetingStatus = async (meetingId, updateData, currentUser) => {
   const meeting = await prisma.meeting.findUnique({ where: { meetingid: meetingId } });
   if (!meeting) return null;
 
   // Only organizer or Leader can update status
-  await permissionUtil.ensureLeader(meeting.workspaceid, currentUser);
+  const membership = await permissionUtil.getWorkspaceMembership(meeting.workspaceid, currentUser);
+  const isLeader = membership.isSystemAdmin || membership.workspacerole === ROLES.WORKSPACE.LEADER;
+  const isOrganizer = meeting.organizer === currentUser.username;
+
+  if (!isLeader && !isOrganizer) {
+    throw new ApiError(403, 'Authority denied. Only Leaders or the Organizer can perform this action.');
+  }
+
+  const data = { ...updateData };
+  if (data.starttime) data.starttime = new Date(data.starttime);
+  if (data.endtime) data.endtime = new Date(data.endtime);
 
   return await prisma.meeting.update({
     where: { meetingid: meetingId },
-    data: { status }
+    data: data
   });
 };
 

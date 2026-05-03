@@ -80,13 +80,20 @@ const RemoteVideo = ({ stream, participant, isLocal, localVideoOn }: { stream: M
   }, [stream, effectivelyVideoOn]);
 
   return (
-    <div className="relative w-full h-full bg-gray-900 overflow-hidden">
+    <div className={`relative w-full h-full bg-gray-900 overflow-hidden transition-all duration-300 ${participant.isSpeaking ? 'ring-4 ring-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)] z-10' : 'ring-0'}`}>
       {/* Avatar Fallback */}
       <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-950 transition-opacity duration-500 ${effectivelyVideoOn ? 'opacity-0 z-0' : 'opacity-100 z-10'}`}>
-        <div className={`w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center text-white text-3xl md:text-5xl font-black mb-4 shadow-2xl ${isLocal ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gray-800 border-4 border-white/5'}`}>
+        <div className={`w-20 h-20 md:w-32 md:h-32 rounded-full flex items-center justify-center text-white text-3xl md:text-5xl font-black mb-4 shadow-2xl transition-transform duration-300 ${participant.isSpeaking ? 'scale-110' : 'scale-100'} ${isLocal ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gray-800 border-4 border-white/5'}`}>
           {participant.initials}
         </div>
         <p className="text-white/60 text-sm font-medium">{isLocal ? 'You (Camera Off)' : participant.name}</p>
+        {participant.isSpeaking && (
+          <div className="mt-4 flex gap-1 items-center">
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-bounce" />
+          </div>
+        )}
       </div>
 
       {/* Video Element */}
@@ -112,6 +119,11 @@ export function MeetingRoom() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  
+  // New Meeting Management States
+  const [elapsedTime, setElapsedTime] = useState('00:00:00');
+  const [isOvertime, setIsOvertime] = useState(false);
+  const [userWorkspaceRole, setUserWorkspaceRole] = useState<string | null>(null);
 
   useEffect(() => {
     localStreamRef.current = localStream;
@@ -120,6 +132,7 @@ export function MeetingRoom() {
   const socketRef = useRef<Socket | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const participantsRef = useRef<Participant[]>([]);
+  const joinTimeRef = useRef<number>(Date.now());
 
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
   const token = localStorage.getItem('uniplatform_user_token');
@@ -152,12 +165,84 @@ export function MeetingRoom() {
     };
   }, [meetingId]);
 
+  // Speaking Detection logic using Web Audio API
+  useEffect(() => {
+    if (!localStream || !isMicOn) {
+      if (socketRef.current && meetingId) {
+        socketRef.current.emit('sync_speaking_state', { meetingId, isSpeaking: false });
+      }
+      return;
+    }
+
+    let audioContext: AudioContext;
+    let analyser: AnalyserNode;
+    let source: MediaStreamAudioSourceNode;
+    let animationFrame: number;
+    let isCurrentlySpeaking = false;
+    let silenceStartTime = Date.now();
+
+    try {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      source = audioContext.createMediaStreamSource(localStream);
+      source.connect(analyser);
+
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const checkAudio = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        const speaking = average > 25; // Sensitivity threshold
+
+        if (speaking) {
+          silenceStartTime = Date.now();
+          if (!isCurrentlySpeaking) {
+            isCurrentlySpeaking = true;
+            socketRef.current?.emit('sync_speaking_state', { meetingId, isSpeaking: true });
+          }
+        } else {
+          // Add a small delay (400ms) before turning off speaking state to avoid flickering
+          if (isCurrentlySpeaking && Date.now() - silenceStartTime > 400) {
+            isCurrentlySpeaking = false;
+            socketRef.current?.emit('sync_speaking_state', { meetingId, isSpeaking: false });
+          }
+        }
+
+        animationFrame = requestAnimationFrame(checkAudio);
+      };
+
+      checkAudio();
+    } catch (err) {
+      console.error("Audio activity detection error:", err);
+    }
+
+    return () => {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (audioContext) audioContext.close();
+    };
+  }, [localStream, isMicOn, meetingId]);
+
   const initSocket = () => {
     const socket = io(apiUrl, {
       auth: { token }
     });
 
     socketRef.current = socket;
+
+    socket.on('sync_speaking_state', ({ isSpeaking, socketId }) => {
+      setParticipants(prev => prev.map(p => p.socketId === socketId ? { ...p, isSpeaking } : p));
+    });
+
+    socket.on('meeting_ended', () => {
+      toast.info("The meeting has been ended by the organizer.");
+      setTimeout(() => navigate('/meetings'), 2000);
+    });
 
     socket.on('connect', () => {
       console.log('✅ Socket connected, emitting join_meeting for:', meetingId);
@@ -268,6 +353,31 @@ export function MeetingRoom() {
     socket.on('disconnect', () => console.log('❌ Socket disconnected'));
   };
 
+  const handleEndMeeting = async () => {
+    if (!window.confirm("Are you sure you want to end this meeting for everyone?")) return;
+
+    try {
+      const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: 'ended' })
+      });
+
+      if (res.ok) {
+        socketRef.current?.emit('end_meeting', { meetingId });
+        navigate('/meetings');
+      } else {
+        const error = await res.json();
+        toast.error(error.message || "Failed to end meeting");
+      }
+    } catch (err) {
+      toast.error("An error occurred while ending the meeting");
+    }
+  };
+
   const setupPeerEvents = (peer: RTCPeerConnection, targetSocketId: string) => {
     peer.onnegotiationneeded = async () => {
       try {
@@ -355,11 +465,84 @@ export function MeetingRoom() {
       if (res.ok) {
         const data = await res.json();
         setMeeting(data);
+
+        // Auto-update status to ongoing if it was upcoming
+        if (data.status === 'upcoming') {
+          const now = new Date();
+          const plannedStart = new Date(data.starttime).getTime();
+          const plannedEnd = new Date(data.endtime).getTime();
+          const isEarlyJoin = now.getTime() < plannedStart;
+
+          let newStartISO = data.starttime;
+          let newEndISO = data.endtime;
+
+          if (isEarlyJoin) {
+            // Only shift time if joining early to ensure timer starts immediately
+            const duration = plannedEnd - plannedStart;
+            newStartISO = now.toISOString();
+            newEndISO = new Date(now.getTime() + duration).toISOString();
+          }
+
+          fetch(`${apiUrl}/api/meetings/${meetingId}/status`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ 
+              status: 'ongoing',
+              starttime: newStartISO,
+              endtime: newEndISO
+            })
+          }).then(() => {
+            setMeeting({ ...data, status: 'ongoing', starttime: newStartISO, endtime: newEndISO });
+          });
+        }
+
+        // Fetch user role in this workspace for permissions
+        const wsRes = await fetch(`${apiUrl}/api/workspaces/${data.workspaceid}/members`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (wsRes.ok) {
+          const members = await wsRes.json();
+          const me = members.find((m: any) => m.username === currentUser);
+          setUserWorkspaceRole(me?.workspacerole || null);
+        }
       }
     } catch (err) {
-      console.error("Fetch meeting details error", err);
+      console.error("Fetch meeting error", err);
     }
   };
+
+  // Timer logic to track duration and overtime
+  useEffect(() => {
+    if (!meeting) return;
+
+    const timer = setInterval(() => {
+      // Ensure starttime is parsed correctly regardless of format
+      const startStr = meeting.starttime.includes('T') ? meeting.starttime : meeting.starttime.replace(' ', 'T');
+      const start = new Date(startStr).getTime();
+      const end = new Date(meeting.endtime).getTime();
+      const now = new Date().getTime();
+
+      let diff = now - start;
+      
+      // Strict calculation from starttime as requested
+      const displayDiff = Math.max(0, diff);
+
+      const hours = Math.floor(displayDiff / 3600000);
+      const minutes = Math.floor((displayDiff % 3600000) / 60000);
+      const seconds = Math.floor((displayDiff % 60000) / 1000);
+
+      setElapsedTime(
+        `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+      );
+
+      setIsOvertime(now > end);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [meeting]);
 
   const toggleMedia = async (type: 'audio' | 'video') => {
     try {
@@ -475,10 +658,18 @@ export function MeetingRoom() {
               <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]" />
               <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-green-500 animate-ping opacity-50" />
             </div>
-            <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
+              <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                <Users size={12} className="text-gray-400" />
+                <span className="text-gray-300 text-[11px] font-bold">{participants.length}</span>
+              </div>
+            </div>
           </div>
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
-          <span className="text-gray-400 text-sm font-mono hidden sm:block bg-white/5 px-2 py-0.5 rounded tracking-widest">2:15:32</span>
+          <span className={`text-sm font-mono hidden sm:block px-2 py-0.5 rounded tracking-widest transition-colors duration-500 ${isOvertime ? 'bg-red-500/20 text-red-400 animate-pulse' : 'bg-white/5 text-gray-400'}`}>
+            {elapsedTime}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-purple-500/15 border border-purple-500/20 rounded-full">
@@ -633,26 +824,38 @@ export function MeetingRoom() {
               {isVideoOn ? <Video size={20} /> : <VideoOff size={20} />}
             </button>
 
-            <button className="p-3 bg-gray-800 text-white hover:bg-gray-700 rounded-full transition-all">
-              <Monitor size={20} />
+            <button 
+              onClick={() => navigate('/meetings')}
+              className="p-3 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-2xl transition-all group"
+              title="Leave Room"
+            >
+              <PhoneOff size={24} />
             </button>
 
-            <button
-              onClick={handleLeaveMeeting}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-red-500/20"
-            >
-              <PhoneOff size={18} />
-              <span className="hidden sm:inline">Leave</span>
-            </button>
+            {(meeting?.organizer === currentUser || userWorkspaceRole === 'Leader' || userWorkspaceRole === 'Manager') && (
+              <button 
+                onClick={handleEndMeeting}
+                className="px-4 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl transition-all font-bold text-xs uppercase tracking-wider border border-red-500/20 flex items-center gap-2"
+                title="End Meeting for Everyone"
+              >
+                <X size={18} />
+                <span className="hidden md:inline">End Meeting</span>
+              </button>
+            )}
           </div>
 
           {/* Right: Feature Toggles */}
           <div className="flex-1 flex items-center justify-end gap-2">
             <button
               onClick={() => setActivePanel(activePanel === 'participants' ? null : 'participants')}
-              className={`p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+              className={`relative p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
             >
               <Users size={20} />
+              {participants.length > 0 && (
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white border-2 border-gray-900 shadow-lg">
+                  {participants.length}
+                </div>
+              )}
             </button>
 
             <button
