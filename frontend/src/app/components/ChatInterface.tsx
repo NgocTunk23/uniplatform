@@ -350,7 +350,8 @@ export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInte
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Check isComposing to prevent sending when finishing a Vietnamese character (Telex/VNI)
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSendMessage();
     }
