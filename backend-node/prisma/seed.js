@@ -19,7 +19,7 @@ async function main() {
       address: "Hà Nội, Việt Nam",
       phone: "0912345678",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("1990-01-01"),
       imageuser: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -32,7 +32,7 @@ async function main() {
       address: "Đà Nẵng, Việt Nam",
       phone: "0922345678",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("1992-05-15"),
       imageuser: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -45,7 +45,7 @@ async function main() {
       address: "TP. Hồ Chí Minh, Việt Nam",
       phone: "0932345678",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("1988-10-20"),
       imageuser: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -77,7 +77,7 @@ async function main() {
       address: "Bình Dương",
       phone: "0944556677",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("2002-03-12"),
       imageuser: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -90,7 +90,7 @@ async function main() {
       address: "Cần Thơ",
       phone: "0955667788",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("2003-07-25"),
       imageuser: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -103,7 +103,7 @@ async function main() {
       address: "Đồng Nai",
       phone: "0966778899",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("2002-11-30"),
       imageuser: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -116,7 +116,7 @@ async function main() {
       address: "Long An",
       phone: "0977889900",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("2002-09-05"),
       imageuser: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -129,7 +129,7 @@ async function main() {
       address: "Vũng Tàu",
       phone: "0988990011",
       status: "active",
-      tokenVersion: BigInt(0),
+      tokenVersion: 0,
       dateofbirth: new Date("2003-01-18"),
       imageuser: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=256&h=256&q=80",
     },
@@ -155,7 +155,7 @@ async function main() {
     {
       name: "Phòng Công tác Sinh viên",
       admin: "admin1",
-      members: [
+      member: [
         { username: "admin1", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "2152392", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -165,7 +165,7 @@ async function main() {
     {
       name: "Nhóm Nghiên cứu AI",
       admin: "2033364",
-      members: [
+      member: [
         { username: "2033364", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "admin2", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -175,7 +175,7 @@ async function main() {
     {
       name: "Câu lạc bộ IT",
       admin: "2115302",
-      members: [
+      member: [
         { username: "2115302", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "2033364", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -185,7 +185,7 @@ async function main() {
     {
       name: "Đội Tình nguyện Xung kích",
       admin: "2152392",
-      members: [
+      member: [
         { username: "2152392", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2313522", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "admin1", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -195,7 +195,7 @@ async function main() {
     {
       name: "Ban Chấp hành Đoàn khoa",
       admin: "2313522",
-      members: [
+      member: [
         { username: "2313522", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2313508", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -205,7 +205,7 @@ async function main() {
     {
       name: "Dự án UniPlatform",
       admin: "admin3",
-      members: [
+      member: [
         { username: "admin3", workspacerole: ROLES.WORKSPACE.LEADER },
         { username: "2033364", workspacerole: ROLES.WORKSPACE.MEMBER },
         { username: "2115302", workspacerole: ROLES.WORKSPACE.MEMBER },
@@ -228,7 +228,7 @@ async function main() {
         data: {
           admin: ws.admin,
           member: {
-            set: ws.members
+            set: ws.member
           }
         }
       });
@@ -238,14 +238,14 @@ async function main() {
           name: ws.name,
           admin: ws.admin,
           member: {
-            set: ws.members
+            set: ws.member
           }
         }
       });
     }
     seededWorkspaces.push({
       ...currentWs,
-      memberUsernames: ws.members.map(m => m.username)
+      memberUsernames: ws.member.map(m => m.username)
     });
   }
 

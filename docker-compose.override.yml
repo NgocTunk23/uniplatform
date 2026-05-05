@@ -1,0 +1,30 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb_uniplatform
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+    entrypoint:
+      - bash
+      - -c
+      - |
+        cp /tmp/mongodb.key /data/configdb/mongodb.key &&
+        chmod 400 /data/configdb/mongodb.key &&
+        chown 999:999 /data/configdb/mongodb.key &&
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/configdb/mongodb.key
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb.key:/tmp/mongodb.key:ro
+    healthcheck:
+      test: >
+        mongosh --quiet -u root -p password --authenticationDatabase admin
+        --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongodb:27017' }] }).ok }"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
