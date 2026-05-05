@@ -18,7 +18,7 @@ const permissionUtil = {
     }
 
     if (!workspaceId) {
-      throw new ApiError(400, 'Missing workspace identifier', ERROR_CODES.SYSTEM.VALIDATION_ERROR);
+      throw new ApiError(400, 'Missing workspace identifier', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
     }
 
     // 2. Query workspace with member list

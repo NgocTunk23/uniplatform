@@ -249,6 +249,135 @@ async function main() {
     });
   }
 
+  // Seed Schedules
+  console.log("🗓️ Seeding Schedules...");
+
+  const daysFromNow = (days, hour, minute = 0) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    date.setHours(hour, minute, 0, 0);
+    return date;
+  };
+
+  const scheduleSeeds = [
+    {
+      username: "admin1",
+      title: "Student Consultation",
+      description: "Open time for student support requests.",
+      starttime: daysFromNow(7, 9),
+      endtime: daysFromNow(7, 11),
+      type: "available",
+    },
+    {
+      username: "admin1",
+      title: "Department Planning",
+      description: "Internal planning block.",
+      starttime: daysFromNow(8, 14),
+      endtime: daysFromNow(8, 16),
+      type: "busy",
+    },
+    {
+      username: "2313508",
+      title: "Project Work Block",
+      description: "Focus time for UniPlatform project tasks.",
+      starttime: daysFromNow(7, 13),
+      endtime: daysFromNow(7, 15),
+      type: "busy",
+    },
+    {
+      username: "2313508",
+      title: "Available for Review",
+      description: "Free slot for team review or mentoring.",
+      starttime: daysFromNow(9, 10),
+      endtime: daysFromNow(9, 12),
+      type: "available",
+    },
+    {
+      username: "2152392",
+      title: "Research Reading",
+      description: "Reserved reading and preparation time.",
+      starttime: daysFromNow(8, 9),
+      endtime: daysFromNow(8, 10, 30),
+      type: "tentative",
+    },
+    {
+      username: "2152392",
+      title: "Team Design Review",
+      description: "Busy block for design review preparation.",
+      starttime: daysFromNow(10, 14),
+      endtime: daysFromNow(10, 16),
+      type: "busy",
+    },
+    {
+      username: "2313522",
+      title: "Club Coordination",
+      description: "Time reserved for student club coordination.",
+      starttime: daysFromNow(9, 8),
+      endtime: daysFromNow(9, 9, 30),
+      type: "busy",
+    },
+    {
+      username: "2313522",
+      title: "Mentoring Slot",
+      description: "Available slot for peer mentoring.",
+      starttime: daysFromNow(11, 15),
+      endtime: daysFromNow(11, 17),
+      type: "available",
+    },
+    {
+      username: "2033364",
+      title: "AI Lab Work",
+      description: "Focused block for AI lab experiments.",
+      starttime: daysFromNow(10, 9),
+      endtime: daysFromNow(10, 12),
+      type: "busy",
+    },
+    {
+      username: "2033364",
+      title: "Office Hours",
+      description: "Available for project questions.",
+      starttime: daysFromNow(12, 13),
+      endtime: daysFromNow(12, 15),
+      type: "available",
+    },
+    {
+      username: "2115302",
+      title: "Workshop Preparation",
+      description: "Preparation time for IT club workshop.",
+      starttime: daysFromNow(11, 9),
+      endtime: daysFromNow(11, 11),
+      type: "busy",
+    },
+    {
+      username: "2115302",
+      title: "Flexible Support Time",
+      description: "Tentative support block for workspace members.",
+      starttime: daysFromNow(12, 16),
+      endtime: daysFromNow(12, 17, 30),
+      type: "tentative",
+    },
+  ];
+
+  for (const schedule of scheduleSeeds) {
+    const existing = await prisma.schedules.findFirst({
+      where: {
+        username: schedule.username,
+        title: schedule.title,
+      },
+    });
+
+    if (existing) {
+      await prisma.schedules.update({
+        where: { scheduleid: existing.scheduleid },
+        data: schedule,
+      });
+    } else {
+      await prisma.schedules.create({
+        data: schedule,
+      });
+    }
+  }
+
   // Seed Meetings
   console.log("📅 Seeding Meetings...");
   const meetingTitles = [
@@ -262,26 +391,14 @@ async function main() {
     const ws = seededWorkspaces[i % seededWorkspaces.length];
     const status = statuses[i % statuses.length];
     
-    let starttime = new Date();
-    let endtime = new Date();
-    
-    if (status === "ongoing") {
-      starttime.setMinutes(starttime.getMinutes() - 30);
-      endtime.setMinutes(endtime.getMinutes() + 30);
-    } else if (status === "upcoming") {
-      starttime.setDate(starttime.getDate() + (i % 5) + 1);
-      endtime = new Date(starttime);
-      endtime.setHours(endtime.getHours() + 1);
-    } else { // ended
-      starttime.setDate(starttime.getDate() - (i % 5) - 1);
-      endtime = new Date(starttime);
-      endtime.setHours(endtime.getHours() + 1);
-    }
+    const dayOffset = status === "ended" ? -((i % 5) + 1) : (status === "upcoming" ? (i % 5) + 1 : 0);
+    const meetingHour = 9 + (i % 8);
+    const starttime = daysFromNow(dayOffset, meetingHour);
+    const endtime = daysFromNow(dayOffset, meetingHour + 1);
 
     const meetingTitle = `${ws.name} - ${meetingTitles[i % meetingTitles.length]}`;
-    
-    const meeting = await prisma.meeting.create({
-      data: {
+
+    const meetingData = {
         workspaceid: ws.workspaceid,
         title: meetingTitle,
         starttime,
@@ -289,15 +406,38 @@ async function main() {
         organizer: ws.admin,
         participants: ws.memberUsernames,
         status: status,
-        link: `https://meet.uniplatform.com/${Math.random().toString(36).substring(2, 10)}`,
+        link: `https://meet.uniplatform.com/seed-${i.toString().padStart(2, "0")}`,
         bot_status: status === "ongoing" ? "recording" : (status === "ended" ? "completed" : "idle"),
         recording_file: status === "ended" ? "recording_v1.mp4" : null
-      }
+    };
+
+    const existingMeeting = await prisma.meeting.findFirst({
+      where: {
+        workspaceid: ws.workspaceid,
+        title: meetingTitle,
+      },
     });
 
+    const meeting = existingMeeting
+      ? await prisma.meeting.update({
+          where: { meetingid: existingMeeting.meetingid },
+          data: meetingData,
+        })
+      : await prisma.meeting.create({ data: meetingData });
+
     if (status === "ended" && i % 2 === 0) {
-      await prisma.meetingMinutes.create({
-        data: {
+      await prisma.meetingMinutes.upsert({
+        where: { meetingid: meeting.meetingid },
+        update: {
+          createby: ws.admin,
+          content: "Discussed key deliverables and project timeline.",
+          task: ["Update design mockups", "Fix API bug"],
+          decisions: ["Approved Q3 budget"],
+          summary: "A productive meeting focusing on the next sprint.",
+          isbotgenerated: true,
+          vectorembedding: []
+        },
+        create: {
           meetingid: meeting.meetingid,
           createby: ws.admin,
           content: "Discussed key deliverables and project timeline.",

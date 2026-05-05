@@ -46,7 +46,8 @@ const getDashboardStats = async (req, res, next) => {
           limit: (quota.limit / 1024 / 1024 / 1024).toFixed(2) + ' GB',
           usage: (quota.usage / 1024 / 1024 / 1024).toFixed(2) + ' GB',
           remaining: (quota.remaining / 1024 / 1024 / 1024).toFixed(2) + ' GB',
-          usagePercent: ((quota.usage / quota.limit) * 100).toFixed(2) + '%'
+          usagePercent: ((quota.usage / quota.limit) * 100).toFixed(2) + '%',
+          driveQuotaWarning: quota.usage / quota.limit > 0.9,
         } : 'Quota info unavailable'
       }
     });
@@ -71,7 +72,6 @@ const getAllUsers = async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       select: {
-        username: true,
         username: true,
         email: true,
         fullname: true,

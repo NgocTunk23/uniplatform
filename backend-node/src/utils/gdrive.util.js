@@ -15,6 +15,8 @@ const getDriveConfig = () => {
   };
 };
 
+const isPlaceholderValue = (value) => !value || value.startsWith('your_');
+
 let driveInstance = null;
 let lastConfigHash = '';
 
@@ -26,7 +28,12 @@ const getDriveClient = () => {
     return driveInstance;
   }
 
-  if (!config.clientId || !config.clientSecret || !config.refreshToken || config.mockMode) {
+  if (
+    config.mockMode ||
+    isPlaceholderValue(config.clientId) ||
+    isPlaceholderValue(config.clientSecret) ||
+    isPlaceholderValue(config.refreshToken)
+  ) {
     driveInstance = null;
     lastConfigHash = configHash;
     return null;
@@ -140,6 +147,8 @@ const getDownloadLink = (fileId) => {
 const getStorageQuota = async () => {
   try {
     const drive = getDriveClient();
+    if (!drive) return null;
+
     const response = await drive.about.get({
       fields: 'storageQuota',
     });

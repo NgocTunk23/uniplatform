@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Upload,
   Search,
@@ -15,16 +15,11 @@ import {
   Layers,
   FolderOpen,
   HardDrive,
-  CheckCircle,
-  AlertCircle,
   Info,
-  ChevronDown,
-  MoreHorizontal,
   File,
-  Filter,
   Cloud,
-  Zap,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,30 +29,22 @@ interface DriveFile {
   id: string;
   name: string;
   size: string;
+  sizeBytes: number;
   type: string;
   category: FileCategory;
   date: string;
   starred: boolean;
   shared: boolean;
   owner: string;
+  workspace?: string;
+  downloadLink?: string;
+  webViewLink?: string;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const initialFiles: DriveFile[] = [
-  { id: '1',  name: 'Project Brief.pdf',           size: '2.4 MB',  type: 'PDF',  category: 'documents',     date: '2026-04-12', starred: true,  shared: true,  owner: 'You' },
-  { id: '2',  name: 'UI Mockups v3.png',            size: '5.1 MB',  type: 'PNG',  category: 'images',        date: '2026-04-11', starred: false, shared: true,  owner: 'Alex T.' },
-  { id: '3',  name: 'Sprint Notes.md',              size: '48 KB',   type: 'MD',   category: 'notes',         date: '2026-04-10', starred: false, shared: false, owner: 'You' },
-  { id: '4',  name: 'Backend Architecture.pdf',     size: '1.8 MB',  type: 'PDF',  category: 'documents',     date: '2026-04-09', starred: false, shared: true,  owner: 'Jordan M.' },
-  { id: '5',  name: 'Team Photo.jpg',               size: '3.2 MB',  type: 'JPG',  category: 'images',        date: '2026-04-08', starred: true,  shared: true,  owner: 'You' },
-  { id: '6',  name: 'API Integration Plan.docx',   size: '890 KB',  type: 'DOCX', category: 'project files', date: '2026-04-07', starred: false, shared: true,  owner: 'You' },
-  { id: '7',  name: 'Research Summary.md',          size: '120 KB',  type: 'MD',   category: 'notes',         date: '2026-04-06', starred: false, shared: false, owner: 'Sam K.' },
-  { id: '8',  name: 'Database Schema.pdf',          size: '740 KB',  type: 'PDF',  category: 'documents',     date: '2026-04-05', starred: false, shared: true,  owner: 'You' },
-  { id: '9',  name: 'Wireframes v2.png',            size: '4.3 MB',  type: 'PNG',  category: 'images',        date: '2026-04-04', starred: false, shared: false, owner: 'Alex T.' },
-  { id: '10', name: 'Feature Tracker.xlsx',         size: '310 KB',  type: 'XLSX', category: 'project files', date: '2026-04-03', starred: true,  shared: true,  owner: 'You' },
-  { id: '11', name: 'Meeting Agenda Apr 12.docx',   size: '62 KB',   type: 'DOCX', category: 'documents',     date: '2026-04-12', starred: false, shared: true,  owner: 'Jordan M.' },
-  { id: '12', name: 'User Interviews Notes.md',     size: '94 KB',   type: 'MD',   category: 'notes',         date: '2026-04-01', starred: false, shared: false, owner: 'You' },
-];
+interface Workspace {
+  workspaceid: string;
+  name: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -138,7 +125,7 @@ function StorageBar({ used, total }: { used: number; total: number }) {
         />
       </div>
       <div className="flex justify-between text-xs text-gray-400 font-medium">
-        <span>{used} GB used of {total} GB</span>
+        <span>{used.toFixed(2)} GB used of {total} GB</span>
         <span className={pct > 85 ? 'text-orange-500 font-semibold' : 'text-purple-500 font-semibold'}>{pct}%</span>
       </div>
     </div>
@@ -147,46 +134,262 @@ function StorageBar({ used, total }: { used: number; total: number }) {
 
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
-export function DriveFiles() {
-  const [driveConnected, setDriveConnected] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync] = useState('2 minutes ago');
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 
-  const [files, setFiles] = useState<DriveFile[]>(initialFiles);
+function mimeToType(mime: string): string {
+  if (mime.includes('pdf')) return 'PDF';
+  if (mime.includes('png')) return 'PNG';
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'JPG';
+  if (mime.includes('markdown') || mime.endsWith('/md')) return 'MD';
+  if (mime.includes('word') || mime.includes('docx')) return 'DOCX';
+  if (mime.includes('sheet') || mime.includes('xlsx')) return 'XLSX';
+  if (mime.includes('image')) return 'IMG';
+  return mime.split('/').pop()?.toUpperCase() ?? 'FILE';
+}
+
+function mimeToCategory(mime: string): FileCategory {
+  if (mime.includes('pdf') || mime.includes('word') || mime.includes('docx') || mime.includes('text/plain')) return 'documents';
+  if (mime.includes('image')) return 'images';
+  if (mime.includes('markdown') || mime.includes('md')) return 'notes';
+  if (mime.includes('sheet') || mime.includes('xlsx') || mime.includes('zip')) return 'project files';
+  return 'documents';
+}
+
+function formatSize(bytes: string | number): string {
+  const n = Number(bytes);
+  if (isNaN(n)) return String(bytes);
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+function apiFileToLocal(f: any, currentUsername: string): DriveFile {
+  const created = f.createdat ?? f.createdAt;
+  const workspaceName = f.workspace?.name || f.workspace?.title;
+  const sizeBytes = Number(f.sizefile ?? 0);
+
+  return {
+    id: f.id ?? f.fileid,
+    name: f.filename,
+    size: formatSize(sizeBytes),
+    sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+    type: mimeToType(f.typefile || ''),
+    category: mimeToCategory(f.typefile || ''),
+    date: created ? new Date(created).toISOString().split('T')[0] : '',
+    starred: false,
+    shared: !!f.messageid || !!f.meetingminuteid || !!workspaceName,
+    owner: f.uploader === currentUsername ? 'You' : f.uploader,
+    workspace: workspaceName,
+    downloadLink: f.downloadLink,
+    webViewLink: f.webViewLink,
+  };
+}
+
+export function DriveFiles() {
+  const [driveConnected, setDriveConnected] = useState(() => localStorage.getItem('uniplatform_drive_visible') !== 'false');
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState('just now');
+  const [uploading, setUploading] = useState(false);
+
+  const [files, setFiles] = useState<DriveFile[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceFilter, setWorkspaceFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<FileCategory>('all');
   const [previewFile, setPreviewFile] = useState<DriveFile | null>(null);
+  const [starredIds, setStarredIds] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('uniplatform_starred_files') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
 
-  const storageUsed = 12.4;
-  const storageTotal = 15;
+  const [driveQuota, setDriveQuota] = useState<{ usedGb: number; totalGb: number }>({ usedGb: 0, totalGb: 15 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentUsername = localStorage.getItem('uniplatform_username') || '';
+  const token = localStorage.getItem('uniplatform_user_token') || '';
 
-  const handleSync = () => {
+  const fetchFiles = async () => {
+    setLoading(true);
+    try {
+      const query = workspaceFilter === 'all' ? '' : `?workspaceid=${encodeURIComponent(workspaceFilter)}`;
+      const res = await fetch(`${apiUrl}/api/files${query}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFiles((data.data ?? []).map((f: any) => {
+          const item = apiFileToLocal(f, currentUsername);
+          return { ...item, starred: starredIds.has(item.id) };
+        }));
+        setLastSync('just now');
+      } else {
+        const error = await res.json().catch(() => null);
+        toast.error(error?.message || 'Failed to load files');
+      }
+    } catch (err) {
+      console.error('Fetch files error', err);
+      toast.error('Network error while loading files');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchWorkspaces = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/workspaces`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspaces(data);
+      }
+    } catch (err) {
+      console.error('Fetch workspaces error', err);
+    }
+  };
+
+  const fetchQuota = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/files/quota`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.usage != null && data.limit != null && data.limit > 0) {
+          setDriveQuota({
+            usedGb: data.usage / 1024 / 1024 / 1024,
+            totalGb: data.limit / 1024 / 1024 / 1024,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Fetch quota error', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchWorkspaces();
+    fetchQuota();
+  }, []);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [workspaceFilter]);
+
+  const handleSync = async () => {
     setSyncing(true);
-    setTimeout(() => setSyncing(false), 2000);
+    await fetchFiles();
+    setSyncing(false);
   };
 
-  const handleFakeUpload = () => {
-    const names = ['New Report.pdf', 'Sketch Export.png', 'Meeting Notes.md', 'Roadmap Q3.xlsx'];
-    const cats: FileCategory[] = ['documents', 'images', 'notes', 'project files'];
-    const types = ['PDF', 'PNG', 'MD', 'XLSX'];
-    const idx = Math.floor(Math.random() * 4);
-    setFiles(prev => [{
-      id: String(Date.now()),
-      name: names[idx],
-      size: `${(Math.random() * 4 + 0.2).toFixed(1)} MB`,
-      type: types[idx],
-      category: cats[idx],
-      date: '2026-04-13',
-      starred: false,
-      shared: false,
-      owner: 'You',
-    }, ...prev]);
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (file.size > MAX_UPLOAD_SIZE) {
+      toast.error('File exceeds 50MB');
+      return;
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    setUploading(true);
+    try {
+      const res = await fetch(`${apiUrl}/api/files/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: form,
+      });
+      if (res.ok) {
+        if (workspaceFilter !== 'all') {
+          setWorkspaceFilter('all');
+        } else {
+          await fetchFiles();
+        }
+        toast.success('Personal file uploaded');
+      } else {
+        const error = await res.json().catch(() => null);
+        toast.error(error?.message || 'Failed to upload file');
+      }
+    } catch (err) {
+      console.error('Upload error', err);
+      toast.error('Network error while uploading file');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleDelete = (id: string) => setFiles(prev => prev.filter(f => f.id !== id));
-  const handleToggleStar = (id: string) => setFiles(prev => prev.map(f => f.id === id ? { ...f, starred: !f.starred } : f));
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this file?')) return;
+
+    try {
+      const res = await fetch(`${apiUrl}/api/files/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        toast.error(error?.message || 'Failed to delete file');
+        return;
+      }
+      setFiles(prev => prev.filter(f => f.id !== id));
+      toast.success('File deleted');
+    } catch (err) {
+      console.error('Delete error', err);
+      toast.error('Network error while deleting file');
+    }
+  };
+
+  const handleToggleStar = (id: string) => {
+    setStarredIds(prev => {
+      const next = new Set(prev);
+      const isStarred = next.has(id);
+      if (isStarred) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      localStorage.setItem('uniplatform_starred_files', JSON.stringify([...next]));
+      toast.success(isStarred ? 'Removed from starred files' : 'Added to starred files');
+      return next;
+    });
+
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, starred: !f.starred } : f));
+  };
+
+  const setDriveVisibility = (visible: boolean) => {
+    localStorage.setItem('uniplatform_drive_visible', String(visible));
+    setDriveConnected(visible);
+    toast.success(visible ? 'Drive files shown' : 'Drive files hidden');
+    if (visible) fetchFiles();
+  };
+
+  const openStorageUpgrade = () => {
+    window.open('https://one.google.com/storage', '_blank', 'noopener,noreferrer');
+  };
+
+  const openFileDownload = (file: DriveFile) => {
+    if (!file.downloadLink) {
+      toast.error('Download link unavailable');
+      return;
+    }
+    window.open(file.downloadLink, '_blank', 'noopener,noreferrer');
+  };
+
+  const openFileInDrive = (file: DriveFile) => {
+    if (!file.webViewLink) {
+      toast.error('Drive link unavailable');
+      return;
+    }
+    window.open(file.webViewLink, '_blank', 'noopener,noreferrer');
+  };
 
   const tabs: { key: FileCategory; label: string }[] = [
     { key: 'all',           label: 'All Files'     },
@@ -224,7 +427,7 @@ export function DriveFiles() {
               Drive Files
             </h1>
             <p className="text-sm text-gray-500 mt-1 ml-0.5">
-              Manage all your project files and personal documents through your linked Google Drive account.
+              Manage personal uploads and workspace attachments through your backend-managed Google Drive account.
             </p>
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
@@ -237,12 +440,12 @@ export function DriveFiles() {
               {syncing ? 'Syncing…' : 'Sync'}
             </button>
             <button
-              onClick={handleFakeUpload}
-              disabled={!driveConnected}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!driveConnected || uploading}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm disabled:opacity-50"
             >
-              <Upload size={14} />
-              Upload File
+              {uploading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+              {uploading ? 'Uploading...' : 'Upload Personal File'}
             </button>
           </div>
         </div>
@@ -267,10 +470,10 @@ export function DriveFiles() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-600 font-medium">
-                      jane.smith@gmail.com
+                      {currentUsername ? `@${currentUsername}` : 'Backend managed Drive'}
                     </p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      Last synced {lastSync} · Auto-sync enabled
+                      Last synced {lastSync}
                     </p>
                   </div>
                 </div>
@@ -295,11 +498,11 @@ export function DriveFiles() {
                     {syncing ? 'Syncing…' : 'Sync Now'}
                   </button>
                   <button
-                    onClick={() => setDriveConnected(false)}
+                    onClick={() => setDriveVisibility(false)}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-100 bg-red-50 text-red-500 text-xs font-semibold hover:bg-red-100 transition-colors"
                   >
                     <X size={13} />
-                    Disconnect
+                    Hide Drive
                   </button>
                 </div>
               </div>
@@ -319,16 +522,16 @@ export function DriveFiles() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">
-                      Connect your Google account to access and manage your team files here.
+                      Show your backend-managed Google Drive files in this workspace.
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setDriveConnected(true)}
+                  onClick={() => setDriveVisibility(true)}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm shrink-0"
                 >
                   <ExternalLink size={14} />
-                  Connect Google Drive
+                  Show Drive Files
                 </button>
               </div>
             )}
@@ -345,11 +548,14 @@ export function DriveFiles() {
                 <div className="sm:col-span-2">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-semibold text-gray-700">Drive Storage</span>
-                    <span className="text-sm font-bold text-purple-600">{storageUsed} GB / {storageTotal} GB</span>
+                    <span className="text-sm font-bold text-purple-600">{driveQuota.usedGb.toFixed(2)} GB / {driveQuota.totalGb.toFixed(2)} GB</span>
                   </div>
-                  <StorageBar used={storageUsed} total={storageTotal} />
+                  <StorageBar used={driveQuota.usedGb} total={driveQuota.totalGb} />
                   <p className="text-xs text-gray-400 mt-2">
-                    {(storageTotal - storageUsed).toFixed(1)} GB remaining · <span className="text-purple-500 font-medium cursor-pointer hover:underline">Upgrade storage</span>
+                    {Math.max(driveQuota.totalGb - driveQuota.usedGb, 0).toFixed(2)} GB remaining ·{' '}
+                    <button onClick={openStorageUpgrade} className="text-purple-500 font-medium hover:underline">
+                      Upgrade storage
+                    </button>
                   </p>
                 </div>
 
@@ -412,6 +618,17 @@ export function DriveFiles() {
                 />
               </div>
 
+              <select
+                value={workspaceFilter}
+                onChange={e => setWorkspaceFilter(e.target.value)}
+                className="px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent"
+              >
+                <option value="all">All accessible files</option>
+                {workspaces.map(workspace => (
+                  <option key={workspace.workspaceid} value={workspace.workspaceid}>{workspace.name}</option>
+                ))}
+              </select>
+
               {/* Category tabs */}
               <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl overflow-x-auto shrink-0">
                 {tabs.map(tab => (
@@ -436,14 +653,19 @@ export function DriveFiles() {
             </div>
 
             {/* File List */}
-            {filtered.length === 0 ? (
+            {loading ? (
+              <div className="py-16 flex flex-col items-center text-center">
+                <RefreshCw size={24} className="text-gray-300 animate-spin mb-3" />
+                <p className="text-sm text-gray-400">Loading files…</p>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="py-16 flex flex-col items-center text-center">
                 <div className="w-14 h-14 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-3">
                   <FolderOpen size={24} className="text-gray-300" />
                 </div>
                 <p className="text-sm font-semibold text-gray-400">No files found</p>
                 <p className="text-xs text-gray-300 mt-1">
-                  {search ? `No results for "${search}"` : 'Upload a file to get started'}
+                  {search ? `No results for "${search}"` : 'Upload a personal file or choose All accessible files'}
                 </p>
               </div>
             ) : (
@@ -479,7 +701,9 @@ export function DriveFiles() {
                         )}
                       </div>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        {file.owner === 'You' ? 'Owned by you' : `Shared by ${file.owner}`}
+                        {file.workspace
+                          ? `${file.owner === 'You' ? 'Owned by you' : `Shared by ${file.owner}`} - ${file.workspace}`
+                          : file.owner === 'You' ? 'Owned by you' : `Shared by ${file.owner}`}
                       </p>
                     </div>
 
@@ -506,11 +730,12 @@ export function DriveFiles() {
                       <button
                         onClick={() => setPreviewFile(file)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-purple-500 hover:bg-purple-50 transition-colors"
-                        title="Preview"
+                        title="Details"
                       >
                         <Eye size={13} />
                       </button>
                       <button
+                        onClick={() => openFileDownload(file)}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-purple-500 hover:bg-purple-50 transition-colors"
                         title="Download"
                       >
@@ -539,7 +764,7 @@ export function DriveFiles() {
           <div>
             <p className="text-sm font-semibold text-gray-800 mb-1">Drive Files is your central document hub</p>
             <p className="text-xs text-gray-500 leading-relaxed">
-              All personal and project files are managed here through your linked Google Drive account. Documents, images, notes, and project assets uploaded or shared within UniPlatform are automatically synced to your connected Drive — keeping everything accessible and up to date in one place.
+              Personal uploads from this page and project files attached from chat or meeting minutes are managed through the backend Drive integration, keeping everything accessible in one place.
             </p>
           </div>
         </div>
@@ -547,7 +772,7 @@ export function DriveFiles() {
       </div>
 
       {/* ── Hidden file input ─────────────────────────────────── */}
-      <input ref={fileInputRef} type="file" className="hidden" multiple onChange={handleFakeUpload} />
+      <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
 
       {/* ── File Preview Modal ────────────────────────────────── */}
       {previewFile && (
@@ -584,9 +809,16 @@ export function DriveFiles() {
 
             <div className="flex gap-3">
               <button
+                onClick={() => openFileDownload(previewFile)}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors"
               >
                 <Download size={14} />Download
+              </button>
+              <button
+                onClick={() => openFileInDrive(previewFile)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-50 text-purple-600 text-sm font-semibold hover:bg-purple-100 transition-colors"
+              >
+                <ExternalLink size={14} />Open
               </button>
               <button
                 onClick={() => setPreviewFile(null)}

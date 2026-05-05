@@ -15,7 +15,7 @@ const validate = (schema) => (req, res, next) => {
     
     // Assign validated data back to request
     req.body = validatedData.body;
-    req.query = validatedData.validatedQuery;
+    req.query = validatedData.query;
     req.params = validatedData.params;
     
     next();

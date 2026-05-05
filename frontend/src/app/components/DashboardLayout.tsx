@@ -54,7 +54,7 @@ export function DashboardLayout() {
                {groupView === 'chat' ? (
                  <ChatInterface workspaceId={activeGroup} />
                ) : (
-                 <TeamCoordination />
+                 <TeamCoordination workspaceId={activeGroup} />
                )}
             </div>
             
