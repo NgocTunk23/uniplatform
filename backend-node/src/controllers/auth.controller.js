@@ -126,7 +126,6 @@ const loginUser = async (req, res, next) => {
   const { identifier, password } = req.body;
 
   try {
-    // backend-node/src/controllers/auth.controller.js
     const user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -144,11 +143,28 @@ const loginUser = async (req, res, next) => {
       throw new ApiError(401, 'Account is locked', ERROR_CODES.AUTH.AUTH_LOCKED);
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    // --- LOGIC KIỂM TRA MẬT KHẨU MỚI (Hỗ trợ data mẫu) ---
+    let isPasswordValid = false;
+
+    // 1. Kiểm tra so sánh chuỗi trực tiếp (Dành cho data mẫu)
+    if (password === user.password) {
+      isPasswordValid = true;
+    } 
+    // 2. Nếu không giống trực tiếp, dùng bcrypt để so sánh (Dành cho user đăng ký mới)
+    else {
+      try {
+        isPasswordValid = await bcrypt.compare(password, user.password);
+      } catch (err) {
+        // Lỗi xảy ra nếu chuỗi trong DB không phải hash hợp lệ của bcrypt
+        isPasswordValid = false; 
+      }
+    }
+
     if (!isPasswordValid) {
       throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);
     }
 
+    // --- ĐĂNG NHẬP THÀNH CÔNG ---
     res.json({
       id: user.username,
       username: user.username,
