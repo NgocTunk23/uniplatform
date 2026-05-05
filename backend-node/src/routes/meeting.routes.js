@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const meetingController = require('../controllers/meeting.controller');
 const { protect } = require('../middlewares/auth.middleware');
+const validate = require('../middlewares/validate.middleware');
+const {
+  createMeetingSchema,
+  updateMeetingSchema,
+  suggestMeetingSlotsSchema,
+  meetingIdSchema,
+  workspaceMeetingsSchema,
+  updateMeetingStatusSchema,
+  upsertMeetingMinutesSchema,
+} = require('../validations/meeting.schema');
 
 router.use(protect);
 
@@ -34,7 +44,29 @@ router.get('/', meetingController.getAllMeetings);
  *       200:
  *         description: List of meetings
  */
-router.get('/workspace/:workspaceId', meetingController.getMeetingsByWorkspace);
+router.get('/workspace/:workspaceId', validate(workspaceMeetingsSchema), meetingController.getMeetingsByWorkspace);
+
+/**
+ * @swagger
+ * /api/meetings/suggest-slots:
+ *   post:
+ *     summary: Suggest free slots for selected workspace participants
+ *     tags: [Meetings]
+ */
+router.post('/suggest-slots', validate(suggestMeetingSlotsSchema), meetingController.suggestMeetingSlots);
+
+/**
+ * @swagger
+ * /api/meetings/{id}/minutes:
+ *   get:
+ *     summary: Get meeting minutes for a meeting
+ *     tags: [Meetings]
+ *   put:
+ *     summary: Create or update meeting minutes
+ *     tags: [Meetings]
+ */
+router.get('/:id/minutes', validate(meetingIdSchema), meetingController.getMeetingMinutes);
+router.put('/:id/minutes', validate(upsertMeetingMinutesSchema), meetingController.upsertMeetingMinutes);
 
 /**
  * @swagger
@@ -48,7 +80,7 @@ router.get('/workspace/:workspaceId', meetingController.getMeetingsByWorkspace);
  *         required: true
  *         schema: { type: string }
  */
-router.get('/:id', meetingController.getMeetingById);
+router.get('/:id', validate(meetingIdSchema), meetingController.getMeetingById);
 
 /**
  * @swagger
@@ -69,7 +101,16 @@ router.get('/:id', meetingController.getMeetingById);
  *               starttime: { type: string, format: date-time }
  *               endtime: { type: string, format: date-time }
  */
-router.post('/', meetingController.createMeeting);
+router.post('/', validate(createMeetingSchema), meetingController.createMeeting);
+
+/**
+ * @swagger
+ * /api/meetings/{id}:
+ *   patch:
+ *     summary: Update meeting details
+ *     tags: [Meetings]
+ */
+router.patch('/:id', validate(updateMeetingSchema), meetingController.updateMeeting);
 
 /**
  * @swagger
@@ -91,6 +132,15 @@ router.post('/', meetingController.createMeeting);
  *             properties:
  *               status: { type: string, enum: [upcoming, ongoing, ended] }
  */
-router.put('/:id/status', meetingController.updateMeetingStatus);
+router.put('/:id/status', validate(updateMeetingStatusSchema), meetingController.updateMeetingStatus);
+
+/**
+ * @swagger
+ * /api/meetings/{id}:
+ *   delete:
+ *     summary: Delete a meeting
+ *     tags: [Meetings]
+ */
+router.delete('/:id', validate(meetingIdSchema), meetingController.deleteMeeting);
 
 module.exports = router;

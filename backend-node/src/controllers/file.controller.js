@@ -5,6 +5,82 @@ const ERROR_CODES = require('../constants/error-codes');
 const permissionUtil = require('../utils/permission.util');
 const ROLES = require('../constants/roles');
 
+const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+
+const sanitizeObjectId = (value) => {
+  if (!value || typeof value !== 'string') return undefined;
+  return OBJECT_ID_REGEX.test(value) ? value : undefined;
+};
+
+const assertCanAttachToMessage = async (messageid, user) => {
+  if (!messageid) return undefined;
+
+  const message = await prisma.messages.findUnique({
+    where: { messageid },
+    select: { workspaceid: true },
+  });
+
+  if (!message) {
+    throw new ApiError(400, 'Message not found', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+
+  await permissionUtil.ensureCanWrite(message.workspaceid, user);
+  return messageid;
+};
+
+const assertCanAttachToMeetingMinute = async (meetingminuteid, user) => {
+  if (!meetingminuteid) return undefined;
+
+  const minute = await prisma.meetingMinutes.findUnique({
+    where: { meetingminuteid },
+    include: {
+      meeting: {
+        select: {
+          workspaceid: true,
+          organizer: true,
+        },
+      },
+    },
+  });
+
+  if (!minute) {
+    throw new ApiError(400, 'Meeting minutes not found', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+
+  const membership = await permissionUtil.getWorkspaceMembership(minute.meeting.workspaceid, user);
+  const isLeader = membership.isSystemAdmin || membership.workspacerole === ROLES.WORKSPACE.LEADER;
+  const canAttach = isLeader || minute.createby === user.username || minute.meeting.organizer === user.username;
+
+  if (!canAttach) {
+    throw new ApiError(403, 'Only the meeting organizer, minute owner, or Workspace Leader can attach files.', ERROR_CODES.AUTH.AUTH_ERROR);
+  }
+
+  return meetingminuteid;
+};
+
+const getAccessibleWorkspaceIds = async (user) => {
+  if (user.role === ROLES.SYSTEM.ADMIN) return null;
+
+  const workspaces = await prisma.workspace.findMany({
+    where: {
+      member: {
+        some: { username: user.username },
+      },
+    },
+    select: { workspaceid: true },
+  });
+
+  return workspaces.map((workspace) => workspace.workspaceid);
+};
+
+const buildFileResponse = (file) => ({
+  ...file,
+  id: file.fileid,
+  workspace: file.message?.workspace || file.meetingMinute?.meeting || null,
+  downloadLink: gdriveUtil.getDownloadLink(file.ggid),
+  webViewLink: `https://drive.google.com/file/d/${file.ggid}/view`,
+});
+
 /**
  * @swagger
  * /api/files/upload:
@@ -35,15 +111,17 @@ const uploadFile = async (req, res, next) => {
     // Fix UTF-8 encoding for originalname (Multer default is latin1)
     req.file.originalname = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
-    // Upload to Google Drive
+    // Sanitize input fields to prevent Prisma Malformed ObjectID errors.
+    // Invalid IDs from legacy clients are ignored for backward compatibility.
+    const sanitizedMessageId = sanitizeObjectId(req.body.messageid);
+    const sanitizedMeetingMinuteId = sanitizeObjectId(req.body.meetingminuteid);
+    const messageid = await assertCanAttachToMessage(sanitizedMessageId, req.user);
+    const meetingminuteid = await assertCanAttachToMeetingMinute(sanitizedMeetingMinuteId, req.user);
+
+    // Upload to Google Drive only after authorization for linked resources succeeds.
     console.log('📤 Uploading file to Drive:', req.file.originalname);
     const driveData = await gdriveUtil.uploadFile(req.file);
     console.log('✅ Drive response:', driveData);
-
-    // Sanitize input fields to prevent Prisma Malformed ObjectID errors
-    // If a string is empty or not a valid 24-char hex string, set as undefined so Prisma ignores it
-    const sanitizedMessageId = (req.body.messageid && /^[0-9a-fA-F]{24}$/.test(req.body.messageid)) ? req.body.messageid : undefined;
-    const sanitizedMeetingMinuteId = req.body.meetingminuteid || undefined;
 
     // Save metadata to database via Prisma
     if (!driveData) {
@@ -62,8 +140,8 @@ const uploadFile = async (req, res, next) => {
         ggid: driveData.id,
         typefile: req.file.mimetype,
         sizefile: req.file.size.toString(),
-        messageid: sanitizedMessageId,
-        meetingminuteid: sanitizedMeetingMinuteId,
+        messageid,
+        meetingminuteid,
       },
     });
 
@@ -78,7 +156,24 @@ const uploadFile = async (req, res, next) => {
     });
   } catch (error) {
     console.error('❌ File Controller Upload Error:', error);
-    next(error);
+    if (error instanceof ApiError) {
+      return next(error);
+    }
+
+    const driveStatus = error?.response?.status || error?.code;
+    if (driveStatus === 403 || driveStatus === 429) {
+      return next(new ApiError(
+        503,
+        'Google Drive storage is unavailable or quota is full. Please try again later or delete old files.',
+        ERROR_CODES.FILE.UPLOAD_FAILED
+      ));
+    }
+
+    next(new ApiError(
+      500,
+      'Unable to upload file to Google Drive',
+      ERROR_CODES.FILE.UPLOAD_FAILED
+    ));
   }
 };
 
@@ -103,6 +198,21 @@ const deleteFile = async (req, res, next) => {
   try {
     const file = await prisma.files.findUnique({
       where: { fileid: req.params.id },
+      include: {
+        message: {
+          select: { workspaceid: true },
+        },
+        meetingMinute: {
+          include: {
+            meeting: {
+              select: {
+                workspaceid: true,
+                organizer: true,
+              },
+            },
+          },
+        },
+      },
     });
     
     if (!file) throw new ApiError(404, 'File not found', ERROR_CODES.FILE.FILE_NOT_FOUND);
@@ -119,21 +229,25 @@ const deleteFile = async (req, res, next) => {
       isAuthorized = true;
     }
     // 3. Workspace Leader bypass
-    else if (file.messageid) {
-      const message = await prisma.messages.findUnique({
-        where: { messageid: file.messageid },
-        select: { workspaceid: true }
-      });
-      if (message) {
-        const membership = await permissionUtil.getWorkspaceMembership(message.workspaceid, req.user);
-        if (membership.workspacerole === ROLES.WORKSPACE.LEADER) {
-          isAuthorized = true;
-        }
+    else if (file.message?.workspaceid) {
+      const membership = await permissionUtil.getWorkspaceMembership(file.message.workspaceid, req.user);
+      if (membership.workspacerole === ROLES.WORKSPACE.LEADER) {
+        isAuthorized = true;
+      }
+    }
+    // 4. Workspace Leader or meeting organizer can delete meeting-minute files
+    else if (file.meetingMinute?.meeting?.workspaceid) {
+      const membership = await permissionUtil.getWorkspaceMembership(file.meetingMinute.meeting.workspaceid, req.user);
+      const isLeader = membership.isSystemAdmin || membership.workspacerole === ROLES.WORKSPACE.LEADER;
+      const isOrganizer = file.meetingMinute.meeting.organizer === req.user.username;
+
+      if (isLeader || isOrganizer) {
+        isAuthorized = true;
       }
     }
 
     if (!isAuthorized) {
-      throw new ApiError(403, 'Unauthorized. Only uploader, Workspace Leader, or System Admin can delete this file.', ERROR_CODES.AUTH.AUTH_ERROR);
+      throw new ApiError(403, 'Unauthorized. Only uploader, Workspace Leader, meeting organizer, or System Admin can delete this file.', ERROR_CODES.AUTH.AUTH_ERROR);
     }
 
     // Delete from Google Drive
@@ -150,7 +264,73 @@ const deleteFile = async (req, res, next) => {
   }
 };
 
+const getFiles = async (req, res, next) => {
+  try {
+    const { workspaceid } = req.query;
+
+    let where;
+
+    if (workspaceid) {
+      await permissionUtil.getWorkspaceMembership(workspaceid, req.user);
+      where = {
+        OR: [
+          { message: { is: { workspaceid } } },
+          { meetingMinute: { is: { meeting: { is: { workspaceid } } } } },
+        ],
+      };
+    } else if (req.user.role === ROLES.SYSTEM.ADMIN) {
+      where = {};
+    } else {
+      const workspaceIds = await getAccessibleWorkspaceIds(req.user);
+      where = {
+        OR: [
+          { uploader: req.user.username },
+          { message: { is: { workspaceid: { in: workspaceIds } } } },
+          { meetingMinute: { is: { meeting: { is: { workspaceid: { in: workspaceIds } } } } } },
+        ],
+      };
+    }
+
+    const files = await prisma.files.findMany({
+      where,
+      include: {
+        message: {
+          select: {
+            workspaceid: true,
+            workspace: { select: { workspaceid: true, name: true } },
+          },
+        },
+        meetingMinute: {
+          select: {
+            meetingid: true,
+            meeting: { select: { workspaceid: true, title: true } },
+          },
+        },
+      },
+      orderBy: { createdat: 'desc' },
+    });
+
+    res.json({ success: true, data: files.map(buildFileResponse) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getFilesQuota = async (req, res, next) => {
+  try {
+    const quota = await gdriveUtil.getStorageQuota();
+    if (!quota) {
+      return res.json({ limit: null, usage: null, remaining: null });
+    }
+    res.json({ limit: quota.limit, usage: quota.usage, remaining: quota.remaining });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   uploadFile,
-  deleteFile
+  deleteFile,
+  getFiles,
+  getFilesQuota,
 };

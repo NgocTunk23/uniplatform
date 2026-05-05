@@ -21,8 +21,8 @@ model User {
   email       String    @unique
   phone       String?
   status      String    @default("active")
-  createdat   DateTime  @default(now())
-  tokenVersion BigInt   @default(0)
+  createdat   DateTime?  @default(now()) @map("createdAt")
+  tokenVersion BigInt?   @default(0)   @map("tokenVersion")
   imageuser   String?
 
   // Navigation properties for relationships
@@ -39,7 +39,7 @@ model Schedules {
   starttime   DateTime
   endtime     DateTime
   type        String
-  createdat    DateTime @default(now())
+  createdat    DateTime? @default(now()) @map("createdAt")
 
   user        User     @relation(fields: [username], references: [username])
 }
@@ -49,7 +49,7 @@ model Workspace {
   name        String
   admin       String
   member      Member[]
-  createdat   DateTime? @default(now())
+  createdat   DateTime? @default(now()) @map("createdAt")
 
   messages    Messages[]
   meetings    Meeting[]
@@ -58,7 +58,7 @@ model Workspace {
 type Member {
   username      String
   workspacerole String   @default("Member")
-  joinedat      DateTime @default(now())
+  joinedat      DateTime? @default(now()) @map("joinedAt")
 }
 
 model Messages {
@@ -66,7 +66,7 @@ model Messages {
   workspaceid     String   @db.ObjectId
   senderusername  String
   content         String
-  createdat        DateTime @default(now())
+  createdat        DateTime? @default(now()) @map("createdAt")
   reply           String?
   userid          String[]
   vectorembedding Float[]
@@ -84,7 +84,7 @@ model Meeting {
   organizer      String
   participants   String[]
   status         String
-  createdat       DateTime @default(now())
+  createdat       DateTime? @default(now()) @map("createdAt")
   link           String?
   place          String?
   bot_status     String?
@@ -100,8 +100,8 @@ model MeetingMinutes {
   createby        String
   content         String?
   task            String[]
-  createdat        DateTime @default(now())
-  updatedat        DateTime @updatedAt
+  createdat        DateTime? @default(now()) @map("createdAt")
+  updatedat        DateTime? @updatedAt    @map("updatedAt")
   raw_transcript  String?
   summary         String?
   decisions       String[]
@@ -122,7 +122,7 @@ model Files {
   ggid            String
   typefile        String?
   sizefile        String?
-  createdat        DateTime @default(now())
+  createdat        DateTime? @default(now()) @map("createdAt")
 
   message         Messages?       @relation(fields: [messageid], references: [messageid])
   meetingMinute   MeetingMinutes? @relation(fields: [meetingminuteid], references: [meetingminuteid])
@@ -134,7 +134,7 @@ model SystemLog {
   targetresource String
   targetid       String?
   changes        LogChange[]
-  createdat       DateTime    @default(now())
+  createdat       DateTime?   @default(now()) @map("createdAt")
 
   user           User        @relation(fields: [actorusername], references: [username])
 }

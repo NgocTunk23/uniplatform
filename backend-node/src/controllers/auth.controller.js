@@ -136,24 +136,28 @@ const loginUser = async (req, res, next) => {
       }
     });
 
-    const isPasswordValid = password === user.password || await bcrypt.compare(password, user.password);
-    if (user && isPasswordValid) {
-      if (user.status === 'locked') {
-        throw new ApiError(401, 'Account is locked', ERROR_CODES.AUTH.AUTH_LOCKED);
-      }
-
-      res.json({
-        id: user.username,
-        username: user.username,
-        email: user.email,
-        fullname: user.fullname,
-        role: user.role,
-        tokenVersion: user.tokenVersion,
-        token: generateToken(user.username, user.tokenVersion),
-      });
-    } else {
+    if (!user) {
       throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);
     }
+
+    if (user.status === 'locked') {
+      throw new ApiError(401, 'Account is locked', ERROR_CODES.AUTH.AUTH_LOCKED);
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new ApiError(401, 'Invalid identifier or password', ERROR_CODES.AUTH.AUTH_INVALID);
+    }
+
+    res.json({
+      id: user.username,
+      username: user.username,
+      email: user.email,
+      fullname: user.fullname,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+      token: generateToken(user.username, user.tokenVersion),
+    });
   } catch (error) {
     next(error);
   }
