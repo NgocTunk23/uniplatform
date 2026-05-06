@@ -11,6 +11,7 @@ import { DriveFiles } from "./components/DriveFiles";
 
 // Import thêm các component mới
 import { Login } from './components/Login';
+import { ResetPassword } from './components/ResetPassword';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ChatInterface } from './components/ChatInterface';
 import { RightPanel } from './components/RightPanel';
@@ -20,6 +21,10 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     Component: Login,
+  },
+  {
+    path: "/reset-password",
+    Component: ResetPassword,
   },
 
   // 2. Các Route được bảo vệ: Yêu cầu đăng nhập

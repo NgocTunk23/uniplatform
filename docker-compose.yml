@@ -43,6 +43,7 @@ services:
       - "5001:5001"
       - "5555:5555" # Thêm dòng này
     environment:
+      - TZ=Asia/Ho_Chi_Minh
       - PORT=5001
       - MONGO_URI=${MONGO_URI}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}

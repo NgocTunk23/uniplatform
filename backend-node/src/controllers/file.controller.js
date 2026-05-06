@@ -145,6 +145,7 @@ const uploadFile = async (req, res, next) => {
       },
     });
 
+    const downloadLink = gdriveUtil.getDownloadLink(driveData.id);
     res.status(201).json({
       message: 'File uploaded successfully',
       file: {
@@ -152,7 +153,8 @@ const uploadFile = async (req, res, next) => {
         id: newFile.fileid // Provide 'id' for frontend compatibility
       },
       webViewLink: driveData.webViewLink,
-      downloadLink: gdriveUtil.getDownloadLink(driveData.id)
+      downloadLink,
+      url: downloadLink,
     });
   } catch (error) {
     console.error('❌ File Controller Upload Error:', error);

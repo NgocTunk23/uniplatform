@@ -5,6 +5,18 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
+const passport = require('passport'); // Bổ sung thư viện passport
+const { normalizeDates } = require('./src/utils/timezone.util');
+
+// Set server timezone to GMT+7 for all API responses and local date formatting
+process.env.TZ = 'Asia/Bangkok';
+
+// Load env vars
+dotenv.config();
+
+// Khởi tạo cấu hình Passport cho Google và GitHub
+require('./src/config/passport'); 
+
 const prisma = require('./src/config/prisma');
 const SOCKET_EVENTS = require('./src/constants/socket-events');
 const { registerChatHandlers } = require('./src/socket/chat.socket');
@@ -12,9 +24,6 @@ const { registerMeetingHandlers } = require('./src/socket/meeting.socket');
 const { protect } = require('./src/middlewares/auth.middleware');
 const { swaggerUi, specs } = require('./src/config/swagger');
 const errorMiddleware = require('./src/middlewares/error.middleware');
-
-// Load env vars
-dotenv.config();
 
 // Prisma Connection Check
 prisma.$connect()
@@ -34,8 +43,19 @@ const app = express();
 
 // Middlewares
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => originalJson(normalizeDates(payload));
+  next();
+});
 app.use(morgan('dev'));
+
+// Kích hoạt Passport Middleware (Bắt buộc phải nằm trước các routes)
+app.use(passport.initialize());
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
@@ -60,7 +80,6 @@ app.use(errorMiddleware);
 
 // Create HTTP Server
 const server = http.createServer(app);
-
 
 // Initialize Socket.io
 const io = new Server(server, {
