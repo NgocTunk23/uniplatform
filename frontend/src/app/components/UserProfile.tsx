@@ -84,19 +84,20 @@ export function UserProfile() {
   const [role, setRole]         = useState('');
   const [status, setStatus]     = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [createdAt, setCreatedAt] = useState('');
 
   // Account / Security
   const [isLoggedIn, setIsLoggedIn]                     = useState(true);
   const [twoFAEnabled, setTwoFAEnabled]                 = useState(true);
   const [showChangePassword, setShowChangePassword]     = useState(false);
+  const [showDeactivateModal, setShowDeactivateModal]   = useState(false);
   const [currentPassword, setCurrentPassword]           = useState('');
   const [newPassword, setNewPassword]                   = useState('');
   const [confirmPassword, setConfirmPassword]           = useState('');
 
-  // Settings
-  const [language, setLanguage]                         = useState('English');
-  const [profilePublic, setProfilePublic]               = useState(false);
-  const [showDeactivateModal, setShowDeactivateModal]   = useState(false);
+  // Avatar upload
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // 1. Fetch User Data
   useEffect(() => {
@@ -139,10 +140,33 @@ export function UserProfile() {
         setEmail(userData.email || '');
         setPhone(userData.phone || '');
         setAddress(userData.address || '');
-        setAvatarUrl(userData.imageuser || 'https://via.placeholder.com/150');
+
+
+
+        let finalAvatarUrl = userData.imageuser || 'https://via.placeholder.com/150';
+
+        if (userData.imageuser) {
+          // Trường hợp 1: Trong DB lỡ lưu cái link cũ có chữ drive.google.com
+          if (userData.imageuser.includes('drive.google.com')) {
+            const match = userData.imageuser.match(/id=([^&]+)/);
+            if (match && match[1]) {
+              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
+            }
+          } 
+          // Trường hợp 2: DB chỉ lưu mỗi cái ID nguyên chất
+          else if (!userData.imageuser.startsWith('http') && !userData.imageuser.startsWith('data:')) {
+            finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageuser}`;
+          }
+        }
+
+        console.log("LINK ẢNH ĐÃ ĐƯỢC LỌC LẠI:", finalAvatarUrl); 
+        setAvatarUrl(finalAvatarUrl);
+
+        
         setUsername(userData.username || '');
         setRole(userData.role || 'user');
         setStatus(userData.status || 'active');
+        setCreatedAt(userData.createdAt || '');
 
         if (userData.dateofbirth) {
           setDob(userData.dateofbirth.split('T')[0]);
@@ -204,7 +228,7 @@ export function UserProfile() {
       const token = localStorage.getItem('uniplatform_user_token');
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
-      const response = await fetch(`${apiUrl}/api/auth/change-password`, {
+      const response = await fetch(`${apiUrl}/api/users/change-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,6 +258,87 @@ export function UserProfile() {
     localStorage.clear();
     setIsLoggedIn(false);
     navigate('/login');
+  };
+
+  // 5. Upload avatar (save base64 directly to MongoDB)
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      setError('Chỉ chấp nhận file ảnh!');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) { // 5MB
+      setError('File ảnh không được vượt quá 5MB!');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const token = localStorage.getItem('uniplatform_user_token');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      // Read file as base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const base64String = e.target?.result as string;
+
+          // Update user profile with base64 avatar directly
+          const updateResponse = await fetch(`${apiUrl}/api/users/profile`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              imageuser: base64String
+            })
+          });
+
+          if (!updateResponse.ok) throw new Error('Cập nhật ảnh thất bại');
+
+
+          const updateResult = await updateResponse.json();
+          let newAvatarId = updateResult.data?.imageuser;
+
+          if (newAvatarId && !newAvatarId.startsWith('http') && !newAvatarId.startsWith('data:')) {
+            const newLink = `https://lh3.googleusercontent.com/d/${newAvatarId}`;
+            
+            // IN RA ĐỂ KIỂM TRA
+            console.log("LINK ẢNH SAU KHI UPLOAD:", newLink);
+            
+            setAvatarUrl(newLink);
+          } else {
+            setAvatarUrl(newAvatarId || base64String);
+          }
+
+
+          setSuccessMsg('Cập nhật ảnh đại diện thành công!');
+          setTimeout(() => setSuccessMsg(''), 3000);
+        } catch (err: any) {
+          setError(err.message);
+        } finally {
+          setUploadingAvatar(false);
+        }
+      };
+      reader.readAsDataURL(file);
+
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setUploadingAvatar(false);
+    }
+  };
+
+  // 6. Trigger file input
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   if (loading && !userId) {
@@ -273,8 +378,16 @@ export function UserProfile() {
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
               <div className="relative w-24 h-24 rounded-2xl border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
                 <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
-                <button className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity rounded-xl">
-                  <Camera size={18} className="text-white" />
+                <button 
+                  onClick={triggerFileInput}
+                  disabled={uploadingAvatar}
+                  className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 hover:opacity-100 transition-opacity rounded-xl disabled:opacity-50"
+                >
+                  {uploadingAvatar ? (
+                    <Loader2 size={18} className="text-white animate-spin" />
+                  ) : (
+                    <Camera size={18} className="text-white" />
+                  )}
                 </button>
               </div>
               <div className="sm:mb-1">
@@ -315,6 +428,7 @@ export function UserProfile() {
               <InputField label="Phone Number"          value={phone}    onChange={setPhone}    placeholder="0912345678"         disabled={!editingProfile} />
               <InputField label="Date of Birth"         value={dob}      onChange={setDob}      type="date"                      disabled={!editingProfile} />
               <InputField label="Address"            value={address}  onChange={setAddress}  placeholder="TP. Hồ Chí Minh"    disabled={!editingProfile} />
+              <InputField label="Account Created"    value={createdAt} onChange={() => {}}   disabled={true} />
             </div>
             
             {editingProfile && (
@@ -425,6 +539,15 @@ export function UserProfile() {
           </div>
         </div>
       )}
+
+      {/* Hidden file input for avatar upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleAvatarUpload}
+        className="hidden"
+      />
     </div>
   );
 }
