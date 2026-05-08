@@ -143,19 +143,19 @@ export function UserProfile() {
 
 
 
-        let finalAvatarUrl = userData.imageuser || 'https://via.placeholder.com/150';
+        let finalAvatarUrl = userData.imageggid || 'https://via.placeholder.com/150';
 
-        if (userData.imageuser) {
+        if (userData.imageggid) {
           // Trường hợp 1: Trong DB lỡ lưu cái link cũ có chữ drive.google.com
-          if (userData.imageuser.includes('drive.google.com')) {
-            const match = userData.imageuser.match(/id=([^&]+)/);
+          if (userData.imageggid.includes('drive.google.com')) {
+            const match = userData.imageggid.match(/id=([^&]+)/);
             if (match && match[1]) {
               finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
             }
           } 
           // Trường hợp 2: DB chỉ lưu mỗi cái ID nguyên chất
-          else if (!userData.imageuser.startsWith('http') && !userData.imageuser.startsWith('data:')) {
-            finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageuser}`;
+          else if (!userData.imageggid.startsWith('http') && !userData.imageggid.startsWith('data:')) {
+            finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageggid}`;
           }
         }
 
@@ -294,7 +294,7 @@ export function UserProfile() {
               'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-              imageuser: base64String
+              imageggid: base64String
             })
           });
 
@@ -302,7 +302,7 @@ export function UserProfile() {
 
 
           const updateResult = await updateResponse.json();
-          let newAvatarId = updateResult.data?.imageuser;
+          let newAvatarId = updateResult.data?.imageggid;
 
           if (newAvatarId && !newAvatarId.startsWith('http') && !newAvatarId.startsWith('data:')) {
             const newLink = `https://lh3.googleusercontent.com/d/${newAvatarId}`;

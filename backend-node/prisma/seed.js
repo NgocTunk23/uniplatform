@@ -21,7 +21,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("1990-01-01"),
-      imageuser: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "admin2",
@@ -34,7 +34,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("1992-05-15"),
-      imageuser: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "admin3",
@@ -47,7 +47,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("1988-10-20"),
-      imageuser: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&h=256&q=80",
     },
   ];
 
@@ -61,7 +61,7 @@ async function main() {
         phone: admin.phone,
         status: admin.status,
         dateofbirth: admin.dateofbirth,
-        imageuser: admin.imageuser,
+        imageggid: admin.imageggid,
       },
       create: admin,
     });
@@ -79,7 +79,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("2002-03-12"),
-      imageuser: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "2152392",
@@ -92,7 +92,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("2003-07-25"),
-      imageuser: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "2313522",
@@ -105,7 +105,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("2002-11-30"),
-      imageuser: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "2033364",
@@ -118,7 +118,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("2002-09-05"),
-      imageuser: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=256&h=256&q=80",
     },
     {
       username: "2115302",
@@ -131,7 +131,7 @@ async function main() {
       status: "active",
       tokenVersion: 0,
       dateofbirth: new Date("2003-01-18"),
-      imageuser: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=256&h=256&q=80",
+      imageggid: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=256&h=256&q=80",
     },
   ];
 
@@ -145,7 +145,7 @@ async function main() {
         phone: member.phone,
         status: member.status,
         dateofbirth: member.dateofbirth,
-        imageuser: member.imageuser,
+        imageggid: member.imageggid,
       },
       create: member,
     });

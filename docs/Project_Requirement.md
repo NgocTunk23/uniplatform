@@ -88,7 +88,7 @@ Yêu cầu AI IDE thiết lập các Models trong Mongoose (Node.js) hoặc Pyda
 - `phone`: string
 - `status`: string (active, locked)
 - `createdat`: timestamp
-- `imageuser`: string (URL)
+- `imageggid`: string (URL)
 
 **2. Bảng `Workspace`**
 

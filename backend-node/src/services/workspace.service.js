@@ -11,7 +11,7 @@ const enrichWorkspaceMembers = async (workspace) => {
   const usernames = workspace.member.map(m => m.username);
   const users = await prisma.user.findMany({
     where: { username: { in: usernames } },
-    select: { username: true, fullname: true, imageuser: true }
+    select: { username: true, fullname: true, imageggid: true }
   });
 
   const userMap = users.reduce((acc, user) => {
@@ -22,7 +22,7 @@ const enrichWorkspaceMembers = async (workspace) => {
   workspace.member = workspace.member.map(m => ({
     ...m,
     fullname: userMap[m.username]?.fullname || m.username,
-    imageuser: userMap[m.username]?.imageuser
+    imageggid: userMap[m.username]?.imageggid
   }));
 
   return workspace;
