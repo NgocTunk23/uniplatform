@@ -155,16 +155,16 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           let finalAvatarUrl = '';
           
           // Lọc link ảnh (giống hệt bên UserProfile)
-          if (userData.imageuser) {
-            if (userData.imageuser.includes('drive.google.com')) {
-              const match = userData.imageuser.match(/id=([^&]+)/);
+          if (userData.imageggid) {
+            if (userData.imageggid.includes('drive.google.com')) {
+              const match = userData.imageggid.match(/id=([^&]+)/);
               if (match && match[1]) {
                 finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
               }
-            } else if (!userData.imageuser.startsWith('http') && !userData.imageuser.startsWith('data:')) {
-              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageuser}`;
+            } else if (!userData.imageggid.startsWith('http') && !userData.imageggid.startsWith('data:')) {
+              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageggid}`;
             } else {
-              finalAvatarUrl = userData.imageuser;
+              finalAvatarUrl = userData.imageggid;
             }
           }
 
