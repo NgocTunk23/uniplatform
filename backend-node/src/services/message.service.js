@@ -21,9 +21,16 @@ const saveMessage = async (messageData) => {
     }
   });
 
+  // Enrich with sender's full name
+  const sender = await prisma.user.findUnique({
+    where: { username: newMessage.senderusername },
+    select: { fullname: true }
+  });
+
   return {
     ...newMessage,
-    id: newMessage.messageid
+    id: newMessage.messageid,
+    senderfullname: sender?.fullname || newMessage.senderusername
   };
 };
 

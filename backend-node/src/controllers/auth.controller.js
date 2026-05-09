@@ -71,8 +71,19 @@ const registerUser = async (req, res, next) => {
       },
     });
 
+    // Thay đổi logic kiểm tra để trả lỗi riêng biệt
     if (userExists) {
-      throw new ApiError(400, 'User already exists', ERROR_CODES.AUTH.USER_EXISTS);
+      let conflictMsg = 'Tài khoản đã tồn tại.';
+      
+      if (userExists.email === email && userExists.username === username) {
+        conflictMsg = 'Tên đăng nhập và Email này đều đã được sử dụng.';
+      } else if (userExists.email === email) {
+        conflictMsg = 'Email này đã được đăng ký.';
+      } else if (userExists.username === username) {
+        conflictMsg = 'Tên đăng nhập này đã có người sử dụng.';
+      }
+      
+      throw new ApiError(400, conflictMsg, ERROR_CODES.AUTH.USER_EXISTS);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
