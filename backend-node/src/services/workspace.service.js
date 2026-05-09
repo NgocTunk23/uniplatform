@@ -97,11 +97,30 @@ const addMember = async (workspaceId, memberData, currentUser) => {
   // Only Leaders and System Admins can add members
   await permissionUtil.ensureLeader(workspaceId, currentUser);
 
+  // Validate that the user exists - support both username and email
+  let userToAdd = await prisma.user.findUnique({
+    where: { username: memberData.username }
+  });
+  
+  // If not found by username, try by email
+  if (!userToAdd) {
+    userToAdd = await prisma.user.findUnique({
+      where: { email: memberData.username }
+    });
+  }
+  
+  if (!userToAdd) {
+    throw new ApiError(404, `User '${memberData.username}' not found. Please check the username or email.`, ERROR_CODES.VALIDATION.VALIDATION_ERROR);
+  }
+  
+  // Use the actual username from the found user
+  const actualUsername = userToAdd.username;
+
   const workspace = await prisma.workspace.findUnique({ where: { workspaceid: workspaceId } });
   const member = workspace.member || [];
   
   // Check if already a member
-  if (member.find(m => m.username === memberData.username)) {
+  if (member.find(m => m.username === actualUsername)) {
     return await enrichWorkspaceMembers(workspace);
   }
 
@@ -110,7 +129,7 @@ const addMember = async (workspaceId, memberData, currentUser) => {
     data: {
       member: {
         push: [{
-          username: memberData.username,
+          username: actualUsername,
           workspacerole: memberData.workspacerole || ROLES.WORKSPACE.MEMBER,
           joinedat: new Date()
         }]
