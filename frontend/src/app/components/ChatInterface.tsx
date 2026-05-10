@@ -50,6 +50,7 @@ interface Member {
 interface ChatInterfaceProps {
   workspaceId?: string;
   hideHeader?: boolean;
+  onDeleteSuccess?: () => void;
 }
 
 interface Message {
@@ -66,7 +67,7 @@ interface Message {
   };
 }
 
-export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInterfaceProps) {
+export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSuccess }: ChatInterfaceProps) {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [workspaceName, setWorkspaceName] = useState('Workspace');
@@ -83,6 +84,8 @@ export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInte
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [currentUserRole, setCurrentUserRole] = useState<string>('Member');
   const [isRemovingMember, setIsRemovingMember] = useState<string | null>(null);
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
+  const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +164,42 @@ export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInte
       toast.error('Network error');
     } finally {
       setIsRemovingMember(null);
+    }
+  };
+
+  const handleDeleteWorkspace = async () => {
+    if (!workspaceId) return;
+    setIsDeletingWorkspace(true);
+    try {
+      const token = localStorage.getItem('uniplatform_user_token');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.status === 204) {
+        toast.success('Workspace deleted successfully');
+        setIsDeleteConfirmModalOpen(false);
+        setIsManageMembersModalOpen(false);
+        
+        // Notify sidebar to refresh if needed
+        window.dispatchEvent(new CustomEvent('workspace_deleted'));
+        
+        if (onDeleteSuccess) {
+          onDeleteSuccess();
+        }
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to delete workspace');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    } finally {
+      setIsDeletingWorkspace(false);
     }
   };
 
@@ -773,7 +812,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInte
             ))}
           </div>
 
-          <div className="p-6 bg-gray-50/50 border-t border-gray-100 shrink-0">
+          <div className="p-6 bg-gray-50/50 border-t border-gray-100 shrink-0 flex flex-col gap-3">
             <Button
               onClick={() => {
                 setIsManageMembersModalOpen(false);
@@ -784,7 +823,54 @@ export function ChatInterface({ workspaceId = "", hideHeader = false }: ChatInte
               <Plus size={16} />
               Invite Someone New
             </Button>
+
+            {(currentUserRole === 'Leader' || currentUserRole === 'Admin') && (
+              <Button
+                variant="ghost"
+                onClick={() => setIsDeleteConfirmModalOpen(true)}
+                className="w-full h-11 rounded-2xl font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 transition-all flex items-center justify-center gap-2"
+              >
+                <Trash2 size={16} />
+                Delete Workspace
+              </Button>
+            )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={isDeleteConfirmModalOpen} onOpenChange={setIsDeleteConfirmModalOpen}>
+        <DialogContent className="sm:max-w-[400px] rounded-3xl border-none shadow-2xl bg-white p-0 overflow-hidden">
+          <div className="p-8 text-center">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Workspace?</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              This action cannot be undone. All messages, files, and data associated with <strong>{workspaceName}</strong> will be permanently deleted.
+            </p>
+          </div>
+          <DialogFooter className="p-6 pt-0 flex flex-row gap-3">
+            <Button
+              variant="ghost"
+              className="flex-1 h-12 rounded-2xl font-bold text-gray-500 hover:bg-gray-100"
+              onClick={() => setIsDeleteConfirmModalOpen(false)}
+              disabled={isDeletingWorkspace}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 h-12 rounded-2xl font-bold bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-200"
+              onClick={handleDeleteWorkspace}
+              disabled={isDeletingWorkspace}
+            >
+              {isDeletingWorkspace ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Delete'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

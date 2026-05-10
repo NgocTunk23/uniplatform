@@ -85,6 +85,12 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
 
   useEffect(() => {
     fetchWorkspaces();
+    
+    // Listen for workspace deletion to refresh the list
+    window.addEventListener('workspace_deleted', fetchWorkspaces);
+    return () => {
+      window.removeEventListener('workspace_deleted', fetchWorkspaces);
+    };
   }, []);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {

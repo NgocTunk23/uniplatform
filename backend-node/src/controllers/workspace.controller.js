@@ -102,6 +102,15 @@ const updateMemberRole = async (req, res, next) => {
   }
 };
 
+const deleteWorkspace = async (req, res, next) => {
+  try {
+    await workspaceService.deleteWorkspace(req.params.id, req.user);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createWorkspace,
   getWorkspaces,
@@ -109,4 +118,5 @@ module.exports = {
   addMember,
   removeMember,
   updateMemberRole,
+  deleteWorkspace,
 };
