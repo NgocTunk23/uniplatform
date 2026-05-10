@@ -52,7 +52,10 @@ export function DashboardLayout() {
             {/* Cột giữa hiển thị dựa theo state groupView */}
             <div className="flex-1 min-w-0 h-full relative flex flex-col bg-white">
                {groupView === 'chat' ? (
-                 <ChatInterface workspaceId={activeGroup} />
+                 <ChatInterface 
+                   workspaceId={activeGroup} 
+                   onDeleteSuccess={() => setActiveGroup(null)}
+                 />
                ) : (
                  <TeamCoordination workspaceId={activeGroup} />
                )}
