@@ -49,18 +49,23 @@ const getMessagesByWorkspace = async (workspaceid, currentUser, limit = 50, skip
   });
 
   const senders = [...new Set(messages.map(m => m.senderusername))];
+  // Sửa đoạn này: Thêm imageggid: true vào select
   const users = await prisma.user.findMany({
     where: { username: { in: senders } },
-    select: { username: true, fullname: true }
+    select: { username: true, fullname: true, imageggid: true } 
   });
   
   const userMap = {};
-  users.forEach(u => userMap[u.username] = u.fullname);
+  users.forEach(u => userMap[u.username] = { 
+    fullname: u.fullname, 
+    imageggid: u.imageggid 
+  });
 
   return messages.map(m => ({
     ...m,
     id: m.messageid,
-    senderfullname: userMap[m.senderusername] || m.senderusername
+    senderfullname: userMap[m.senderusername]?.fullname || m.senderusername,
+    senderimageggid: userMap[m.senderusername]?.imageggid || null // Trả thêm trường này về frontend
   }));
 };
 

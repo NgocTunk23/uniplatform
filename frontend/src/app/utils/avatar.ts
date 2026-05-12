@@ -3,14 +3,19 @@ export function getAvatarUrl(imageggid?: string | null): string | null {
 
   const trimmed = imageggid.trim();
   if (!trimmed) return null;
+  
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
     return trimmed;
   }
 
   const driveMatch = trimmed.match(/(?:drive\.google\.com\/.*[?&]id=|\/d\/)([a-zA-Z0-9_-]+)/);
-  if (driveMatch?.[1]) {
-    return `https://lh3.googleusercontent.com/d/${driveMatch[1]}`;
+  const fileId = driveMatch?.[1] || trimmed;
+
+  // Nếu là số ID ngắn gọn của Profile (như 1, 2, 9...)
+  if (fileId.length < 10) {
+    return `http://googleusercontent.com/profile/picture/${fileId}`;
   }
 
-  return `https://lh3.googleusercontent.com/d/${trimmed}`;
+  // Nếu là chuỗi dài của Google Drive, dùng lh3.googleusercontent để bypass CORS
+  return `https://lh3.googleusercontent.com/d/${fileId}`;
 }
