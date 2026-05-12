@@ -282,6 +282,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         id: msg.id || msg._id || Math.random().toString(),
         senderusername: msg.senderusername,
         senderfullname: msg.senderfullname,
+        senderimageggid: msg.senderimageggid, // THÊM DÒNG NÀY VÀO ĐÂY
         content: msg.content,
         createdAt: msg.createdAt || new Date().toISOString(),
         attachment: msg.files && msg.files.length > 0 ? {

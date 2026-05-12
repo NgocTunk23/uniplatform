@@ -21,16 +21,16 @@ const saveMessage = async (messageData) => {
     }
   });
 
-  // Enrich with sender's full name
   const sender = await prisma.user.findUnique({
     where: { username: newMessage.senderusername },
-    select: { fullname: true }
+    select: { fullname: true, imageggid: true } // Sửa dòng này: thêm imageggid: true
   });
 
   return {
     ...newMessage,
     id: newMessage.messageid,
-    senderfullname: sender?.fullname || newMessage.senderusername
+    senderfullname: sender?.fullname || newMessage.senderusername,
+    senderimageggid: sender?.imageggid || null // Thêm dòng này để trả ảnh qua Socket
   };
 };
 
