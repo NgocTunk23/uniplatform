@@ -29,9 +29,6 @@ model User {
   schedules      Schedules[]
   systemLogs     SystemLog[]
   meetingMinutes MeetingMinutes[]
-
-  resetToken       String?
-  resetTokenExpiry DateTime?
 }
 
 model Schedules {
@@ -60,6 +57,8 @@ model Workspace {
 
 type Member {
   username      String
+  fullname      String?
+  imageggid     String?
   workspacerole String   @default("Member")
   joinedat      DateTime? @default(now()) @map("joinedAt")
 }

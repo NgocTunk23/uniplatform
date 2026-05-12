@@ -60,6 +60,7 @@ export function ResetPassword() {
       }
 
       setSuccess('Đặt lại mật khẩu thành công. Bạn đang được chuyển về trang đăng nhập...');
+      localStorage.setItem('uniplatform_logout', Date.now().toString());
       setTimeout(() => navigate('/login'), 2500);
     } catch (err: any) {
       setError(err.message || 'Đã có lỗi xảy ra.');

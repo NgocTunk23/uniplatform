@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getAvatarUrl } from '../utils/avatar';
 import {
   AlertTriangle,
   BarChart2,
@@ -23,6 +24,7 @@ interface TeamCoordinationProps {
 interface WorkspaceMember {
   username: string;
   fullname?: string;
+  imageggid?: string;
   workspacerole?: string;
 }
 
@@ -455,7 +457,18 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                             onChange={() => handleParticipantToggle(member.username)}
                             className="accent-purple-500"
                           />
-                          {formatMember(member)}
+                          {getAvatarUrl(member.imageggid) ? (
+                            <img
+                              src={getAvatarUrl(member.imageggid) || ''}
+                              alt={`${formatMember(member)} avatar`}
+                              className="w-6 h-6 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px] font-bold">
+                              {initials(formatMember(member))}
+                            </div>
+                          )}
+                          <span>{formatMember(member)}</span>
                         </label>
                       );
                     })}
@@ -475,9 +488,17 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                       {selectedMemberObjects.map(member => (
                         <div key={member.username} className="grid grid-cols-[140px_repeat(5,1fr)] gap-1 mb-2 items-center">
                           <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px] font-bold shrink-0">
-                              {initials(formatMember(member))}
-                            </div>
+                            {getAvatarUrl(member.imageggid) ? (
+                              <img
+                                src={getAvatarUrl(member.imageggid) || ''}
+                                alt={`${formatMember(member)} avatar`}
+                                className="w-7 h-7 rounded-full object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {initials(formatMember(member))}
+                              </div>
+                            )}
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-gray-700 truncate">{formatMember(member)}</p>
                               <p className="text-[9px] text-gray-400">{member.workspacerole || 'Member'}</p>

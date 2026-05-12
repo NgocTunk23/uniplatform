@@ -242,12 +242,14 @@ export function UserProfile() {
 
       if (!response.ok) throw new Error('Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu cũ.');
       
-      setSuccessMsg('Đổi mật khẩu thành công!');
+      setSuccessMsg('Đổi mật khẩu thành công! Bạn sẽ được đăng xuất để đăng nhập lại.');
       setShowChangePassword(false);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setTimeout(() => setSuccessMsg(''), 3000);
+      localStorage.clear();
+      localStorage.setItem('uniplatform_logout', Date.now().toString());
+      navigate('/login');
     } catch (err: any) {
       setError(err.message);
     }
@@ -314,6 +316,9 @@ export function UserProfile() {
           } else {
             setAvatarUrl(newAvatarId || base64String);
           }
+
+          // Reload page để workspace cập nhật avatar mới
+          setTimeout(() => window.location.reload(), 1000);
 
 
           setSuccessMsg('Cập nhật ảnh đại diện thành công!');

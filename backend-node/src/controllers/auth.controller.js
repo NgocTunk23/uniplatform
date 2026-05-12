@@ -350,16 +350,20 @@ const resetPassword = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { username: user.username },
       data: {
         password: hashedPassword,
         resetToken: null,
         resetTokenExpiry: null,
+        tokenVersion: { increment: 1 },
       },
     });
 
-    res.status(200).json({ message: 'Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.' });
+    res.status(200).json({
+      message: 'Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.',
+      tokenVersion: updatedUser.tokenVersion,
+    });
   } catch (error) {
     next(new ApiError(500, 'Không thể đặt lại mật khẩu.', ERROR_CODES.SYSTEM.INTERNAL_ERROR));
   }

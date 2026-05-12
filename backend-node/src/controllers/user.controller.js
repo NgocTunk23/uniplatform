@@ -97,6 +97,7 @@ const updateProfile = async (req, res, next) => {
     // 3. Xử lý đổi mật khẩu (nếu có)
     if (password) {
       updateData.password = await bcrypt.hash(password, 10);
+      updateData.tokenVersion = { increment: 1 };
     }
 
     // 4. Cập nhật vào Database
@@ -128,7 +129,7 @@ const changePassword = async (req, res, next) => {
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       await prisma.user.update({
         where: { username: req.user.username },
-        data: { password: hashedPassword },
+        data: { password: hashedPassword, tokenVersion: { increment: 1 } },
       });
       res.json({ message: 'Password updated successfully' });
     } else {
