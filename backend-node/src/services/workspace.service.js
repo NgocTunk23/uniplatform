@@ -21,21 +21,30 @@ const enrichWorkspaceMembers = async (workspace) => {
 
   workspace.member = workspace.member.map(m => ({
     ...m,
-    fullname: userMap[m.username]?.fullname || m.username,
-    imageggid: userMap[m.username]?.imageggid
+    fullname: m.fullname || userMap[m.username]?.fullname || m.username,
+    imageggid: m.imageggid || userMap[m.username]?.imageggid
   }));
 
   return workspace;
 };
 
 const createWorkspace = async (workspaceData) => {
+  // Fetch admin user data để lấy fullname và imageggid
+  const adminUser = await prisma.user.findUnique({
+    where: { username: workspaceData.admin },
+    select: { username: true, fullname: true, imageggid: true }
+  });
+
   const workspace = await prisma.workspace.create({
     data: {
       name: workspaceData.name,
       admin: workspaceData.admin,
-      member: {
-        set: [{ username: workspaceData.admin, workspacerole: ROLES.WORKSPACE.LEADER }]
-      }
+      member: [{
+        username: workspaceData.admin,
+        fullname: adminUser?.fullname || workspaceData.admin,
+        imageggid: adminUser?.imageggid || null,
+        workspacerole: ROLES.WORKSPACE.LEADER
+      }]
     }
   });
   return await enrichWorkspaceMembers(workspace);
@@ -88,6 +97,18 @@ const updateWorkspace = async (workspaceid, updateData, currentUser) => {
 
 const deleteWorkspace = async (workspaceid, currentUser) => {
   await permissionUtil.ensureLeader(workspaceid, currentUser);
+
+  // 1. Xóa tất cả tin nhắn thuộc về workspace này
+  await prisma.messages.deleteMany({
+    where: { workspaceid: workspaceid }
+  });
+
+  // 2. Xóa tất cả các cuộc họp thuộc về workspace này
+  await prisma.meeting.deleteMany({
+    where: { workspaceid: workspaceid }
+  });
+
+  // 3. Cuối cùng mới tiến hành xóa workspace
   return await prisma.workspace.delete({
     where: { workspaceid },
   });
@@ -99,13 +120,15 @@ const addMember = async (workspaceId, memberData, currentUser) => {
 
   // Validate that the user exists - support both username and email
   let userToAdd = await prisma.user.findUnique({
-    where: { username: memberData.username }
+    where: { username: memberData.username },
+    select: { username: true, fullname: true, imageggid: true }
   });
   
   // If not found by username, try by email
   if (!userToAdd) {
     userToAdd = await prisma.user.findUnique({
-      where: { email: memberData.username }
+      where: { email: memberData.username },
+      select: { username: true, fullname: true, imageggid: true }
     });
   }
   
@@ -127,13 +150,13 @@ const addMember = async (workspaceId, memberData, currentUser) => {
   const result = await prisma.workspace.update({
     where: { workspaceid: workspaceId },
     data: {
-      member: {
-        push: [{
-          username: actualUsername,
-          workspacerole: memberData.workspacerole || ROLES.WORKSPACE.MEMBER,
-          joinedat: new Date()
-        }]
-      }
+      member: [...member, {
+        username: actualUsername,
+        fullname: userToAdd.fullname || actualUsername,
+        imageggid: userToAdd.imageggid || null,
+        workspacerole: memberData.workspacerole || ROLES.WORKSPACE.MEMBER,
+        joinedat: new Date()
+      }]
     }
   });
 
@@ -153,9 +176,7 @@ const removeMember = async (workspaceId, username, currentUser) => {
   const result = await prisma.workspace.update({
     where: { workspaceid: workspaceId },
     data: {
-      member: {
-        set: updatedMembers
-      }
+      member: updatedMembers
     }
   });
 
@@ -177,9 +198,7 @@ const updateMemberRole = async (workspaceId, username, workspacerole, currentUse
   const result = await prisma.workspace.update({
     where: { workspaceid: workspaceId },
     data: {
-      member: {
-        set: updatedMembers
-      }
+      member: updatedMembers
     }
   });
 

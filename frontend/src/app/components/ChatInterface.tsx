@@ -20,6 +20,7 @@ import {
   Plus
 } from 'lucide-react';
 import { connectSocket } from '../utils/socket';
+import { getAvatarUrl } from '../utils/avatar';
 import { format } from 'date-fns';
 import {
   Dialog,
@@ -44,6 +45,7 @@ import { toast } from 'sonner';
 interface Member {
   username: string;
   fullname?: string;
+  imageggid?: string;
   workspacerole: 'Leader' | 'Member' | 'Viewer';
 }
 
@@ -123,9 +125,9 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         setIsAddMemberModalOpen(false);
         // Optional: Refresh member count
         const data = await response.json();
-        if (data.member) {
-          setMemberCount(data.member.length);
-          setAllMembers(data.member);
+        if (data.members) {
+          setMemberCount(data.members.length);
+          setAllMembers(data.members);
         }
       } else {
         const error = await response.json();
@@ -222,11 +224,11 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         if (res.ok) {
           const data = await res.json();
           setWorkspaceName(data.name);
-          setMemberCount(data.member?.length || 0);
-          setAllMembers(data.member || []);
+          setMemberCount(data.members?.length || 0);
+          setAllMembers(data.members || []);
 
           // Determine current user role
-          const me = data.member?.find((m: any) => m.username === currentUser);
+          const me = data.members?.find((m: any) => m.username === currentUser);
           if (me) setCurrentUserRole(me.workspacerole);
         }
       } catch (err) {
@@ -769,10 +771,17 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                 className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-50 border border-gray-100/50 hover:bg-white hover:border-purple-100 hover:shadow-sm transition-all group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-sm ${member.workspacerole === 'Leader' ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-500 border border-gray-100'
-                    }`}>
-                    {(member.fullname || member.username).slice(0, 2).toUpperCase()}
-                  </div>
+                  {getAvatarUrl(member.imageggid) ? (
+                    <img
+                      src={getAvatarUrl(member.imageggid) || ''}
+                      alt={`${member.fullname || member.username} avatar`}
+                      className="w-10 h-10 rounded-xl object-cover border border-gray-100 shadow-sm"
+                    />
+                  ) : (
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-sm ${member.workspacerole === 'Leader' ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-500 border border-gray-100'}`}>
+                      {(member.fullname || member.username).slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-gray-900 truncate">

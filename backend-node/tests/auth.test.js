@@ -47,19 +47,24 @@ beforeAll(async () => {
   await prisma.meetingMinutes.deleteMany({});
   await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.schedules.deleteMany({});
   await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 });
 
 afterAll(async () => {
   if (prisma) {
-    await prisma.systemLog.deleteMany({}); await prisma.user.deleteMany({}); // Optional cleanup
+    await prisma.systemLog.deleteMany({});
+    await prisma.schedules.deleteMany({});
+    await prisma.user.deleteMany({});
     await prisma.$disconnect();
   }
 });
 
 beforeEach(async () => {
-  await prisma.systemLog.deleteMany({}); await prisma.user.deleteMany({});
+  await prisma.systemLog.deleteMany({});
+  await prisma.schedules.deleteMany({});
+  await prisma.user.deleteMany({});
 });
 
 describe('Auth System Unit Tests', () => {
@@ -129,6 +134,56 @@ describe('Auth System Unit Tests', () => {
 
       expect(res.statusCode).toEqual(401);
       expect(res.body.errorCode).toEqual(ERROR_CODES.AUTH.AUTH_INVALID);
+    });
+  });
+
+  describe('POST /api/auth/reset-password', () => {
+    it('should increment tokenVersion and invalidate old tokens after password reset', async () => {
+      const bcrypt = require('bcryptjs');
+      const crypto = require('crypto');
+      const hashedPassword = await bcrypt.hash(testUser.password, 10);
+      await prisma.user.create({
+        data: { ...testUser, password: hashedPassword }
+      });
+
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ identifier: testUser.email, password: testUser.password });
+
+      expect(loginRes.statusCode).toEqual(200);
+      const oldToken = loginRes.body.token;
+      expect(oldToken).toBeDefined();
+
+      const resetTokenRaw = crypto.randomBytes(32).toString('hex');
+      const resetTokenHash = crypto.createHash('sha256').update(resetTokenRaw).digest('hex');
+      const expireAt = new Date(Date.now() + 15 * 60 * 1000);
+
+      await prisma.user.update({
+        where: { username: testUser.username },
+        data: { resetToken: resetTokenHash, resetTokenExpiry: expireAt }
+      });
+
+      const resetRes = await request(app)
+        .post('/api/auth/reset-password')
+        .send({ token: resetTokenRaw, newPassword: 'newPassword123' });
+
+      expect(resetRes.statusCode).toEqual(200);
+      expect(resetRes.body.message).toContain('Mật khẩu đã được cập nhật');
+      expect(resetRes.body.tokenVersion).toBeGreaterThanOrEqual(1);
+
+      const logoutRes = await request(app)
+        .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${oldToken}`);
+
+      expect(logoutRes.statusCode).toEqual(401);
+      expect(logoutRes.body.message).toContain('Session expired');
+
+      const newLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ identifier: testUser.email, password: 'newPassword123' });
+
+      expect(newLoginRes.statusCode).toEqual(200);
+      expect(newLoginRes.body.token).toBeDefined();
     });
   });
 
