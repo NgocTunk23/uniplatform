@@ -59,6 +59,7 @@ interface Message {
   id: string;
   senderusername: string;
   senderfullname?: string;
+  senderimageggid?: string;
   content: string;
   createdAt: string;
   attachment?: {
@@ -250,6 +251,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             id: msg.id || msg._id || Math.random().toString(),
             senderusername: msg.senderusername,
             senderfullname: msg.senderfullname,
+            senderimageggid: msg.senderimageggid,
             content: msg.content,
             createdAt: msg.createdAt || new Date().toISOString(),
             attachment: msg.files && msg.files.length > 0 ? {
@@ -488,10 +490,18 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
               {!isMe && (
                 <div className="w-6 md:w-8 flex-shrink-0 flex justify-center">
                   {showAvatar ? (
+                  msg.senderimageggid && getAvatarUrl(msg.senderimageggid) ? (
+                    <img
+                      src={getAvatarUrl(msg.senderimageggid)!}
+                      alt={msg.senderusername}
+                      className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover shadow-sm"
+                    />
+                  ) : (
                     <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold ${msg.senderusername === 'UniBot' ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white' : initialsColor} shadow-sm`}>
                       {avatar}
                     </div>
-                  ) : (
+                  )
+                ) : (
                     <div className="w-6 md:w-8" />
                   )}
                 </div>
