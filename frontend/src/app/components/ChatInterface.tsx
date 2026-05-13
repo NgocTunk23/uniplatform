@@ -188,10 +188,10 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         toast.success('Workspace deleted successfully');
         setIsDeleteConfirmModalOpen(false);
         setIsManageMembersModalOpen(false);
-        
+
         // Notify sidebar to refresh if needed
         window.dispatchEvent(new CustomEvent('workspace_deleted'));
-        
+
         if (onDeleteSuccess) {
           onDeleteSuccess();
         }
@@ -464,9 +464,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             >
               <Search size={20} />
             </button>
-            <button className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors">
-              <MoreVertical size={20} />
-            </button>
+
           </div>
         </div>
       )}
@@ -491,18 +489,18 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
               {!isMe && (
                 <div className="w-6 md:w-8 flex-shrink-0 flex justify-center">
                   {showAvatar ? (
-                  msg.senderimageggid && getAvatarUrl(msg.senderimageggid) ? (
-                    <img
-                      src={getAvatarUrl(msg.senderimageggid)!}
-                      alt={msg.senderusername}
-                      className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover shadow-sm"
-                    />
+                    msg.senderimageggid && getAvatarUrl(msg.senderimageggid) ? (
+                      <img
+                        src={getAvatarUrl(msg.senderimageggid)!}
+                        alt={msg.senderusername}
+                        className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover shadow-sm"
+                      />
+                    ) : (
+                      <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold ${msg.senderusername === 'UniBot' ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white' : initialsColor} shadow-sm`}>
+                        {avatar}
+                      </div>
+                    )
                   ) : (
-                    <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold ${msg.senderusername === 'UniBot' ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white' : initialsColor} shadow-sm`}>
-                      {avatar}
-                    </div>
-                  )
-                ) : (
                     <div className="w-6 md:w-8" />
                   )}
                 </div>
@@ -703,7 +701,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                         </div>
                       </div>
                     </SelectItem>
-                    
+
                     {(currentUserRole === 'Leader' || currentUserRole === 'Admin') && (
                       <SelectItem value="Leader" className="rounded-2xl focus:bg-purple-50 focus:text-purple-700 py-3 mb-1 cursor-pointer transition-colors">
                         <div className="flex items-center gap-3.5">
