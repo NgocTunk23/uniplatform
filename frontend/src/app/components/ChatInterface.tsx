@@ -90,13 +90,21 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const currentUser = localStorage.getItem('uniplatform_username') || '';
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [lastScrollHeight, setLastScrollHeight] = useState(0);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: behavior
+      });
+    }
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -206,9 +214,87 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     }
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // 2. Fetch Chat History
+  const fetchHistory = async (skip = 0, append = false) => {
+    if (!workspaceId) return;
+    const token = localStorage.getItem('uniplatform_user_token');
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+    
+    if (skip > 0) setIsLoadingMore(true);
+
+    try {
+      const limit = 50;
+      const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=${limit}&skip=${skip}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const rawHistory = Array.isArray(data) ? data : (data.messages || []);
+        
+        if (rawHistory.length < limit) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
+
+        const history = rawHistory.map((msg: any) => ({
+          id: msg.id || msg._id || Math.random().toString(),
+          senderusername: msg.senderusername,
+          senderfullname: msg.senderfullname,
+          senderimageggid: msg.senderimageggid,
+          content: msg.content,
+          createdAt: msg.createdAt || new Date().toISOString(),
+          attachment: msg.files && msg.files.length > 0 ? {
+            type: msg.files[0].typefile?.split('/')[1] || 'file',
+            name: msg.files[0].filename,
+            size: msg.files[0].sizefile ? `${(parseInt(msg.files[0].sizefile) / 1024).toFixed(1)} KB` : '',
+            ggid: msg.files[0].ggid,
+          } : undefined,
+        }));
+
+        const reversedHistory = history.reverse();
+
+        if (append) {
+          // Store current scroll height before updating state
+          if (scrollContainerRef.current) {
+            setLastScrollHeight(scrollContainerRef.current.scrollHeight);
+          }
+          setMessages(prev => [...reversedHistory, ...prev]);
+        } else {
+          setMessages(reversedHistory);
+          setTimeout(() => scrollToBottom('auto'), 100);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch messages", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollTop } = scrollContainerRef.current;
+      if (scrollTop === 0 && hasMore && !isLoadingMore) {
+        fetchHistory(messages.length, true);
+      }
+    }
+  };
+
+  const [isInitialLoad, setIsInitialLoad] = React.useState(true);
+
+  // Adjust scroll position after loading more messages to prevent jumping
+  React.useLayoutEffect(() => {
+    if (lastScrollHeight > 0 && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const newScrollHeight = container.scrollHeight;
+      const heightDifference = newScrollHeight - lastScrollHeight;
+      
+      // Update scroll position immediately without animation
+      container.scrollTop = heightDifference;
+      setLastScrollHeight(0);
+    }
+  }, [messages, lastScrollHeight]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -237,39 +323,9 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       }
     };
 
-    // 2. Fetch Chat History
-    const fetchHistory = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=50`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Backend returns the array directly
-          const rawHistory = Array.isArray(data) ? data : (data.messages || []);
-          const history = rawHistory.map((msg: any) => ({
-            id: msg.id || msg._id || Math.random().toString(),
-            senderusername: msg.senderusername,
-            senderfullname: msg.senderfullname,
-            senderimageggid: msg.senderimageggid,
-            content: msg.content,
-            createdAt: msg.createdAt || new Date().toISOString(),
-            attachment: msg.files && msg.files.length > 0 ? {
-              type: msg.files[0].typefile?.split('/')[1] || 'file',
-              name: msg.files[0].filename,
-              size: msg.files[0].sizefile ? `${(parseInt(msg.files[0].sizefile) / 1024).toFixed(1)} KB` : '',
-              ggid: msg.files[0].ggid,
-            } : undefined,
-          }));
-          setMessages(history.reverse());
-        }
-      } catch (err) {
-        console.error("Failed to fetch messages", err);
-      }
-    };
-
     fetchWorkspace();
-    fetchHistory();
+    setHasMore(true);
+    fetchHistory(0, false);
 
     // 3. Socket.io Integration
     const socket = connectSocket();
@@ -282,7 +338,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         id: msg.id || msg._id || Math.random().toString(),
         senderusername: msg.senderusername,
         senderfullname: msg.senderfullname,
-        senderimageggid: msg.senderimageggid, // THÊM DÒNG NÀY VÀO ĐÂY
+        senderimageggid: msg.senderimageggid,
         content: msg.content,
         createdAt: msg.createdAt || new Date().toISOString(),
         attachment: msg.files && msg.files.length > 0 ? {
@@ -306,6 +362,15 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
           };
           return updated;
         }
+        
+        // Auto scroll to bottom if we receive a new message and we are near bottom
+        const container = scrollContainerRef.current;
+        const isNearBottom = container ? (container.scrollHeight - container.scrollTop - container.clientHeight < 100) : true;
+        
+        if (isNearBottom) {
+          setTimeout(() => scrollToBottom('smooth'), 100);
+        }
+        
         return [...prev, newMsg];
       });
     };
@@ -470,7 +535,16 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       )}
 
       {/* Messages Area */}
-      <div className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 scroll-smooth ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}>
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}
+      >
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
+          </div>
+        )}
         {(searchQuery.trim()
           ? messages.filter(msg =>
             msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -566,7 +640,6 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
