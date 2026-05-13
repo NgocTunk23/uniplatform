@@ -215,16 +215,16 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
   };
 
   // 2. Fetch Chat History
-  const fetchHistory = async (skip = 0, append = false) => {
+  const fetchHistory = async (skip = 0, append = false, search = '') => {
     if (!workspaceId) return;
     const token = localStorage.getItem('uniplatform_user_token');
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
     
-    if (skip > 0) setIsLoadingMore(true);
+    if (skip > 0 || search) setIsLoadingMore(true);
 
     try {
       const limit = 50;
-      const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=${limit}&skip=${skip}`, {
+      const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=${limit}&skip=${skip}&search=${encodeURIComponent(search)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -276,7 +276,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     if (scrollContainerRef.current) {
       const { scrollTop } = scrollContainerRef.current;
       if (scrollTop === 0 && hasMore && !isLoadingMore) {
-        fetchHistory(messages.length, true);
+        fetchHistory(messages.length, true, searchQuery);
       }
     }
   };
@@ -326,6 +326,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     fetchWorkspace();
     setHasMore(true);
     fetchHistory(0, false);
+    setIsInitialLoad(false);
 
     // 3. Socket.io Integration
     const socket = connectSocket();
@@ -383,6 +384,18 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       socket.off('receive_message_confirmed', handleReceiveMessage);
     };
   }, [workspaceId]);
+
+  // Handle server-side search with debounce
+  useEffect(() => {
+    if (isInitialLoad) return;
+
+    const timer = setTimeout(() => {
+      setHasMore(true);
+      fetchHistory(0, false, searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleAskAI = () => {
     if (!workspaceId) return;
@@ -545,14 +558,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
           </div>
         )}
-        {(searchQuery.trim()
-          ? messages.filter(msg =>
-            msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (msg.senderfullname && msg.senderfullname.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (msg.attachment && msg.attachment.name.toLowerCase().includes(searchQuery.toLowerCase()))
-          )
-          : messages
-        ).map((msg, idx, arr) => {
+        {messages.map((msg, idx, arr) => {
           const isMe = msg.senderusername === currentUser;
           const showAvatar = idx === 0 || arr[idx - 1].senderusername !== msg.senderusername;
           const initialsColor = isMe ? 'bg-purple-200 text-purple-700' : 'bg-gray-100 text-gray-700';

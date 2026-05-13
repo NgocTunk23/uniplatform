@@ -37,6 +37,7 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - Lưu vào MongoDB với vector embedding.
     - Phân trang (Pagination) dựa trên limit/skip để tối ưu hiệu suất.
     - **Infinite Scroll:** Hỗ trợ cuộn ngược để tự động tải thêm tin nhắn cũ trên giao diện Frontend (sử dụng `useLayoutEffect` để chống nhảy màn hình).
+    - **Server-side Search (Mới):** Triển khai tìm kiếm tin nhắn trực tiếp từ cơ sở dữ liệu với cơ chế **Debounce** (500ms). Cho phép tìm kiếm xuyên suốt toàn bộ lịch sử trò chuyện thay vì chỉ lọc trên các tin nhắn đã tải về trình duyệt.
 
 ## 4. Tra cứu thông minh bằng AI (Smart Search/Chatbot)
 - **Phân loại Intent:** Phân biệt yêu cầu hỏi đáp thông thường và tra cứu văn bản chuyên sâu.
@@ -63,6 +64,7 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Validation:** Sử dụng **Zod** làm thư viện validate tập trung.
 - **Testing:** Đảm bảo độ tin cậy bằng bộ test tích hợp thực tế (Production-grade integration tests) phủ mọi kịch bản quan trọng.
 - **Documentation:** Tự động hóa tài liệu API chuyên nghiệp bằng **Swagger (OpenAPI 3.0)**.
+- **Avatar Normalization (Mới):** Xây dựng hàm tiện ích `getAvatarUrl` tập trung để xử lý các loại định dạng ảnh từ Google Drive (Link Drive, ID nguyên chất), tự động chuyển đổi sang link trực tiếp thông qua `lh3.googleusercontent.com` để đảm bảo hiển thị ổn định trên toàn hệ thống.
 
 ## 7. Frontend Architecture & Implementation (React + Vite)
 - **State Management & Auth:**
@@ -91,10 +93,12 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - `POST /api/meetings`: Lập lịch cuộc họp mới.
     - `GET /api/meetings/:id`: Chi tiết cuộc họp.
     - `PUT /api/meetings/:id/status`: Cập nhật trạng thái cuộc họp.
-    - **Visibility Rules:** 
-        - **System Admin:** Xem toàn bộ cuộc họp.
-        - **Workspace Leader:** Xem toàn bộ cuộc họp trong Workspace mình quản lý.
-        - **Participants:** Chỉ xem được cuộc họp mà mình được thêm vào danh sách tham gia.
+    - **Meeting Permission & Visibility (Mới):** 
+        - Mở rộng quyền tạo cuộc họp cho cả **Member**, không chỉ giới hạn ở Leader.
+        - **Granular Visibility:** Triển khai cơ chế lọc cuộc họp theo vai trò: Trưởng nhóm xem tất cả, Thành viên chỉ xem cuộc họp được mời tham gia. Admin xem toàn bộ hệ thống.
+        - **Participant Enrichment:** Tự động hóa việc lấy Tên đầy đủ và Ảnh đại diện cho mọi thành viên tham gia cuộc họp để hiển thị trên UI.
+    - **Search Optimization (Mới):** Chuyển đổi cơ chế tìm kiếm tin nhắn từ Client-side filter sang **Server-side Search**, giúp tìm kiếm được cả các tin nhắn cũ chưa được tải lên máy khách.
+    - Cải thiện trải nghiệm người dùng với việc hiển thị Full Name và cập nhật trạng thái thành viên thời gian thực.
 
 ### Frontend Implementation:
 - **Lịch biểu cuộc họp (`MeetingsSchedule.tsx`):**
@@ -103,4 +107,5 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Phòng họp (`MeetingRoom.tsx`):**
     - Giao diện Video Grid mockup với điều khiển Mic/Camera.
     - **Tích hợp Chat Workspace:** Nhúng trực tiếp `ChatInterface` vào phòng họp để người dùng trao đổi trong lúc thảo luận, đảm bảo tính đồng bộ dữ liệu với Workspace chính.
+- **Enriched Participant Data (Mới):** Tất cả các API lấy thông tin cuộc họp tự động trả về thông tin chi tiết của người tham gia (Full Name, Avatar) để hiển thị giao diện chuyên nghiệp thay vì chỉ dùng Username.
 
