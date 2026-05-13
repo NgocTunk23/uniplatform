@@ -181,7 +181,7 @@ const getMeetingById = async (meetingId, currentUser) => {
 };
 
 const createMeeting = async (meetingData, currentUser) => {
-  await permissionUtil.ensureLeader(meetingData.workspaceid, currentUser);
+  await permissionUtil.ensureCanWrite(meetingData.workspaceid, currentUser);
   const workspace = await prisma.workspace.findUnique({
     where: { workspaceid: meetingData.workspaceid },
     select: { member: true }
@@ -216,7 +216,7 @@ const createMeeting = async (meetingData, currentUser) => {
 };
 
 const suggestMeetingSlots = async (suggestData, currentUser) => {
-  await permissionUtil.ensureLeader(suggestData.workspaceid, currentUser);
+  await permissionUtil.ensureCanWrite(suggestData.workspaceid, currentUser);
 
   const workspace = await prisma.workspace.findUnique({
     where: { workspaceid: suggestData.workspaceid },
