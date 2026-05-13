@@ -51,7 +51,7 @@ Hệ thống chia làm 3 Role chính: **Thành viên** (Member), **Trưởng nh�
 ### MODULE 1: Quản lý Lịch & Lưu trữ Tài nguyên
 
 - **Quản lý lịch cá nhân (Schedules):** CRUD sự kiện/khung giờ rảnh bận. Frontend hiển thị lưới Calendar. Chặn dữ liệu lỗi (endtime < starttime, trùng lịch cố định).
-- **Tạo cuộc họp thông minh (Smart Scheduling):** Trưởng nhóm nhập thông tin (Tiêu đề, Thời lượng, Thành viên). Hệ thống gọi thuật toán đối chiếu lịch của tất cả thành viên và trả về danh sách khung giờ trống chung tối ưu.
+- **Tạo cuộc họp thông minh (Smart Scheduling):** Thành viên hoặc Trưởng nhóm nhập thông tin (Tiêu đề, Thời lượng, Thành viên). Hệ thống gọi thuật toán đối chiếu lịch của tất cả thành viên và trả về danh sách khung giờ trống chung tối ưu.
 - **Tạo & Quản lý Biên bản cuộc họp (Meeting Minutes):**
   - _AI Auto-generation:_ Trợ lý ảo chạy ngầm chuyển Speech-to-Text từ file record, sau đó LLM tóm tắt quyết định, phân công nhiệm vụ.
   - _Review & Save:_ Trưởng nhóm rà soát nội dung điền sẵn, chỉnh sửa, đính kèm file (Upload lên Google Drive lấy URL), bấm "Lưu".
@@ -64,6 +64,7 @@ Hệ thống chia làm 3 Role chính: **Thành viên** (Member), **Trưởng nh�
 - **Quản lý Không gian làm việc (Workspace):** Trưởng nhóm tạo Nhóm chat mới, Thêm/Xóa thành viên.
 - **Nhắn tin nhóm (Real-time Chat):** \* Sử dụng Socket.io truyền tin nhắn, có hỗ trợ gửi file đính kèm.
   - Cơ chế cuộn để tải thêm tin nhắn cũ (Pagination/Infinite Scroll).
+  - **Thông báo tin nhắn chưa đọc:** Hiển thị số lượng tin nhắn mới cho từng nhóm người dùng tham gia nhưng chưa xem.
 - **Tra cứu thông minh bằng AI (Smart Search/Chatbot):** \* Thành viên chat với Bot. Hệ thống phân loại Intent (Hỏi lịch trình vs Tra cứu văn bản).
   - Sử dụng Vector Search lấy ngữ cảnh từ lịch sử Chat và Biên bản họp để AI trả lời tự nhiên.
 - **Quản lý Hệ thống (Dành riêng cho Admin System):** \* Dashboard theo dõi tài nguyên (CPU/RAM, DB Storage, Google Drive API Quota limits).
@@ -95,7 +96,7 @@ Yêu cầu AI IDE thiết lập các Models trong Mongoose (Node.js) hoặc Pyda
 - `workspaceid`: string (PK)
 - `name`: string
 - `admin`: string (Ref to User.username)
-- `member`: Array of Objects `[{ username: string, workspacerole: string, joinedat: timestamp }]`
+- `member`: Array of Objects `[{ username: string, workspacerole: string, joinedat: timestamp, lastReadAt: timestamp }]`
 - `createdat`: timestamp
 
 **3. Bảng `Schedules` (Lịch trình cá nhân)**
@@ -129,6 +130,7 @@ Yêu cầu AI IDE thiết lập các Models trong Mongoose (Node.js) hoặc Pyda
 - `endtime`: timestamp
 - `organizer`: string (Ref to User)
 - `participants`: Array of strings (usernames)
+- `visibility`: Chỉ Leader hoặc người có tên trong `participants` mới được xem cuộc họp này.
 - `status`: string
 - `createat`: timestamp
 - `lmk` (Link/Location): string

@@ -41,6 +41,7 @@ import {
   SelectValue
 } from './ui/select';
 import { toast } from 'sonner';
+import { AvatarWithFallback } from './AvatarWithFallback';
 
 interface Member {
   username: string;
@@ -54,6 +55,7 @@ interface ChatInterfaceProps {
   hideHeader?: boolean;
   onDeleteSuccess?: () => void;
 }
+
 
 interface Message {
   id: string;
@@ -90,13 +92,21 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const currentUser = localStorage.getItem('uniplatform_username') || '';
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [lastScrollHeight, setLastScrollHeight] = useState(0);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: behavior
+      });
+    }
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -170,6 +180,35 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     }
   };
 
+  const handleUpdateRole = async (username: string, newRole: string) => {
+    if (!workspaceId) return;
+    try {
+      const token = localStorage.getItem('uniplatform_user_token');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}/members/${username}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ workspacerole: newRole })
+      });
+
+      if (response.ok) {
+        toast.success(`Updated role for ${username} to ${newRole}`);
+        setAllMembers(prev => prev.map(m => 
+          m.username === username ? { ...m, workspacerole: newRole } : m
+        ));
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to update role');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    }
+  };
+
   const handleDeleteWorkspace = async () => {
     if (!workspaceId) return;
     setIsDeletingWorkspace(true);
@@ -188,10 +227,10 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         toast.success('Workspace deleted successfully');
         setIsDeleteConfirmModalOpen(false);
         setIsManageMembersModalOpen(false);
-        
+
         // Notify sidebar to refresh if needed
         window.dispatchEvent(new CustomEvent('workspace_deleted'));
-        
+
         if (onDeleteSuccess) {
           onDeleteSuccess();
         }
@@ -206,9 +245,87 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     }
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // 2. Fetch Chat History
+  const fetchHistory = async (skip = 0, append = false, search = '') => {
+    if (!workspaceId) return;
+    const token = localStorage.getItem('uniplatform_user_token');
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+    
+    if (skip > 0 || search) setIsLoadingMore(true);
+
+    try {
+      const limit = 50;
+      const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=${limit}&skip=${skip}&search=${encodeURIComponent(search)}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const rawHistory = Array.isArray(data) ? data : (data.messages || []);
+        
+        if (rawHistory.length < limit) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+        }
+
+        const history = rawHistory.map((msg: any) => ({
+          id: msg.id || msg._id || Math.random().toString(),
+          senderusername: msg.senderusername,
+          senderfullname: msg.senderfullname,
+          senderimageggid: msg.senderimageggid,
+          content: msg.content,
+          createdAt: msg.createdAt || new Date().toISOString(),
+          attachment: msg.files && msg.files.length > 0 ? {
+            type: msg.files[0].typefile?.split('/')[1] || 'file',
+            name: msg.files[0].filename,
+            size: msg.files[0].sizefile ? `${(parseInt(msg.files[0].sizefile) / 1024).toFixed(1)} KB` : '',
+            ggid: msg.files[0].ggid,
+          } : undefined,
+        }));
+
+        const reversedHistory = history.reverse();
+
+        if (append) {
+          // Store current scroll height before updating state
+          if (scrollContainerRef.current) {
+            setLastScrollHeight(scrollContainerRef.current.scrollHeight);
+          }
+          setMessages(prev => [...reversedHistory, ...prev]);
+        } else {
+          setMessages(reversedHistory);
+          setTimeout(() => scrollToBottom('auto'), 100);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch messages", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollTop } = scrollContainerRef.current;
+      if (scrollTop === 0 && hasMore && !isLoadingMore) {
+        fetchHistory(messages.length, true, searchQuery);
+      }
+    }
+  };
+
+  const [isInitialLoad, setIsInitialLoad] = React.useState(true);
+
+  // Adjust scroll position after loading more messages to prevent jumping
+  React.useLayoutEffect(() => {
+    if (lastScrollHeight > 0 && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const newScrollHeight = container.scrollHeight;
+      const heightDifference = newScrollHeight - lastScrollHeight;
+      
+      // Update scroll position immediately without animation
+      container.scrollTop = heightDifference;
+      setLastScrollHeight(0);
+    }
+  }, [messages, lastScrollHeight]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -237,44 +354,15 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       }
     };
 
-    // 2. Fetch Chat History
-    const fetchHistory = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/api/messages/${workspaceId}?limit=50`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Backend returns the array directly
-          const rawHistory = Array.isArray(data) ? data : (data.messages || []);
-          const history = rawHistory.map((msg: any) => ({
-            id: msg.id || msg._id || Math.random().toString(),
-            senderusername: msg.senderusername,
-            senderfullname: msg.senderfullname,
-            senderimageggid: msg.senderimageggid,
-            content: msg.content,
-            createdAt: msg.createdAt || new Date().toISOString(),
-            attachment: msg.files && msg.files.length > 0 ? {
-              type: msg.files[0].typefile?.split('/')[1] || 'file',
-              name: msg.files[0].filename,
-              size: msg.files[0].sizefile ? `${(parseInt(msg.files[0].sizefile) / 1024).toFixed(1)} KB` : '',
-              ggid: msg.files[0].ggid,
-            } : undefined,
-          }));
-          setMessages(history.reverse());
-        }
-      } catch (err) {
-        console.error("Failed to fetch messages", err);
-      }
-    };
-
     fetchWorkspace();
-    fetchHistory();
+    setHasMore(true);
+    fetchHistory(0, false);
+    setIsInitialLoad(false);
 
     // 3. Socket.io Integration
     const socket = connectSocket();
 
-    socket.emit('join_workspace', workspaceId);
+    socket.emit('join_workspace', { workspaceid: workspaceId, markRead: true });
 
     const handleReceiveMessage = (msg: any) => {
       // Backend returns either standard format or with senderusername
@@ -282,7 +370,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
         id: msg.id || msg._id || Math.random().toString(),
         senderusername: msg.senderusername,
         senderfullname: msg.senderfullname,
-        senderimageggid: msg.senderimageggid, // THÊM DÒNG NÀY VÀO ĐÂY
+        senderimageggid: msg.senderimageggid,
         content: msg.content,
         createdAt: msg.createdAt || new Date().toISOString(),
         attachment: msg.files && msg.files.length > 0 ? {
@@ -306,6 +394,15 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
           };
           return updated;
         }
+        
+        // Auto scroll to bottom if we receive a new message and we are near bottom
+        const container = scrollContainerRef.current;
+        const isNearBottom = container ? (container.scrollHeight - container.scrollTop - container.clientHeight < 100) : true;
+        
+        if (isNearBottom) {
+          setTimeout(() => scrollToBottom('smooth'), 100);
+        }
+        
         return [...prev, newMsg];
       });
     };
@@ -318,6 +415,18 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       socket.off('receive_message_confirmed', handleReceiveMessage);
     };
   }, [workspaceId]);
+
+  // Handle server-side search with debounce
+  useEffect(() => {
+    if (isInitialLoad) return;
+
+    const timer = setTimeout(() => {
+      setHasMore(true);
+      fetchHistory(0, false, searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleAskAI = () => {
     if (!workspaceId) return;
@@ -464,23 +573,23 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             >
               <Search size={20} />
             </button>
-            <button className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors">
-              <MoreVertical size={20} />
-            </button>
+
           </div>
         </div>
       )}
 
       {/* Messages Area */}
-      <div className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 scroll-smooth ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}>
-        {(searchQuery.trim()
-          ? messages.filter(msg =>
-            msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (msg.senderfullname && msg.senderfullname.toLowerCase().includes(searchQuery.toLowerCase())) ||
-            (msg.attachment && msg.attachment.name.toLowerCase().includes(searchQuery.toLowerCase()))
-          )
-          : messages
-        ).map((msg, idx, arr) => {
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}
+      >
+        {isLoadingMore && (
+          <div className="flex justify-center py-2">
+            <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
+          </div>
+        )}
+        {messages.map((msg, idx, arr) => {
           const isMe = msg.senderusername === currentUser;
           const showAvatar = idx === 0 || arr[idx - 1].senderusername !== msg.senderusername;
           const initialsColor = isMe ? 'bg-purple-200 text-purple-700' : 'bg-gray-100 text-gray-700';
@@ -491,18 +600,13 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
               {!isMe && (
                 <div className="w-6 md:w-8 flex-shrink-0 flex justify-center">
                   {showAvatar ? (
-                  msg.senderimageggid && getAvatarUrl(msg.senderimageggid) ? (
-                    <img
-                      src={getAvatarUrl(msg.senderimageggid)!}
-                      alt={msg.senderusername}
-                      className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover shadow-sm"
+                    <AvatarWithFallback 
+                      url={getAvatarUrl(msg.senderimageggid)}
+                      name={msg.senderfullname || msg.senderusername || (msg.senderusername === 'UniBot' ? 'UniBot' : 'User')}
+                      size="w-6 h-6 md:w-8 md:h-8"
+                      textSize="text-[8px] md:text-[10px]"
                     />
                   ) : (
-                    <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold ${msg.senderusername === 'UniBot' ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white' : initialsColor} shadow-sm`}>
-                      {avatar}
-                    </div>
-                  )
-                ) : (
                     <div className="w-6 md:w-8" />
                   )}
                 </div>
@@ -568,7 +672,6 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
@@ -703,7 +806,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                         </div>
                       </div>
                     </SelectItem>
-                    
+
                     {(currentUserRole === 'Leader' || currentUserRole === 'Admin') && (
                       <SelectItem value="Leader" className="rounded-2xl focus:bg-purple-50 focus:text-purple-700 py-3 mb-1 cursor-pointer transition-colors">
                         <div className="flex items-center gap-3.5">
@@ -782,31 +885,59 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                 className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-50 border border-gray-100/50 hover:bg-white hover:border-purple-100 hover:shadow-sm transition-all group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
-                  {getAvatarUrl(member.imageggid) ? (
-                    <img
-                      src={getAvatarUrl(member.imageggid) || ''}
-                      alt={`${member.fullname || member.username} avatar`}
-                      className="w-10 h-10 rounded-xl object-cover border border-gray-100 shadow-sm"
-                    />
-                  ) : (
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-sm ${member.workspacerole === 'Leader' ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-500 border border-gray-100'}`}>
-                      {(member.fullname || member.username).slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900 truncate">
-                        {member.fullname || member.username}
-                      </span>
-                      {member.workspacerole === 'Leader' && (
-                        <Shield size={12} className="text-purple-500 shrink-0" />
+                  <AvatarWithFallback 
+                    url={getAvatarUrl(member.imageggid)} 
+                    name={member.fullname || member.username} 
+                    role={member.workspacerole} 
+                  />
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900 truncate">
+                          {member.fullname || member.username}
+                        </span>
+                        {member.workspacerole === 'Leader' && (
+                          <Shield size={12} className="text-purple-500 shrink-0" />
+                        )}
+                      </div>
+                      
+                      {(currentUserRole === 'Leader' || currentUserRole === 'Admin') && member.username !== currentUser ? (
+                        <Select
+                          value={member.workspacerole}
+                          onValueChange={(value) => handleUpdateRole(member.username, value)}
+                        >
+                          <SelectTrigger className="h-7 w-fit bg-gray-100/50 hover:bg-purple-50 border-none px-2 rounded-lg text-[11px] text-gray-600 hover:text-purple-600 transition-all focus:ring-1 focus:ring-purple-200 shadow-none gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-400'}`} />
+                              <SelectValue />
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent className="rounded-2xl border-purple-100 bg-white/95 backdrop-blur-xl shadow-2xl shadow-purple-500/10 min-w-[120px] p-1 z-[100]">
+                            <SelectItem value="Leader" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Shield size={12} className="text-purple-500" />
+                                Leader
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Member" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              Member
+                            </SelectItem>
+                            <SelectItem value="Viewer" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              Viewer
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-[11px] text-gray-500 flex items-center gap-1.5 px-0.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-400'}`} />
+                          {member.workspacerole}
+                        </span>
+                      )}
+                      {member.fullname && (
+                        <span className="text-[10px] text-gray-400 font-medium px-0.5">
+                          @{member.username}
+                        </span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-500 flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-300'}`} />
-                      {member.workspacerole} {member.fullname ? `(@${member.username})` : ''}
-                    </span>
-                  </div>
                 </div>
 
                 {/* Only show remove button if current user is Leader/Admin and NOT removing themselves */}

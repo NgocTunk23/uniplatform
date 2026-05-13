@@ -24,6 +24,7 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - Phân quyền nghiêm ngặt trong Workspace: `Leader`, `Member`, `Viewer`.
     - **Bảo mật phân quyền (Role Assignment Security):** Chỉ có **Leader** hoặc **System Admin** mới có quyền chỉ định người khác làm `Leader`. Thành viên bình thường khi mời người mới chỉ được chọn role `Member` hoặc `Viewer`.
     - **Viewer Role:** Chế độ **Read-only**. Hệ thống tự động vô hiệu hóa (disable) toàn bộ khung nhập chat, nút đính kèm tệp và các tính năng tương tác (AI Summarize) đối với người dùng có vai trò này.
+    - **In-line Role Management (Mới):** Trưởng nhóm (Leader) có quyền thay đổi vai trò (Leader, Member, Viewer) của các thành viên trực tiếp trên giao diện danh sách thông qua menu thả xuống (Dropdown Select).
 - **Quyền Quản trị tối cao (System Admin):** Vai trò `Admin` hệ thống được cấp quyền Superuser, có thể truy cập mọi Workspace và xóa bất kỳ tệp tin nào để hỗ trợ quản trị và bảo trì.
 
 ## 3. Nhắn tin nhóm (Real-time Chat)
@@ -36,6 +37,8 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Lịch sử Chat:**
     - Lưu vào MongoDB với vector embedding.
     - Phân trang (Pagination) dựa trên limit/skip để tối ưu hiệu suất.
+    - **Infinite Scroll:** Hỗ trợ cuộn ngược để tự động tải thêm tin nhắn cũ trên giao diện Frontend (sử dụng `useLayoutEffect` để chống nhảy màn hình).
+    - **Server-side Search (Mới):** Triển khai tìm kiếm tin nhắn trực tiếp từ cơ sở dữ liệu với cơ chế **Debounce** (500ms). Cho phép tìm kiếm xuyên suốt toàn bộ lịch sử trò chuyện thay vì chỉ lọc trên các tin nhắn đã tải về trình duyệt.
 
 ## 4. Tra cứu thông minh bằng AI (Smart Search/Chatbot)
 - **Phân loại Intent:** Phân biệt yêu cầu hỏi đáp thông thường và tra cứu văn bản chuyên sâu.
@@ -62,6 +65,7 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Validation:** Sử dụng **Zod** làm thư viện validate tập trung.
 - **Testing:** Đảm bảo độ tin cậy bằng bộ test tích hợp thực tế (Production-grade integration tests) phủ mọi kịch bản quan trọng.
 - **Documentation:** Tự động hóa tài liệu API chuyên nghiệp bằng **Swagger (OpenAPI 3.0)**.
+- **Avatar Normalization (Mới):** Xây dựng hàm tiện ích `getAvatarUrl` tập trung và Component `AvatarWithFallback` dùng chung. Thiết kế chuẩn hóa dạng hình tròn (`rounded-full`) với viền trắng và cơ chế tự động chuyển sang hiển thị chữ cái viết tắt (Initials) khi ảnh gặp lỗi tải hoặc không có ID, đảm bảo tính nhất quán thẩm mỹ cao nhất trên toàn hệ thống.
 
 ## 7. Frontend Architecture & Implementation (React + Vite)
 - **State Management & Auth:**
@@ -88,14 +92,22 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **API Endpoints:**
     - `GET /api/meetings`: Lấy danh sách tất cả cuộc họp của người dùng.
     - `POST /api/meetings`: Lập lịch cuộc họp mới.
-    - `GET /api/meetings/:id`: Chi tiết cuộc họp.
-    - `PUT /api/meetings/:id/status`: Cập nhật trạng thái cuộc họp.
+    - `GET /api/meetings/:id`: Ch tiết cuộc họp.
+    - **Meeting Permission & Visibility (Mới):** 
+        - Mở rộng quyền tạo cuộc họp cho cả **Member**, không chỉ giới hạn ở Leader.
+        - **Granular Visibility:** Triển khai cơ chế lọc cuộc họp theo vai trò: Trưởng nhóm xem tất cả, Thành viên chỉ xem cuộc họp được mời tham gia. Admin xem toàn bộ hệ thống.
+        - **Participant Enrichment:** Tự động hóa việc lấy Tên đầy đủ và Ảnh đại diện cho mọi thành viên tham gia cuộc họp để hiển thị trên UI chuyên nghiệp.
+    - **Server-side Search (Mới):** Chuyển đổi cơ chế tìm kiếm tin nhắn từ Client-side filter sang **Server-side Search** với Debounce, giúp tìm kiếm được cả các tin nhắn cũ chưa được tải lên máy khách.
+    - **Avatar Standardization (Mới):** Triển khai Component `AvatarWithFallback` dùng chung trên toàn bộ hệ thống (Chat, Sidebar, Profile, Meeting), đảm bảo 100% ảnh đại diện có chung thiết kế hình tròn, viền trắng và màu sắc Premium.
+    - **In-line Role Update (Mới):** Tích hợp menu thả xuống ngay trong danh sách thành viên, cho phép Leader thay đổi quyền hạn nhanh chóng với hiệu ứng Glassmorphism và xử lý lỗi thời gian thực.
+    - Cải thiện trải nghiệm người dùng với việc hiển thị Full Name và cập nhật trạng thái thành viên thời gian thực.
 
 ### Frontend Implementation:
 - **Lịch biểu cuộc họp (`MeetingsSchedule.tsx`):**
     - Hiển thị danh sách cuộc họp theo tab: Tất cả, Sắp tới, Đã diễn ra.
-    - Chức năng "Schedule Meeting" cho phép Leader tạo cuộc họp mới thông qua Modal.
+    - Chức năng "Schedule Meeting" cho phép Thành viên hoặc Leader tạo cuộc họp mới thông qua Modal.
 - **Phòng họp (`MeetingRoom.tsx`):**
     - Giao diện Video Grid mockup với điều khiển Mic/Camera.
     - **Tích hợp Chat Workspace:** Nhúng trực tiếp `ChatInterface` vào phòng họp để người dùng trao đổi trong lúc thảo luận, đảm bảo tính đồng bộ dữ liệu với Workspace chính.
+- **Enriched Participant Data (Mới):** Tất cả các API lấy thông tin cuộc họp tự động trả về thông tin chi tiết của người tham gia (Full Name, Avatar) để hiển thị giao diện chuyên nghiệp thay vì chỉ dùng Username.
 

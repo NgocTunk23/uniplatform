@@ -5,6 +5,8 @@ import {
   AlertTriangle, CheckCircle, ChevronRight, Camera, LogIn, LogOut, Key,
   Monitor, Edit3, X, Check, BookOpen, Loader2
 } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -143,21 +145,7 @@ export function UserProfile() {
 
 
 
-        let finalAvatarUrl = userData.imageggid || 'https://via.placeholder.com/150';
-
-        if (userData.imageggid) {
-          // Trường hợp 1: Trong DB lỡ lưu cái link cũ có chữ drive.google.com
-          if (userData.imageggid.includes('drive.google.com')) {
-            const match = userData.imageggid.match(/id=([^&]+)/);
-            if (match && match[1]) {
-              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
-            }
-          } 
-          // Trường hợp 2: DB chỉ lưu mỗi cái ID nguyên chất
-          else if (!userData.imageggid.startsWith('http') && !userData.imageggid.startsWith('data:')) {
-            finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageggid}`;
-          }
-        }
+        const finalAvatarUrl = getAvatarUrl(userData.imageggid);
 
         console.log("LINK ẢNH ĐÃ ĐƯỢC LỌC LẠI:", finalAvatarUrl); 
         setAvatarUrl(finalAvatarUrl);
@@ -381,8 +369,13 @@ export function UserProfile() {
 
           <div className="px-8 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
-              <div className="relative w-24 h-24 rounded-2xl border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
-                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+              <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
+                <AvatarWithFallback 
+                  url={avatarUrl} 
+                  name={fullName} 
+                  size="w-full h-full"
+                  textSize="text-2xl"
+                />
                 <button 
                   onClick={triggerFileInput}
                   disabled={uploadingAvatar}

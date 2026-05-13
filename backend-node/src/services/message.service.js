@@ -34,12 +34,20 @@ const saveMessage = async (messageData) => {
   };
 };
 
-const getMessagesByWorkspace = async (workspaceid, currentUser, limit = 50, skip = 0) => {
+const getMessagesByWorkspace = async (workspaceid, currentUser, limit = 50, skip = 0, search = '') => {
   // Security check: must be member
   await permissionUtil.getWorkspaceMembership(workspaceid, currentUser);
 
+  const whereClause = { workspaceid: workspaceid };
+  if (search) {
+    whereClause.content = {
+      contains: search,
+      mode: 'insensitive'
+    };
+  }
+
   const messages = await prisma.messages.findMany({
-    where: { workspaceid: workspaceid },
+    where: whereClause,
     take: limit,
     skip: skip,
     orderBy: { createdat: 'desc' },

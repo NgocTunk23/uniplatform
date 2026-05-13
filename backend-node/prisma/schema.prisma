@@ -59,8 +59,9 @@ type Member {
   username      String
   fullname      String?
   imageggid     String?
-  workspacerole String   @default("Member")
+  workspacerole String    @default("Member")
   joinedat      DateTime? @default(now()) @map("joinedAt")
+  lastReadAt    DateTime? @default(now()) @map("lastReadAt")
 }
 
 model Messages {
@@ -75,6 +76,8 @@ model Messages {
 
   workspace       Workspace @relation(fields: [workspaceid], references: [workspaceid])
   files           Files[]
+
+  @@index([workspaceid, createdat])
 }
 
 model Meeting {
