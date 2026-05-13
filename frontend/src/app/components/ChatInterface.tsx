@@ -41,6 +41,7 @@ import {
   SelectValue
 } from './ui/select';
 import { toast } from 'sonner';
+import { AvatarWithFallback } from './AvatarWithFallback';
 
 interface Member {
   username: string;
@@ -54,6 +55,7 @@ interface ChatInterfaceProps {
   hideHeader?: boolean;
   onDeleteSuccess?: () => void;
 }
+
 
 interface Message {
   id: string;
@@ -569,17 +571,12 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
               {!isMe && (
                 <div className="w-6 md:w-8 flex-shrink-0 flex justify-center">
                   {showAvatar ? (
-                    msg.senderimageggid && getAvatarUrl(msg.senderimageggid) ? (
-                      <img
-                        src={getAvatarUrl(msg.senderimageggid)!}
-                        alt={msg.senderusername}
-                        className="w-6 h-6 md:w-8 md:h-8 rounded-full object-cover shadow-sm"
-                      />
-                    ) : (
-                      <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[8px] md:text-[10px] font-bold ${msg.senderusername === 'UniBot' ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white' : initialsColor} shadow-sm`}>
-                        {avatar}
-                      </div>
-                    )
+                    <AvatarWithFallback 
+                      url={getAvatarUrl(msg.senderimageggid)}
+                      name={msg.senderfullname || msg.senderusername || (msg.senderusername === 'UniBot' ? 'UniBot' : 'User')}
+                      size="w-6 h-6 md:w-8 md:h-8"
+                      textSize="text-[8px] md:text-[10px]"
+                    />
                   ) : (
                     <div className="w-6 md:w-8" />
                   )}
@@ -859,17 +856,11 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                 className="flex items-center justify-between p-3.5 rounded-2xl bg-gray-50 border border-gray-100/50 hover:bg-white hover:border-purple-100 hover:shadow-sm transition-all group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
-                  {getAvatarUrl(member.imageggid) ? (
-                    <img
-                      src={getAvatarUrl(member.imageggid) || ''}
-                      alt={`${member.fullname || member.username} avatar`}
-                      className="w-10 h-10 rounded-xl object-cover border border-gray-100 shadow-sm"
-                    />
-                  ) : (
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 shadow-sm ${member.workspacerole === 'Leader' ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-500 border border-gray-100'}`}>
-                      {(member.fullname || member.username).slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
+                  <AvatarWithFallback 
+                    url={getAvatarUrl(member.imageggid)} 
+                    name={member.fullname || member.username} 
+                    role={member.workspacerole} 
+                  />
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-gray-900 truncate">

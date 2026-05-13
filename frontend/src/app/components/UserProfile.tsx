@@ -6,6 +6,7 @@ import {
   Monitor, Edit3, X, Check, BookOpen, Loader2
 } from 'lucide-react';
 import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -368,8 +369,13 @@ export function UserProfile() {
 
           <div className="px-8 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
-              <div className="relative w-24 h-24 rounded-2xl border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
-                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+              <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
+                <AvatarWithFallback 
+                  url={avatarUrl} 
+                  name={fullName} 
+                  size="w-full h-full"
+                  textSize="text-2xl"
+                />
                 <button 
                   onClick={triggerFileInput}
                   disabled={uploadingAvatar}

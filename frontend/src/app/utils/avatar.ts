@@ -1,5 +1,5 @@
-export function getAvatarUrl(imageggid?: string | null): string {
-  if (!imageggid) return 'https://via.placeholder.com/150';
+export function getAvatarUrl(imageggid?: string | null): string | null {
+  if (!imageggid) return null;
 
   let finalAvatarUrl = imageggid;
 

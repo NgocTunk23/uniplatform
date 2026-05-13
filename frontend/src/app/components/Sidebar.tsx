@@ -14,6 +14,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 import { 
   Dialog, 
   DialogContent, 
@@ -200,7 +201,7 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           const finalAvatarUrl = getAvatarUrl(userData.imageggid);
 
           // Cập nhật lại state với Avatar
-          if (finalAvatarUrl && finalAvatarUrl !== 'https://via.placeholder.com/150') {
+          if (finalAvatarUrl) {
             setUserInfo(prev => ({ ...prev, avatarUrl: finalAvatarUrl }));
           }
         }
@@ -315,13 +316,11 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           }`}
         >
           {/* HIỂN THỊ AVATAR NẾU CÓ, KHÔNG THÌ HIỂN THỊ CHỮ */}
-          <div className="w-8 h-8 rounded-full bg-purple-200 border-2 border-white shadow-sm flex items-center justify-center text-purple-700 font-semibold text-xs shrink-0 overflow-hidden">
-            {userInfo.avatarUrl ? (
-              <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              userInfo.initials
-            )}
-          </div>
+          <AvatarWithFallback 
+            url={userInfo.avatarUrl} 
+            name={userInfo.fullname} 
+            size="w-8 h-8" 
+          />
           
           <div className="flex-1 text-left min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">

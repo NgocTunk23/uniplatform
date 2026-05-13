@@ -16,6 +16,7 @@ import {
   Video,
 } from 'lucide-react';
 import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 import { toast } from 'sonner';
 
 interface WorkspaceMember {
@@ -491,17 +492,10 @@ export function MeetingReview() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {(meeting.participantDetails || meeting.participants.map(p => ({ username: p, fullname: p }))).map(participant => (
                   <div key={participant.username} className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 text-xs font-semibold overflow-hidden">
-                      {participant.imageggid ? (
-                        <img 
-                          src={getAvatarUrl(participant.imageggid)} 
-                          alt={participant.fullname || participant.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        (participant.fullname || participant.username).slice(0, 2).toUpperCase()
-                      )}
-                    </div>
+                    <AvatarWithFallback 
+                      url={getAvatarUrl(participant.imageggid)} 
+                      name={participant.fullname || participant.username} 
+                    />
                     <span className="text-sm text-gray-700 truncate" title={participant.fullname || participant.username}>
                       {participant.fullname || participant.username}
                     </span>
