@@ -29,6 +29,8 @@ interface Meeting {
   workspace?: { name?: string };
   place?: string | null;
   link?: string | null;
+  participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
+  organizerDetails?: { username: string; fullname?: string; imageggid?: string };
 }
 
 interface WorkspaceMember {
@@ -478,7 +480,7 @@ export function MeetingsSchedule() {
                           {meeting.workspace?.name || 'Workspace'}
                         </span>
                         <span className="px-2.5 py-1 rounded-full bg-gray-50 text-gray-500">
-                          Organizer: {meeting.organizer}
+                          Organizer: {meeting.organizerDetails?.fullname || meeting.organizer}
                         </span>
                         {meeting.link && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-600">

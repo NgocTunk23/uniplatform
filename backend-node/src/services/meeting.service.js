@@ -122,6 +122,41 @@ const ensureCanManageMeeting = async (meeting, currentUser) => {
   }
 };
 
+const enrichMeetingParticipants = async (meetings) => {
+  if (!meetings) return null;
+  const isArray = Array.isArray(meetings);
+  const meetingsList = isArray ? meetings : [meetings];
+
+  if (meetingsList.length === 0) return isArray ? [] : null;
+
+  // Collect all unique usernames
+  const usernames = new Set();
+  meetingsList.forEach(m => {
+    (m.participants || []).forEach(u => usernames.add(u));
+    if (m.organizer) usernames.add(m.organizer);
+  });
+
+  // Fetch user details
+  const users = await prisma.user.findMany({
+    where: { username: { in: Array.from(usernames) } },
+    select: { username: true, fullname: true, imageggid: true }
+  });
+
+  const userMap = users.reduce((acc, user) => {
+    acc[user.username] = user;
+    return acc;
+  }, {});
+
+  // Map details back to meetings
+  const enriched = meetingsList.map(m => ({
+    ...m,
+    participantDetails: (m.participants || []).map(u => userMap[u] || { username: u, fullname: u }),
+    organizerDetails: userMap[m.organizer] || { username: m.organizer, fullname: m.organizer }
+  }));
+
+  return isArray ? enriched : enriched[0];
+};
+
 const getAllMeetings = async (currentUser) => {
   if (currentUser.role === ROLES.SYSTEM.ADMIN) {
     return await prisma.meeting.findMany({
@@ -163,7 +198,7 @@ const getAllMeetings = async (currentUser) => {
     ]
   };
 
-  return await prisma.meeting.findMany({
+  const meetings = await prisma.meeting.findMany({
     where: query,
     include: {
       workspace: { select: { name: true } },
@@ -171,6 +206,8 @@ const getAllMeetings = async (currentUser) => {
     },
     orderBy: { starttime: 'desc' }
   });
+
+  return await enrichMeetingParticipants(meetings);
 };
 
 const getMeetingsByWorkspace = async (workspaceId, currentUser) => {
@@ -182,13 +219,15 @@ const getMeetingsByWorkspace = async (workspaceId, currentUser) => {
     query.participants = { has: currentUser.username };
   }
 
-  return await prisma.meeting.findMany({
+  const meetings = await prisma.meeting.findMany({
     where: query,
     include: {
       meetingMinute: true
     },
     orderBy: { starttime: 'desc' }
   });
+
+  return await enrichMeetingParticipants(meetings);
 };
 
 const getMeetingById = async (meetingId, currentUser) => {
@@ -211,7 +250,7 @@ const getMeetingById = async (meetingId, currentUser) => {
     throw new ApiError(403, 'Access denied. You are not a participant in this meeting.', ERROR_CODES.AUTH.AUTH_ERROR);
   }
 
-  return meeting;
+  return await enrichMeetingParticipants(meeting);
 };
 
 const createMeeting = async (meetingData, currentUser) => {

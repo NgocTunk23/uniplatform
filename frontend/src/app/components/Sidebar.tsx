@@ -13,6 +13,7 @@ import {
   PlusCircle,
   Loader2
 } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
 import { 
   Dialog, 
   DialogContent, 
@@ -195,24 +196,11 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           const result = await response.json();
           const userData = result.data || result;
           
-          let finalAvatarUrl = '';
-          
-          // Lọc link ảnh (giống hệt bên UserProfile)
-          if (userData.imageggid) {
-            if (userData.imageggid.includes('drive.google.com')) {
-              const match = userData.imageggid.match(/id=([^&]+)/);
-              if (match && match[1]) {
-                finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
-              }
-            } else if (!userData.imageggid.startsWith('http') && !userData.imageggid.startsWith('data:')) {
-              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageggid}`;
-            } else {
-              finalAvatarUrl = userData.imageggid;
-            }
-          }
+          // Lọc link ảnh (sử dụng utility chung)
+          const finalAvatarUrl = getAvatarUrl(userData.imageggid);
 
           // Cập nhật lại state với Avatar
-          if (finalAvatarUrl) {
+          if (finalAvatarUrl && finalAvatarUrl !== 'https://via.placeholder.com/150') {
             setUserInfo(prev => ({ ...prev, avatarUrl: finalAvatarUrl }));
           }
         }

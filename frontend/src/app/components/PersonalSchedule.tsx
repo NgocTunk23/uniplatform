@@ -42,6 +42,8 @@ interface Meeting {
   participants: string[];
   status: 'upcoming' | 'ongoing' | 'ended';
   workspace?: { name?: string };
+  participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
+  organizerDetails?: { username: string; fullname?: string; imageggid?: string };
 }
 
 interface CalendarEvent {
@@ -934,7 +936,9 @@ export function PersonalSchedule() {
                           <span className="flex items-center gap-1"><Users size={9} />{meeting.participants.length}</span>
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <span className="inline-block px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 text-[9px] font-semibold truncate">{meeting.workspace?.name || meeting.organizer}</span>
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 text-[9px] font-semibold truncate">
+                            {meeting.workspace?.name || meeting.organizerDetails?.fullname || meeting.organizer}
+                          </span>
                           <button
                             onClick={() => openMeeting(meeting)}
                             className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-600 text-[10px] font-semibold hover:bg-purple-100 transition-colors"
@@ -1059,7 +1063,7 @@ export function PersonalSchedule() {
               )}
               {selectedMeeting && (
                 <div className="text-xs text-gray-500 space-y-1">
-                  <p>Organizer: <span className="font-semibold text-gray-700">{selectedMeeting.organizer}</span></p>
+                  <p>Organizer: <span className="font-semibold text-gray-700">{selectedMeeting.organizerDetails?.fullname || selectedMeeting.organizer}</span></p>
                   <p>Participants: <span className="font-semibold text-gray-700">{selectedMeeting.participants.length}</span></p>
                 </div>
               )}
