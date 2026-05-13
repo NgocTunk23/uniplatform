@@ -25,6 +25,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { toast } from 'sonner';
+import { connectSocket } from '../utils/socket';
 
 
 interface SidebarProps {
@@ -71,12 +72,19 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
       
       if (response.ok) {
         const data = await response.json();
-        const formattedGroups = data.map((ws: any) => ({
-          id: ws.workspaceid || ws.id || ws._id,
-          name: ws.name,
-          unread: 0 
-        }));
+        const formattedGroups = data.map((ws: any) => {
+          const id = ws.workspaceid || ws.id || ws._id;
+          return {
+            id,
+            name: ws.name,
+            unread: id === activeGroup ? 0 : (ws.unreadCount || 0)
+          };
+        });
         setChatGroups(formattedGroups);
+
+        // Join all workspace rooms to receive real-time unread updates
+        const socket = connectSocket();
+        socket.emit('join_workspace', formattedGroups.map(g => g.id));
       }
     } catch (error) {
       console.error("Failed to fetch workspaces error:", error);
@@ -86,12 +94,41 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
   useEffect(() => {
     fetchWorkspaces();
     
+    // Connect socket for real-time unread updates
+    const socket = connectSocket();
+    
+    const handleGlobalReceiveMessage = (msg: any) => {
+      const currentUser = localStorage.getItem('uniplatform_username');
+      const msgWorkspaceId = msg.workspaceid || msg.workspaceId;
+      
+      // If message is from a workspace that is NOT currently open AND not sent by current user
+      if (msgWorkspaceId && msgWorkspaceId !== activeGroup && msg.senderusername !== currentUser) {
+        setChatGroups(prev => prev.map(group => 
+          group.id === msgWorkspaceId 
+            ? { ...group, unread: group.unread + 1 } 
+            : group
+        ));
+      }
+    };
+
+    socket.on('receive_message', handleGlobalReceiveMessage);
+
     // Listen for workspace deletion to refresh the list
     window.addEventListener('workspace_deleted', fetchWorkspaces);
     return () => {
+      socket.off('receive_message', handleGlobalReceiveMessage);
       window.removeEventListener('workspace_deleted', fetchWorkspaces);
     };
-  }, []);
+  }, [activeGroup]); // Re-subscribe when activeGroup changes
+
+  // Clear unread count when group becomes active
+  useEffect(() => {
+    if (activeGroup) {
+      setChatGroups(prev => prev.map(group => 
+        group.id === activeGroup ? { ...group, unread: 0 } : group
+      ));
+    }
+  }, [activeGroup]);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();

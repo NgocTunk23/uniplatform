@@ -274,7 +274,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     // 3. Socket.io Integration
     const socket = connectSocket();
 
-    socket.emit('join_workspace', workspaceId);
+    socket.emit('join_workspace', { workspaceid: workspaceId, markRead: true });
 
     const handleReceiveMessage = (msg: any) => {
       // Backend returns either standard format or with senderusername

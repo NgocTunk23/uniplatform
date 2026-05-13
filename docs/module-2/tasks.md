@@ -24,6 +24,7 @@
 - [x] T4.3: Lưu trữ tin nhắn vào DB và xử lý Pagination/Infinite Scroll.
 - [x] T4.4: Tích hợp Google Drive API (v3) qua chế độ **OAuth2 (Refresh Token)**.
 - [x] T4.5: Ràng buộc quyền sở hữu File (Chỉ uploader mới được xóa).
+- [x] T4.6: Triển khai tính năng đếm tin nhắn chưa đọc (Unread Count) với persistence DB và real-time updates.
 
 ## Phase 5: AI & Smart Search (AI Integration)
 - [x] T5.1: Cấu hình Gemini API (Model: `gemini-1.5-flash`).

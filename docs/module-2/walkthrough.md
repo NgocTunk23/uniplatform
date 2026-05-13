@@ -13,6 +13,10 @@ Tài liệu này ghi chép lại hành trình phát triển Module 2, từ việ
 - **Auth:** Hoàn thiện luồng Register/Login/Profile với JWT.
 - **Workspace:** Triển khai quản lý nhóm và phân quyền Leader/Member/Viewer.
 - **Real-time Chat:** Xây dựng hệ thống Chat qua Socket.io, hỗ trợ Threaded Replies và Mentions.
+- **Unread Message Tracking (Mới):**
+    - Triển khai lưu trữ `lastReadAt` cho từng thành viên trong DB.
+    - Hệ thống đếm tin nhắn chưa đọc thời gian thực qua Socket.io.
+    - Tự động đánh dấu đã đọc khi người dùng truy cập vào Workspace.
 - **Cloud Storage:** Tích hợp Google Drive API cho việc lưu trữ tệp tin đính kèm.
 - **Workspace UI/UX Refinement:** 
     - Tái cấu trúc toàn bộ giao diện quản lý Workspace với phong cách **Premium Glassmorphism**.

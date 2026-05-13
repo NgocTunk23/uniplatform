@@ -72,7 +72,30 @@ const getAllWorkspaces = async (currentUser) => {
     });
   }
 
-  return await Promise.all(workspaces.map(w => enrichWorkspaceMembers(w)));
+  // Calculate unread count for each workspace
+  const workspacesWithUnread = await Promise.all(workspaces.map(async (w) => {
+    const enriched = await enrichWorkspaceMembers(w);
+    const memberInfo = w.member.find(m => m.username === currentUser.username);
+    
+    // If user is not a member (can happen for System Admin), unread is 0
+    if (!memberInfo) {
+      return { ...enriched, unreadCount: 0 };
+    }
+
+    const lastReadAt = memberInfo.lastReadAt || new Date(0);
+
+    const unreadCount = await prisma.messages.count({
+      where: {
+        workspaceid: w.workspaceid,
+        createdat: { gt: lastReadAt },
+        senderusername: { not: currentUser.username }
+      }
+    });
+
+    return { ...enriched, unreadCount };
+  }));
+
+  return workspacesWithUnread;
 };
 
 const getWorkspaceById = async (workspaceid, currentUser) => {
@@ -208,6 +231,22 @@ const updateMemberRole = async (workspaceId, username, workspacerole, currentUse
   return await enrichWorkspaceMembers(result);
 };
 
+const markAsRead = async (workspaceid, username) => {
+  const workspace = await prisma.workspace.findUnique({ where: { workspaceid } });
+  if (!workspace) return null;
+
+  const updatedMembers = workspace.member.map(m => 
+    m.username === username ? { ...m, lastReadAt: new Date() } : m
+  );
+
+  return await prisma.workspace.update({
+    where: { workspaceid },
+    data: {
+      member: updatedMembers
+    }
+  });
+};
+
 module.exports = {
   createWorkspace,
   getAllWorkspaces,
@@ -217,4 +256,5 @@ module.exports = {
   addMember,
   removeMember,
   updateMemberRole,
+  markAsRead,
 };
