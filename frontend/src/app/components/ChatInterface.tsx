@@ -180,6 +180,35 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     }
   };
 
+  const handleUpdateRole = async (username: string, newRole: string) => {
+    if (!workspaceId) return;
+    try {
+      const token = localStorage.getItem('uniplatform_user_token');
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+      const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}/members/${username}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ workspacerole: newRole })
+      });
+
+      if (response.ok) {
+        toast.success(`Updated role for ${username} to ${newRole}`);
+        setAllMembers(prev => prev.map(m => 
+          m.username === username ? { ...m, workspacerole: newRole } : m
+        ));
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to update role');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    }
+  };
+
   const handleDeleteWorkspace = async () => {
     if (!workspaceId) return;
     setIsDeletingWorkspace(true);
@@ -861,20 +890,54 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                     name={member.fullname || member.username} 
                     role={member.workspacerole} 
                   />
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900 truncate">
-                        {member.fullname || member.username}
-                      </span>
-                      {member.workspacerole === 'Leader' && (
-                        <Shield size={12} className="text-purple-500 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900 truncate">
+                          {member.fullname || member.username}
+                        </span>
+                        {member.workspacerole === 'Leader' && (
+                          <Shield size={12} className="text-purple-500 shrink-0" />
+                        )}
+                      </div>
+                      
+                      {(currentUserRole === 'Leader' || currentUserRole === 'Admin') && member.username !== currentUser ? (
+                        <Select
+                          value={member.workspacerole}
+                          onValueChange={(value) => handleUpdateRole(member.username, value)}
+                        >
+                          <SelectTrigger className="h-7 w-fit bg-gray-100/50 hover:bg-purple-50 border-none px-2 rounded-lg text-[11px] text-gray-600 hover:text-purple-600 transition-all focus:ring-1 focus:ring-purple-200 shadow-none gap-2">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-400'}`} />
+                              <SelectValue />
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent className="rounded-2xl border-purple-100 bg-white/95 backdrop-blur-xl shadow-2xl shadow-purple-500/10 min-w-[120px] p-1 z-[100]">
+                            <SelectItem value="Leader" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <Shield size={12} className="text-purple-500" />
+                                Leader
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="Member" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              Member
+                            </SelectItem>
+                            <SelectItem value="Viewer" className="rounded-xl text-xs font-semibold text-gray-700 focus:bg-purple-50 focus:text-purple-700 py-2.5">
+                              Viewer
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-[11px] text-gray-500 flex items-center gap-1.5 px-0.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-400'}`} />
+                          {member.workspacerole}
+                        </span>
+                      )}
+                      {member.fullname && (
+                        <span className="text-[10px] text-gray-400 font-medium px-0.5">
+                          @{member.username}
+                        </span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-500 flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${member.workspacerole === 'Leader' ? 'bg-purple-400' : 'bg-gray-300'}`} />
-                      {member.workspacerole} {member.fullname ? `(@${member.username})` : ''}
-                    </span>
-                  </div>
                 </div>
 
                 {/* Only show remove button if current user is Leader/Admin and NOT removing themselves */}
