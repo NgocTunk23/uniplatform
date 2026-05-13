@@ -21,6 +21,10 @@ Tài liệu này ghi chép lại hành trình phát triển Module 2, từ việ
 - **Workspace UI/UX Refinement:** 
     - Tái cấu trúc toàn bộ giao diện quản lý Workspace với phong cách **Premium Glassmorphism**.
     - Triển khai Role-based logic mới: Chỉ Leader/Admin mới được gán quyền Leader; tự động disable chat input cho Viewer.
+    - **Infinite Scroll (Mới):** Tự động tải lịch sử chat khi cuộn lên trên, sử dụng `useLayoutEffect` và tính toán `scrollTop` để triệt tiêu hiện tượng giật màn hình (scroll jump).
+    - **Meeting Permission (Mới):** 
+        - Mở rộng quyền tạo cuộc họp cho cả **Member**, không chỉ giới hạn ở Leader.
+        - **Granular Visibility:** Triển khai cơ chế lọc cuộc họp theo vai trò: Trưởng nhóm xem tất cả, Thành viên chỉ xem cuộc họp được mời tham gia.
     - Cải thiện trải nghiệm người dùng với việc hiển thị Full Name và cập nhật trạng thái thành viên thời gian thực.
 
 ### 🛡️ Admin (`/api/admin`)

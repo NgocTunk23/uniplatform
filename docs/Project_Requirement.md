@@ -51,7 +51,7 @@ Hệ thống chia làm 3 Role chính: **Thành viên** (Member), **Trưởng nh�
 ### MODULE 1: Quản lý Lịch & Lưu trữ Tài nguyên
 
 - **Quản lý lịch cá nhân (Schedules):** CRUD sự kiện/khung giờ rảnh bận. Frontend hiển thị lưới Calendar. Chặn dữ liệu lỗi (endtime < starttime, trùng lịch cố định).
-- **Tạo cuộc họp thông minh (Smart Scheduling):** Trưởng nhóm nhập thông tin (Tiêu đề, Thời lượng, Thành viên). Hệ thống gọi thuật toán đối chiếu lịch của tất cả thành viên và trả về danh sách khung giờ trống chung tối ưu.
+- **Tạo cuộc họp thông minh (Smart Scheduling):** Thành viên hoặc Trưởng nhóm nhập thông tin (Tiêu đề, Thời lượng, Thành viên). Hệ thống gọi thuật toán đối chiếu lịch của tất cả thành viên và trả về danh sách khung giờ trống chung tối ưu.
 - **Tạo & Quản lý Biên bản cuộc họp (Meeting Minutes):**
   - _AI Auto-generation:_ Trợ lý ảo chạy ngầm chuyển Speech-to-Text từ file record, sau đó LLM tóm tắt quyết định, phân công nhiệm vụ.
   - _Review & Save:_ Trưởng nhóm rà soát nội dung điền sẵn, chỉnh sửa, đính kèm file (Upload lên Google Drive lấy URL), bấm "Lưu".
@@ -130,6 +130,7 @@ Yêu cầu AI IDE thiết lập các Models trong Mongoose (Node.js) hoặc Pyda
 - `endtime`: timestamp
 - `organizer`: string (Ref to User)
 - `participants`: Array of strings (usernames)
+- `visibility`: Chỉ Leader hoặc người có tên trong `participants` mới được xem cuộc họp này.
 - `status`: string
 - `createat`: timestamp
 - `lmk` (Link/Location): string

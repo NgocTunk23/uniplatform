@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/api-error');
 const ROLES = require('../constants/roles');
+const ERROR_CODES = require('../constants/error-codes');
 const permissionUtil = require('../utils/permission.util');
 const calendarConflictService = require('./calendar-conflict.service');
 const gdriveUtil = require('../utils/gdrive.util');
@@ -122,6 +123,16 @@ const ensureCanManageMeeting = async (meeting, currentUser) => {
 };
 
 const getAllMeetings = async (currentUser) => {
+  if (currentUser.role === ROLES.SYSTEM.ADMIN) {
+    return await prisma.meeting.findMany({
+      include: {
+        workspace: { select: { name: true } },
+        meetingMinute: true
+      },
+      orderBy: { starttime: 'desc' }
+    });
+  }
+
   // Get all workspaces the user is a member of
   const workspaces = await prisma.workspace.findMany({
     where: {
@@ -129,22 +140,33 @@ const getAllMeetings = async (currentUser) => {
         some: { username: currentUser.username }
       }
     },
-    select: { workspaceid: true }
+    select: { workspaceid: true, member: true }
   });
 
-  const workspaceIds = workspaces.map(w => w.workspaceid);
+  const leaderWorkspaceIds = workspaces
+    .filter(w => w.member.some(m => m.username === currentUser.username && m.workspacerole === ROLES.WORKSPACE.LEADER))
+    .map(w => w.workspaceid);
 
-  // If user is admin, they might want all meetings, but usually they want meetings of their workspaces
-  // Unless we want a global admin view. For now, let's stick to user's workspaces.
-  
-  const query = currentUser.role === ROLES.SYSTEM.ADMIN ? {} : { workspaceid: { in: workspaceIds } };
+  const participantWorkspaceIds = workspaces
+    .filter(w => !leaderWorkspaceIds.includes(w.workspaceid))
+    .map(w => w.workspaceid);
+
+  const query = {
+    OR: [
+      { workspaceid: { in: leaderWorkspaceIds } },
+      {
+        AND: [
+          { workspaceid: { in: participantWorkspaceIds } },
+          { participants: { has: currentUser.username } }
+        ]
+      }
+    ]
+  };
 
   return await prisma.meeting.findMany({
     where: query,
     include: {
-      workspace: {
-        select: { name: true }
-      },
+      workspace: { select: { name: true } },
       meetingMinute: true
     },
     orderBy: { starttime: 'desc' }
@@ -152,10 +174,16 @@ const getAllMeetings = async (currentUser) => {
 };
 
 const getMeetingsByWorkspace = async (workspaceId, currentUser) => {
-  await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
+  const membership = await permissionUtil.getWorkspaceMembership(workspaceId, currentUser);
+  const isLeader = membership.isSystemAdmin || membership.workspacerole === ROLES.WORKSPACE.LEADER;
+
+  const query = { workspaceid: workspaceId };
+  if (!isLeader) {
+    query.participants = { has: currentUser.username };
+  }
 
   return await prisma.meeting.findMany({
-    where: { workspaceid: workspaceId },
+    where: query,
     include: {
       meetingMinute: true
     },
@@ -175,7 +203,13 @@ const getMeetingById = async (meetingId, currentUser) => {
   if (!meeting) return null;
 
   // Check if user is member of the workspace
-  await permissionUtil.getWorkspaceMembership(meeting.workspaceid, currentUser);
+  const membership = await permissionUtil.getWorkspaceMembership(meeting.workspaceid, currentUser);
+  const isLeader = membership.isSystemAdmin || membership.workspacerole === ROLES.WORKSPACE.LEADER;
+
+  // If not leader and not a participant, deny access
+  if (!isLeader && !meeting.participants.includes(currentUser.username)) {
+    throw new ApiError(403, 'Access denied. You are not a participant in this meeting.', ERROR_CODES.AUTH.AUTH_ERROR);
+  }
 
   return meeting;
 };

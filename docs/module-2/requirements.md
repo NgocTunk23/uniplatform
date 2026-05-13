@@ -36,6 +36,7 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
 - **Lịch sử Chat:**
     - Lưu vào MongoDB với vector embedding.
     - Phân trang (Pagination) dựa trên limit/skip để tối ưu hiệu suất.
+    - **Infinite Scroll:** Hỗ trợ cuộn ngược để tự động tải thêm tin nhắn cũ trên giao diện Frontend (sử dụng `useLayoutEffect` để chống nhảy màn hình).
 
 ## 4. Tra cứu thông minh bằng AI (Smart Search/Chatbot)
 - **Phân loại Intent:** Phân biệt yêu cầu hỏi đáp thông thường và tra cứu văn bản chuyên sâu.
@@ -90,11 +91,15 @@ Tài liệu này xác định các yêu cầu chức năng và phi chức năng 
     - `POST /api/meetings`: Lập lịch cuộc họp mới.
     - `GET /api/meetings/:id`: Chi tiết cuộc họp.
     - `PUT /api/meetings/:id/status`: Cập nhật trạng thái cuộc họp.
+    - **Visibility Rules:** 
+        - **System Admin:** Xem toàn bộ cuộc họp.
+        - **Workspace Leader:** Xem toàn bộ cuộc họp trong Workspace mình quản lý.
+        - **Participants:** Chỉ xem được cuộc họp mà mình được thêm vào danh sách tham gia.
 
 ### Frontend Implementation:
 - **Lịch biểu cuộc họp (`MeetingsSchedule.tsx`):**
     - Hiển thị danh sách cuộc họp theo tab: Tất cả, Sắp tới, Đã diễn ra.
-    - Chức năng "Schedule Meeting" cho phép Leader tạo cuộc họp mới thông qua Modal.
+    - Chức năng "Schedule Meeting" cho phép Thành viên hoặc Leader tạo cuộc họp mới thông qua Modal.
 - **Phòng họp (`MeetingRoom.tsx`):**
     - Giao diện Video Grid mockup với điều khiển Mic/Camera.
     - **Tích hợp Chat Workspace:** Nhúng trực tiếp `ChatInterface` vào phòng họp để người dùng trao đổi trong lúc thảo luận, đảm bảo tính đồng bộ dữ liệu với Workspace chính.
