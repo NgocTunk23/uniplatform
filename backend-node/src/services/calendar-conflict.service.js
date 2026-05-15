@@ -13,7 +13,6 @@ const findConflictingSchedules = async ({ usernames, starttime, endtime, exclude
 
   const where = {
     username: { in: users },
-    type: { in: BLOCKING_SCHEDULE_TYPES },
     starttime: { lt: endtime },
     endtime: { gt: starttime },
   };

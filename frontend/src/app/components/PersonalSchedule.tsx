@@ -178,7 +178,15 @@ function StatusBadge({ status }: { status: AvailStatus | 'meeting' }) {
 }
 
 function getEventsForDay(events: CalendarEvent[], day: Date) {
-  return events.filter(event => isSameDay(event.start, day)).sort((a, b) => a.start.getTime() - b.start.getTime());
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+
+  const dayEnd = new Date(day);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  return events
+    .filter(event => event.start <= dayEnd && event.end >= dayStart)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
 function layoutOverlappingEvents(events: CalendarEvent[]): LaidOutEvent[] {
@@ -244,9 +252,8 @@ function WeekCalendar({ events, selectedDate, hours, onSelectDate, onSelectEvent
           {days.map((date, i) => (
             <button key={date.toISOString()} onClick={() => onSelectDate(date)} className="text-center pb-2">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{WEEK_DAYS[i]}</p>
-              <div className={`mx-auto mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                isSameDay(date, selectedDate) ? 'bg-purple-500 text-white' : 'text-gray-600 hover:bg-gray-50'
-              }`}>
+              <div className={`mx-auto mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isSameDay(date, selectedDate) ? 'bg-purple-500 text-white' : 'text-gray-600 hover:bg-gray-50'
+                }`}>
                 {date.getDate()}
               </div>
             </button>
@@ -270,8 +277,22 @@ function WeekCalendar({ events, selectedDate, hours, onSelectDate, onSelectEvent
           ))}
 
           {weekLayouts.map(({ event, dayIndex, lane, laneCount }) => {
-            const startHour = event.start.getHours() + event.start.getMinutes() / 60;
-            const endHour = event.end.getHours() + event.end.getMinutes() / 60;
+            const currentDay = days[dayIndex];
+            const dayStart = new Date(currentDay);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(currentDay);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            let startHour = 0;
+            if (event.start > dayStart) {
+              startHour = event.start.getHours() + event.start.getMinutes() / 60;
+            }
+
+            let endHour = 24;
+            if (event.end < dayEnd) {
+              endHour = event.end.getHours() + event.end.getMinutes() / 60;
+            }
+
             const top = Math.min(Math.max(0, (startHour - startHourBoundary) * 48 + 1), gridHeight - 28);
             const height = Math.max(28, Math.min((endHour - startHour) * 48 - 2, gridHeight - top));
             const style = statusStyle[event.status];
@@ -324,9 +345,24 @@ function DayCalendar({ events, selectedDate, hours, onSelectEvent }: {
           </div>
         ))}
         {dayLayouts.map(({ event, lane, laneCount }) => {
+
           const style = statusStyle[event.status];
-          const startHour = event.start.getHours() + event.start.getMinutes() / 60;
-          const endHour = event.end.getHours() + event.end.getMinutes() / 60;
+
+          const dayStart = new Date(selectedDate);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(selectedDate);
+          dayEnd.setHours(23, 59, 59, 999);
+
+          let startHour = 0;
+          if (event.start > dayStart) {
+            startHour = event.start.getHours() + event.start.getMinutes() / 60;
+          }
+
+          let endHour = 24;
+          if (event.end < dayEnd) {
+            endHour = event.end.getHours() + event.end.getMinutes() / 60;
+          }
+
           const top = Math.min(Math.max(0, (startHour - startHourBoundary) * 48 + 1), gridHeight - 34);
           const height = Math.max(34, Math.min((endHour - startHour) * 48 - 2, gridHeight - top));
 
@@ -378,13 +414,12 @@ function MonthCalendar({ events, selectedDate, onSelectDate }: {
             <button
               key={day.toISOString()}
               onClick={() => onSelectDate(day)}
-              className={`aspect-square rounded-lg text-xs relative flex flex-col items-center justify-center gap-1 transition-colors ${
-                isSameDay(day, selectedDate)
-                  ? 'bg-purple-500 text-white font-bold'
-                  : isCurrentMonth
-                    ? 'hover:bg-gray-50 text-gray-600'
-                    : 'text-gray-300'
-              }`}
+              className={`aspect-square rounded-lg text-xs relative flex flex-col items-center justify-center gap-1 transition-colors ${isSameDay(day, selectedDate)
+                ? 'bg-purple-500 text-white font-bold'
+                : isCurrentMonth
+                  ? 'hover:bg-gray-50 text-gray-600'
+                  : 'text-gray-300'
+                }`}
             >
               <span>{day.getDate()}</span>
               {dayEvents.length > 0 && (
@@ -414,8 +449,6 @@ export function PersonalSchedule() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ScheduleForm>(emptyForm);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
-  const [dismissedNotifications, setDismissedNotifications] = useState<Set<string>>(new Set());
   const [timezone, setTimezone] = useState(() => localStorage.getItem('uniplatform_schedule_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh');
   const [workStart, setWorkStart] = useState(() => localStorage.getItem('uniplatform_schedule_work_start') || '08:00');
   const [workEnd, setWorkEnd] = useState(() => localStorage.getItem('uniplatform_schedule_work_end') || '18:00');
@@ -486,18 +519,20 @@ export function PersonalSchedule() {
     return [...scheduleEvents, ...meetingEvents].sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [schedules, meetings]);
 
-  const upcomingMeetings = useMemo(() => {
+  const upcomingEvents = useMemo(() => {
     const now = new Date();
-    return meetings
-      .filter(meeting => new Date(meeting.endtime) >= now && meeting.status !== 'ended')
-      .sort((a, b) => new Date(a.starttime).getTime() - new Date(b.starttime).getTime())
+    return events
+      .filter(event => {
+        if (event.end < now) return false;
+        if (event.source === 'meeting') {
+          const m = meetings.find(m => m.meetingid === event.id);
+          return m && m.status !== 'ended';
+        }
+        return event.status === 'busy' || event.status === 'tentative';
+      })
       .slice(0, 6);
-  }, [meetings]);
+  }, [events, meetings]);
 
-  const notifications = upcomingMeetings
-    .filter(meeting => !dismissedNotifications.has(meeting.meetingid))
-    .slice(0, 5);
-  const unreadCount = notifications.filter(meeting => !readNotifications.has(meeting.meetingid)).length;
   const selectedSchedule = selectedEvent?.source === 'schedule'
     ? schedules.find(item => (item.scheduleid || item.id) === selectedEvent.id)
     : null;
@@ -571,7 +606,7 @@ export function PersonalSchedule() {
     setSelectedEvent(null);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async () => { TRANB @
     if (!form.title.trim() || !form.starttime || !form.endtime) {
       toast.error('Please fill in title, start time, and end time');
       return;
@@ -583,7 +618,19 @@ export function PersonalSchedule() {
       toast.error('End time must be after start time');
       return;
     }
+    const isConflict = schedules.some(s => {
+      const sStart = new Date(s.starttime);
+      const sEnd = new Date(s.endtime);
+      // Bỏ qua chính cái lịch đang edit
+      if (editingId && (s.scheduleid === editingId || s.id === editingId)) return false;
+      // Công thức check overlap
+      return start < sEnd && end > sStart;
+    });
 
+    if (isConflict) {
+      toast.error('Trùng lịch rồi! Khung giờ này đã có sự kiện khác.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`${apiUrl}/api/schedules${editingId ? `/${editingId}` : ''}`, {
@@ -665,7 +712,6 @@ export function PersonalSchedule() {
   };
 
   const openMeeting = (meeting: Meeting) => {
-    setReadNotifications(prev => new Set(prev).add(meeting.meetingid));
     navigate(meeting.status === 'ended' ? `/meetings/${meeting.meetingid}/review` : `/meetings/${meeting.meetingid}`);
   };
 
@@ -699,16 +745,7 @@ export function PersonalSchedule() {
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
-              <button
-                onClick={() => setReadNotifications(new Set(notifications.map(item => item.meetingid)))}
-                className="p-1 rounded-lg hover:bg-white transition-colors"
-                title="Mark meeting notifications as read"
-              >
-                <Bell size={18} className="text-gray-400" />
-              </button>
-              {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-purple-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{unreadCount}</span>
-              )}
+
             </div>
             <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold text-xs border-2 border-white shadow-sm">{initials}</div>
             <button
@@ -745,9 +782,8 @@ export function PersonalSchedule() {
                     <button
                       key={view}
                       onClick={() => setCalView(view)}
-                      className={`px-3 py-1 rounded-md text-xs font-semibold capitalize transition-all ${
-                        calView === view ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                      }`}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold capitalize transition-all ${calView === view ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
                     >
                       {view}
                     </button>
@@ -914,77 +950,47 @@ export function PersonalSchedule() {
           </div>
 
           <div className="space-y-5">
-            <Card title="Upcoming Meetings" icon={<CheckCircle size={14} />}>
+            <Card title="Upcoming Events" icon={<CheckCircle size={14} />}>
               <div className="space-y-3">
-                {upcomingMeetings.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-8">No upcoming meetings</p>
+                {upcomingEvents.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-8">No upcoming events</p>
                 ) : (
-                  upcomingMeetings.map(meeting => {
-                    const start = new Date(meeting.starttime);
-                    const end = new Date(meeting.endtime);
+                  upcomingEvents.map(event => {
+                    const isMeeting = event.source === 'meeting';
+                    const meetingData = isMeeting ? meetings.find(m => m.meetingid === event.id) : null;
+                    const style = statusStyle[event.status];
+
                     return (
-                      <div key={meeting.meetingid} className="p-3 rounded-xl border border-gray-100 hover:border-purple-100 hover:bg-purple-50/20 transition-all">
+                      <div
+                        key={`${event.source}-${event.id}`}
+                        className="p-3 rounded-xl border border-gray-100 hover:border-purple-100 hover:bg-purple-50/20 transition-all cursor-pointer"
+                        onClick={() => setSelectedEvent(event)}
+                      >
                         <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <p className="text-xs font-semibold text-gray-800 leading-snug">{meeting.title}</p>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 bg-purple-50 text-purple-600">{meeting.status}</span>
+                          <p className="text-xs font-semibold text-gray-800 leading-snug">{event.title}</p>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>
+                            {style.label}
+                          </span>
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-400">
-                          <span className="flex items-center gap-1"><Calendar size={9} />{formatShortDate(start)}</span>
-                          <span className="flex items-center gap-1"><Clock size={9} />{formatTime(start)} - {formatDuration(start, end)}</span>
-                          <span className="flex items-center gap-1"><Users size={9} />{meeting.participants.length}</span>
+                          <span className="flex items-center gap-1"><Calendar size={9} />{formatShortDate(event.start)}</span>
+                          <span className="flex items-center gap-1"><Clock size={9} />{formatTime(event.start)} - {formatDuration(event.start, event.end)}</span>
+                          {isMeeting && meetingData && (
+                            <span className="flex items-center gap-1"><Users size={9} />{meetingData.participants.length}</span>
+                          )}
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <span className="inline-block px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 text-[9px] font-semibold truncate">{meeting.workspace?.name || meeting.organizer}</span>
-                          <button
-                            onClick={() => openMeeting(meeting)}
-                            className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-600 text-[10px] font-semibold hover:bg-purple-100 transition-colors"
-                          >
-                            {meeting.status === 'ended' ? 'Review' : 'Join'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </Card>
-
-            <Card
-              title={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
-              icon={<Bell size={14} />}
-              action={
-                <button onClick={() => setReadNotifications(new Set(notifications.map(item => item.meetingid)))} className="text-[10px] text-purple-500 font-semibold hover:text-purple-700">
-                  Mark all read
-                </button>
-              }
-            >
-              <div className="space-y-3">
-                {notifications.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No meeting notifications</p>
-                ) : (
-                  notifications.map(meeting => {
-                    const unread = !readNotifications.has(meeting.meetingid);
-                    const start = new Date(meeting.starttime);
-                    return (
-                      <div key={meeting.meetingid} className={`flex gap-3 p-3 rounded-xl border transition-all ${unread ? 'border-purple-100 bg-purple-50/30' : 'border-gray-50 bg-white'}`}>
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-purple-50 text-purple-500"><Video size={11} /></div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-[10px] font-bold text-gray-700">{meeting.organizer}</span>
-                            <span className="text-[9px] text-purple-500 font-semibold bg-purple-50 px-1.5 py-0.5 rounded-full">{meeting.workspace?.name || 'Meeting'}</span>
-                            {unread && <span className="w-1.5 h-1.5 rounded-full bg-purple-400 ml-auto" />}
-                          </div>
-                          <p className="text-[10px] text-gray-500 leading-relaxed">{meeting.title} at {formatTime(start)} on {formatShortDate(start)}</p>
-                          <button
-                            onClick={() => openMeeting(meeting)}
-                            className="mt-1 text-[10px] text-purple-500 font-semibold hover:text-purple-700"
-                          >
-                            Open meeting
-                          </button>
-                        </div>
-                        <div className="flex flex-col gap-1 shrink-0">
-                          {unread && <button onClick={() => setReadNotifications(prev => new Set(prev).add(meeting.meetingid))} className="p-1 rounded-lg hover:bg-white text-gray-300 hover:text-green-400 transition-colors"><Check size={10} /></button>}
-                          <button onClick={() => setDismissedNotifications(prev => new Set(prev).add(meeting.meetingid))} className="p-1 rounded-lg hover:bg-white text-gray-200 hover:text-red-400 transition-colors"><X size={10} /></button>
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 text-[9px] font-semibold truncate">
+                            {isMeeting && meetingData ? (meetingData.workspace?.name || meetingData.organizer) : 'Personal Schedule'}
+                          </span>
+                          {isMeeting && meetingData && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openMeeting(meetingData); }}
+                              className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-600 text-[10px] font-semibold hover:bg-purple-100 transition-colors"
+                            >
+                              {meetingData.status === 'ended' ? 'Review' : 'Join'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
