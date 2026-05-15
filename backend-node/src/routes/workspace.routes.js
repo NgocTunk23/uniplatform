@@ -151,4 +151,27 @@ router.post('/:id/members', validate(addMemberSchema), workspaceController.addMe
 router.delete('/:id/members/:username', workspaceController.removeMember);
 router.patch('/:id/members/:username', workspaceController.updateMemberRole);
 
+/**
+ * @swagger
+ * /api/workspaces/{id}:
+ *   delete:
+ *     summary: Xóa Workspace (Leader/Admin only)
+ *     tags: [Workspaces]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Xóa thành công
+ *       403:
+ *         description: Không có quyền xóa
+ *       404:
+ *         description: Không tìm thấy Workspace
+ */
+router.delete('/:id', workspaceController.deleteWorkspace);
+
 module.exports = router;

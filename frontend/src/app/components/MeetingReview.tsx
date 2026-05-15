@@ -15,6 +15,8 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 import { toast } from 'sonner';
 
 interface WorkspaceMember {
@@ -30,6 +32,8 @@ interface Meeting {
   endtime: string;
   organizer: string;
   participants: string[];
+  participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
+  organizerDetails?: { username: string; fullname?: string; imageggid?: string };
   status: 'upcoming' | 'ongoing' | 'ended';
   recording_file?: string | null;
   workspace?: { name?: string; member?: WorkspaceMember[] };
@@ -486,12 +490,15 @@ export function MeetingReview() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Participants ({meeting.participants.length})</h2>
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {meeting.participants.map(participant => (
-                  <div key={participant} className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 text-xs font-semibold">
-                      {participant.slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="text-sm text-gray-700 truncate">{participant}</span>
+                {(meeting.participantDetails || meeting.participants.map(p => ({ username: p, fullname: p }))).map(participant => (
+                  <div key={participant.username} className="flex items-center gap-2">
+                    <AvatarWithFallback 
+                      url={getAvatarUrl(participant.imageggid)} 
+                      name={participant.fullname || participant.username} 
+                    />
+                    <span className="text-sm text-gray-700 truncate" title={participant.fullname || participant.username}>
+                      {participant.fullname || participant.username}
+                    </span>
                   </div>
                 ))}
               </div>

@@ -23,15 +23,12 @@ model User {
   status      String    @default("active")
   createdat   DateTime?  @default(now()) @map("createdAt")
   tokenVersion BigInt?   @default(0)   @map("tokenVersion")
-  imageuser   String?
+  imageggid   String?
 
   // Navigation properties for relationships
   schedules      Schedules[]
   systemLogs     SystemLog[]
   meetingMinutes MeetingMinutes[]
-
-  resetToken       String?
-  resetTokenExpiry DateTime?
 }
 
 model Schedules {
@@ -60,8 +57,11 @@ model Workspace {
 
 type Member {
   username      String
-  workspacerole String   @default("Member")
+  fullname      String?
+  imageggid     String?
+  workspacerole String    @default("Member")
   joinedat      DateTime? @default(now()) @map("joinedAt")
+  lastReadAt    DateTime? @default(now()) @map("lastReadAt")
 }
 
 model Messages {
@@ -76,6 +76,8 @@ model Messages {
 
   workspace       Workspace @relation(fields: [workspaceid], references: [workspaceid])
   files           Files[]
+
+  @@index([workspaceid, createdat])
 }
 
 model Meeting {

@@ -42,6 +42,8 @@ interface Meeting {
   participants: string[];
   status: 'upcoming' | 'ongoing' | 'ended';
   workspace?: { name?: string };
+  participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
+  organizerDetails?: { username: string; fullname?: string; imageggid?: string };
 }
 
 interface CalendarEvent {
@@ -1065,7 +1067,7 @@ export function PersonalSchedule() {
               )}
               {selectedMeeting && (
                 <div className="text-xs text-gray-500 space-y-1">
-                  <p>Organizer: <span className="font-semibold text-gray-700">{selectedMeeting.organizer}</span></p>
+                  <p>Organizer: <span className="font-semibold text-gray-700">{selectedMeeting.organizerDetails?.fullname || selectedMeeting.organizer}</span></p>
                   <p>Participants: <span className="font-semibold text-gray-700">{selectedMeeting.participants.length}</span></p>
                 </div>
               )}

@@ -71,8 +71,19 @@ const registerUser = async (req, res, next) => {
       },
     });
 
+    // Thay đổi logic kiểm tra để trả lỗi riêng biệt
     if (userExists) {
-      throw new ApiError(400, 'User already exists', ERROR_CODES.AUTH.USER_EXISTS);
+      let conflictMsg = 'Tài khoản đã tồn tại.';
+      
+      if (userExists.email === email && userExists.username === username) {
+        conflictMsg = 'Tên đăng nhập và Email này đều đã được sử dụng.';
+      } else if (userExists.email === email) {
+        conflictMsg = 'Email này đã được đăng ký.';
+      } else if (userExists.username === username) {
+        conflictMsg = 'Tên đăng nhập này đã có người sử dụng.';
+      }
+      
+      throw new ApiError(400, conflictMsg, ERROR_CODES.AUTH.USER_EXISTS);
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -339,16 +350,20 @@ const resetPassword = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { username: user.username },
       data: {
         password: hashedPassword,
         resetToken: null,
         resetTokenExpiry: null,
+        tokenVersion: { increment: 1 },
       },
     });
 
-    res.status(200).json({ message: 'Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.' });
+    res.status(200).json({
+      message: 'Mật khẩu đã được cập nhật. Bạn có thể đăng nhập bằng mật khẩu mới.',
+      tokenVersion: updatedUser.tokenVersion,
+    });
   } catch (error) {
     next(new ApiError(500, 'Không thể đặt lại mật khẩu.', ERROR_CODES.SYSTEM.INTERNAL_ERROR));
   }

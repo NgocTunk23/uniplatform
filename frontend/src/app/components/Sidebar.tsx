@@ -13,6 +13,8 @@ import {
   PlusCircle,
   Loader2
 } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 import { 
   Dialog, 
   DialogContent, 
@@ -25,6 +27,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { toast } from 'sonner';
+import { connectSocket } from '../utils/socket';
 
 
 interface SidebarProps {
@@ -71,12 +74,19 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
       
       if (response.ok) {
         const data = await response.json();
-        const formattedGroups = data.map((ws: any) => ({
-          id: ws.workspaceid || ws.id || ws._id,
-          name: ws.name,
-          unread: 0 
-        }));
+        const formattedGroups = data.map((ws: any) => {
+          const id = ws.workspaceid || ws.id || ws._id;
+          return {
+            id,
+            name: ws.name,
+            unread: id === activeGroup ? 0 : (ws.unreadCount || 0)
+          };
+        });
         setChatGroups(formattedGroups);
+
+        // Join all workspace rooms to receive real-time unread updates
+        const socket = connectSocket();
+        socket.emit('join_workspace', formattedGroups.map(g => g.id));
       }
     } catch (error) {
       console.error("Failed to fetch workspaces error:", error);
@@ -85,7 +95,42 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
 
   useEffect(() => {
     fetchWorkspaces();
-  }, []);
+    
+    // Connect socket for real-time unread updates
+    const socket = connectSocket();
+    
+    const handleGlobalReceiveMessage = (msg: any) => {
+      const currentUser = localStorage.getItem('uniplatform_username');
+      const msgWorkspaceId = msg.workspaceid || msg.workspaceId;
+      
+      // If message is from a workspace that is NOT currently open AND not sent by current user
+      if (msgWorkspaceId && msgWorkspaceId !== activeGroup && msg.senderusername !== currentUser) {
+        setChatGroups(prev => prev.map(group => 
+          group.id === msgWorkspaceId 
+            ? { ...group, unread: group.unread + 1 } 
+            : group
+        ));
+      }
+    };
+
+    socket.on('receive_message', handleGlobalReceiveMessage);
+
+    // Listen for workspace deletion to refresh the list
+    window.addEventListener('workspace_deleted', fetchWorkspaces);
+    return () => {
+      socket.off('receive_message', handleGlobalReceiveMessage);
+      window.removeEventListener('workspace_deleted', fetchWorkspaces);
+    };
+  }, [activeGroup]); // Re-subscribe when activeGroup changes
+
+  // Clear unread count when group becomes active
+  useEffect(() => {
+    if (activeGroup) {
+      setChatGroups(prev => prev.map(group => 
+        group.id === activeGroup ? { ...group, unread: 0 } : group
+      ));
+    }
+  }, [activeGroup]);
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,21 +197,8 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           const result = await response.json();
           const userData = result.data || result;
           
-          let finalAvatarUrl = '';
-          
-          // Lọc link ảnh (giống hệt bên UserProfile)
-          if (userData.imageuser) {
-            if (userData.imageuser.includes('drive.google.com')) {
-              const match = userData.imageuser.match(/id=([^&]+)/);
-              if (match && match[1]) {
-                finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
-              }
-            } else if (!userData.imageuser.startsWith('http') && !userData.imageuser.startsWith('data:')) {
-              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageuser}`;
-            } else {
-              finalAvatarUrl = userData.imageuser;
-            }
-          }
+          // Lọc link ảnh (sử dụng utility chung)
+          const finalAvatarUrl = getAvatarUrl(userData.imageggid);
 
           // Cập nhật lại state với Avatar
           if (finalAvatarUrl) {
@@ -284,13 +316,11 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
           }`}
         >
           {/* HIỂN THỊ AVATAR NẾU CÓ, KHÔNG THÌ HIỂN THỊ CHỮ */}
-          <div className="w-8 h-8 rounded-full bg-purple-200 border-2 border-white shadow-sm flex items-center justify-center text-purple-700 font-semibold text-xs shrink-0 overflow-hidden">
-            {userInfo.avatarUrl ? (
-              <img src={userInfo.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              userInfo.initials
-            )}
-          </div>
+          <AvatarWithFallback 
+            url={userInfo.avatarUrl} 
+            name={userInfo.fullname} 
+            size="w-8 h-8" 
+          />
           
           <div className="flex-1 text-left min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">

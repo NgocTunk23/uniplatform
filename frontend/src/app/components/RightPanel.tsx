@@ -1,9 +1,9 @@
 import React from 'react';
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  Users, 
-  FileText, 
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Users,
+  FileText,
   Sparkles,
   ChevronRight,
   MoreHorizontal,
@@ -25,10 +25,10 @@ const scheduleData = [
   { time: '01:00 PM', status: 'free', names: ['JS', 'AC'], partial: true },
 ];
 
-export function RightPanel({ groupName = "General", isCoordinationOpen = false, onToggleCoordination = () => {} }: RightPanelProps) {
+export function RightPanel({ groupName = "General", isCoordinationOpen = false, onToggleCoordination = () => { } }: RightPanelProps) {
   return (
     <div className="flex flex-col h-full bg-white p-6 overflow-y-auto w-full">
-      
+
       {/* HEADER NHÓM & NÚT TEAM COORDINATION */}
       <div className="mb-8 pb-6 border-b border-gray-100">
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Current Workspace</h2>
@@ -36,11 +36,10 @@ export function RightPanel({ groupName = "General", isCoordinationOpen = false, 
 
         <button
           onClick={onToggleCoordination}
-          className={`w-full mt-4 py-3 border text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 ${
-            isCoordinationOpen
-              ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
-              : 'bg-white border-purple-200 text-purple-600 hover:bg-purple-50'
-          }`}
+          className={`w-full mt-4 py-3 border text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 ${isCoordinationOpen
+            ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
+            : 'bg-white border-purple-200 text-purple-600 hover:bg-purple-50'
+            }`}
         >
           <ShieldCheck size={18} />
           {isCoordinationOpen ? 'Back to Group Chat' : 'Open Team Coordination'}
@@ -48,7 +47,7 @@ export function RightPanel({ groupName = "General", isCoordinationOpen = false, 
       </div>
 
       {/* Intelligent Schedule Widget (Code cũ của bạn) */}
-      <div className="mb-8">
+      {/* <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <CalendarIcon size={16} className="text-purple-400" />
@@ -114,14 +113,14 @@ export function RightPanel({ groupName = "General", isCoordinationOpen = false, 
             Propose Meeting Time
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* AI Meeting Minutes Preview (Code cũ của bạn) */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Sparkles size={16} className="text-purple-400" />
-            Latest Minutes
+            Latest Minutes (Ai làm cái này thì làm còn không thì xoá đi nhé)
           </h3>
           <button className="text-[11px] font-semibold text-purple-500 hover:text-purple-600 flex items-center">
             View all <ChevronRight size={14} />
@@ -140,7 +139,7 @@ export function RightPanel({ groupName = "General", isCoordinationOpen = false, 
               </div>
             </div>
           </div>
-          
+
           <div className="space-y-2 mb-3">
             <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
               <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Key Decisions</span>
@@ -151,7 +150,7 @@ export function RightPanel({ groupName = "General", isCoordinationOpen = false, 
               </ul>
             </div>
           </div>
-          
+
           <div className="flex items-center justify-between pt-3 border-t border-gray-50">
             <div className="flex items-center gap-1 text-[11px] text-gray-500 font-medium">
               <Users size={12} /> 4 Attendees

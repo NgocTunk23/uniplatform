@@ -5,6 +5,8 @@ import {
   AlertTriangle, CheckCircle, ChevronRight, Camera, LogIn, LogOut, Key,
   Monitor, Edit3, X, Check, BookOpen, Loader2
 } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
+import { AvatarWithFallback } from './AvatarWithFallback';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -143,21 +145,7 @@ export function UserProfile() {
 
 
 
-        let finalAvatarUrl = userData.imageuser || 'https://via.placeholder.com/150';
-
-        if (userData.imageuser) {
-          // Trường hợp 1: Trong DB lỡ lưu cái link cũ có chữ drive.google.com
-          if (userData.imageuser.includes('drive.google.com')) {
-            const match = userData.imageuser.match(/id=([^&]+)/);
-            if (match && match[1]) {
-              finalAvatarUrl = `https://lh3.googleusercontent.com/d/${match[1]}`;
-            }
-          } 
-          // Trường hợp 2: DB chỉ lưu mỗi cái ID nguyên chất
-          else if (!userData.imageuser.startsWith('http') && !userData.imageuser.startsWith('data:')) {
-            finalAvatarUrl = `https://lh3.googleusercontent.com/d/${userData.imageuser}`;
-          }
-        }
+        const finalAvatarUrl = getAvatarUrl(userData.imageggid);
 
         console.log("LINK ẢNH ĐÃ ĐƯỢC LỌC LẠI:", finalAvatarUrl); 
         setAvatarUrl(finalAvatarUrl);
@@ -242,12 +230,14 @@ export function UserProfile() {
 
       if (!response.ok) throw new Error('Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu cũ.');
       
-      setSuccessMsg('Đổi mật khẩu thành công!');
+      setSuccessMsg('Đổi mật khẩu thành công! Bạn sẽ được đăng xuất để đăng nhập lại.');
       setShowChangePassword(false);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setTimeout(() => setSuccessMsg(''), 3000);
+      localStorage.clear();
+      localStorage.setItem('uniplatform_logout', Date.now().toString());
+      navigate('/login');
     } catch (err: any) {
       setError(err.message);
     }
@@ -294,7 +284,7 @@ export function UserProfile() {
               'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-              imageuser: base64String
+              imageggid: base64String
             })
           });
 
@@ -302,7 +292,7 @@ export function UserProfile() {
 
 
           const updateResult = await updateResponse.json();
-          let newAvatarId = updateResult.data?.imageuser;
+          let newAvatarId = updateResult.data?.imageggid;
 
           if (newAvatarId && !newAvatarId.startsWith('http') && !newAvatarId.startsWith('data:')) {
             const newLink = `https://lh3.googleusercontent.com/d/${newAvatarId}`;
@@ -314,6 +304,9 @@ export function UserProfile() {
           } else {
             setAvatarUrl(newAvatarId || base64String);
           }
+
+          // Reload page để workspace cập nhật avatar mới
+          setTimeout(() => window.location.reload(), 1000);
 
 
           setSuccessMsg('Cập nhật ảnh đại diện thành công!');
@@ -376,8 +369,13 @@ export function UserProfile() {
 
           <div className="px-8 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
-              <div className="relative w-24 h-24 rounded-2xl border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
-                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+              <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-md overflow-hidden bg-purple-200 shrink-0">
+                <AvatarWithFallback 
+                  url={avatarUrl} 
+                  name={fullName} 
+                  size="w-full h-full"
+                  textSize="text-2xl"
+                />
                 <button 
                   onClick={triggerFileInput}
                   disabled={uploadingAvatar}
