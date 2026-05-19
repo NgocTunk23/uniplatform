@@ -11,6 +11,10 @@ const {
   workspaceMeetingsSchema,
   updateMeetingStatusSchema,
   upsertMeetingMinutesSchema,
+  transcriptCorrectionSchema,
+  transcriptReviewSchema,
+  summaryGenerateSchema,
+  summaryEvaluateSchema,
 } = require('../validations/meeting.schema');
 
 router.use(protect);
@@ -67,6 +71,16 @@ router.post('/suggest-slots', validate(suggestMeetingSlotsSchema), meetingContro
  */
 router.get('/:id/minutes', validate(meetingIdSchema), meetingController.getMeetingMinutes);
 router.put('/:id/minutes', validate(upsertMeetingMinutesSchema), meetingController.upsertMeetingMinutes);
+
+router.post('/:id/transcript/correct', validate(transcriptCorrectionSchema), meetingController.correctTranscript);
+router.put('/:id/transcript/review', validate(transcriptReviewSchema), meetingController.reviewTranscript);
+router.post('/:id/summary/generate', validate(summaryGenerateSchema), meetingController.generateSummary);
+router.post('/:id/summary/evaluate', validate(summaryEvaluateSchema), meetingController.evaluateSummary);
+
+router.post('/:id/recording/start', validate(meetingIdSchema), meetingController.startRecording);
+router.post('/:id/recording/stop', validate(meetingIdSchema), meetingController.stopRecording);
+router.post('/:id/recording/reprocess', validate(meetingIdSchema), meetingController.reprocessRecording);
+router.get('/:id/recording/status', validate(meetingIdSchema), meetingController.getRecordingStatus);
 
 /**
  * @swagger

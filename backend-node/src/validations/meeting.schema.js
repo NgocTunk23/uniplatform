@@ -96,11 +96,57 @@ const upsertMeetingMinutesSchema = z.object({
   body: z.object({
     content: z.string().trim().max(20000).optional().nullable(),
     raw_transcript: z.string().trim().max(50000).optional().nullable(),
+    corrected_transcript: z.string().trim().max(100000).optional().nullable(),
+    transcript_review_status: z.enum(['none', 'draft', 'approved']).optional().nullable(),
+    transcript_correction_notes: z.string().trim().max(20000).optional().nullable(),
+    transcript_segments: z.array(z.record(z.string(), z.unknown())).max(5000).optional().nullable(),
+    transcription_metadata: z.record(z.string(), z.unknown()).optional().nullable(),
     summary: z.string().trim().max(10000).optional().nullable(),
+    summary_draft: z.string().trim().max(10000).optional().nullable(),
+    summary_review_status: z.enum(['none', 'pending', 'passed', 'failed']).optional().nullable(),
+    summary_eval_score: z.number().min(0).max(1).optional().nullable(),
+    summary_eval_metadata: z.record(z.string(), z.unknown()).optional().nullable(),
     decisions: z.array(z.string().trim().max(1000)).max(50).optional(),
     task: z.array(z.string().trim().max(1000)).max(100).optional(),
     isbotgenerated: z.boolean().optional(),
   }).refine((data) => Object.keys(data).length > 0, 'At least one field is required'),
+});
+
+const transcriptCorrectionSchema = z.object({
+  params: z.object({
+    id: objectId,
+  }),
+  body: z.object({
+    raw_transcript: z.string().trim().max(100000).optional(),
+  }).optional().default({}),
+});
+
+const transcriptReviewSchema = z.object({
+  params: z.object({
+    id: objectId,
+  }),
+  body: z.object({
+    corrected_transcript: z.string().trim().min(1).max(100000),
+    approve: z.boolean().optional(),
+  }),
+});
+
+const summaryGenerateSchema = z.object({
+  params: z.object({
+    id: objectId,
+  }),
+});
+
+const summaryEvaluateSchema = z.object({
+  params: z.object({
+    id: objectId,
+  }),
+  body: z.object({
+    summary: z.string().trim().min(1).max(10000),
+    content: z.string().trim().max(20000).optional().nullable(),
+    decisions: z.array(z.string().trim().max(1000)).max(50).optional(),
+    task: z.array(z.string().trim().max(1000)).max(100).optional(),
+  }),
 });
 
 module.exports = {
@@ -111,4 +157,8 @@ module.exports = {
   workspaceMeetingsSchema,
   updateMeetingStatusSchema,
   upsertMeetingMinutesSchema,
+  transcriptCorrectionSchema,
+  transcriptReviewSchema,
+  summaryGenerateSchema,
+  summaryEvaluateSchema,
 };

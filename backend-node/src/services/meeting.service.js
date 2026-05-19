@@ -5,6 +5,8 @@ const ERROR_CODES = require('../constants/error-codes');
 const permissionUtil = require('../utils/permission.util');
 const calendarConflictService = require('./calendar-conflict.service');
 const gdriveUtil = require('../utils/gdrive.util');
+const ollamaService = require('./ollama.service');
+const summaryEvaluationClient = require('./summary-evaluation-client.service');
 
 const buildMeetingLink = () => `https://meet.uniplatform.com/${Math.random().toString(36).substring(2, 10)}`;
 
@@ -120,6 +122,62 @@ const ensureCanManageMeeting = async (meeting, currentUser) => {
   if (!isLeader && !isOrganizer) {
     throw new ApiError(403, 'Authority denied. Only Leaders or the Organizer can perform this action.');
   }
+};
+
+const normalizeStringList = (items, limit) => (
+  Array.isArray(items)
+    ? items.map((item) => String(item).trim()).filter(Boolean).slice(0, limit)
+    : []
+);
+
+const getSummaryScoreThreshold = () => {
+  const threshold = Number(process.env.SUMMARY_SCORE_THRESHOLD || 0.55);
+  return Number.isFinite(threshold) ? threshold : 0.55;
+};
+
+const evaluateSummaryDraft = async ({ correctedTranscript, summary }) => {
+  try {
+    return await summaryEvaluationClient.evaluateSummarizationScore({
+      referenceContexts: [correctedTranscript],
+      response: summary,
+      coeff: process.env.SUMMARY_SCORE_CONCISENESS_COEFF
+        ? Number(process.env.SUMMARY_SCORE_CONCISENESS_COEFF)
+        : undefined,
+    });
+  } catch (error) {
+    return {
+      score: 0,
+      passed: false,
+      threshold: getSummaryScoreThreshold(),
+      metric: 'ragas_summary_score',
+      model: process.env.SUMMARY_SCORE_MODEL || process.env.OLLAMA_MODEL || 'qwen3:1.7b',
+      error: error.message,
+    };
+  }
+};
+
+const buildSummaryEvalMetadata = ({ evaluation, source, correctedTranscript, summary }) => ({
+  metric: evaluation.metric || 'ragas_summary_score',
+  model: evaluation.model || process.env.SUMMARY_SCORE_MODEL || process.env.OLLAMA_MODEL || 'qwen3:1.7b',
+  threshold: evaluation.threshold ?? getSummaryScoreThreshold(),
+  score: evaluation.score,
+  passed: Boolean(evaluation.passed),
+  error: evaluation.error || null,
+  source,
+  referenceLength: correctedTranscript.length,
+  responseLength: summary.length,
+  evaluatedAt: new Date().toISOString(),
+  ...(evaluation.metadata ? { evaluatorMetadata: evaluation.metadata } : {}),
+});
+
+const getManageableMeetingWithMinutes = async (meetingId, currentUser) => {
+  const meeting = await prisma.meeting.findUnique({
+    where: { meetingid: meetingId },
+    include: { meetingMinute: true },
+  });
+  if (!meeting) return null;
+  await ensureCanManageMeeting(meeting, currentUser);
+  return meeting;
 };
 
 const enrichMeetingParticipants = async (meetings) => {
@@ -423,6 +481,7 @@ const getMeetingMinutes = async (meetingId, currentUser) => {
   return {
     meeting: { ...meeting, id: meeting.meetingid },
     minutes: serializeMeetingMinutes(minutes),
+    recordingDownloadLink: meeting.recording_file ? gdriveUtil.getDownloadLink(meeting.recording_file) : null,
   };
 };
 
@@ -438,7 +497,16 @@ const upsertMeetingMinutes = async (meetingId, minutesData, currentUser) => {
   const data = {
     content: minutesData.content,
     raw_transcript: minutesData.raw_transcript,
+    corrected_transcript: minutesData.corrected_transcript,
+    transcript_review_status: minutesData.transcript_review_status,
+    transcript_correction_notes: minutesData.transcript_correction_notes,
+    transcript_segments: minutesData.transcript_segments,
+    transcription_metadata: minutesData.transcription_metadata,
     summary: minutesData.summary,
+    summary_draft: minutesData.summary_draft,
+    summary_review_status: minutesData.summary_review_status,
+    summary_eval_score: minutesData.summary_eval_score,
+    summary_eval_metadata: minutesData.summary_eval_metadata,
     decisions: minutesData.decisions || [],
     task: minutesData.task || [],
     isbotgenerated: minutesData.isbotgenerated ?? false,
@@ -457,6 +525,236 @@ const upsertMeetingMinutes = async (meetingId, minutesData, currentUser) => {
   });
 
   return serializeMeetingMinutes(minutes);
+};
+
+const correctMeetingTranscript = async (meetingId, correctionData = {}, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+
+  const rawTranscript = String(
+    correctionData.raw_transcript ??
+    meeting.meetingMinute?.raw_transcript ??
+    ''
+  ).trim();
+  if (!rawTranscript) {
+    throw new ApiError(400, 'Raw transcript is required before correction.');
+  }
+
+  const correctedTranscript = rawTranscript;
+  const data = {
+    raw_transcript: rawTranscript,
+    corrected_transcript: correctedTranscript,
+    transcript_review_status: 'draft',
+    transcript_correction_notes: null,
+    summary: null,
+    content: null,
+    summary_draft: null,
+    summary_review_status: 'none',
+    summary_eval_score: null,
+    summary_eval_metadata: {
+      stage: 'not_evaluated',
+    },
+    decisions: [],
+    task: [],
+    isbotgenerated: true,
+    vectorembedding: [],
+  };
+
+  const minutes = await prisma.meetingMinutes.upsert({
+    where: { meetingid: meetingId },
+    update: data,
+    create: {
+      meetingid: meetingId,
+      createby: meeting.meetingMinute?.createby || currentUser.username,
+      ...data,
+    },
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'review_required',
+      recording_error: null,
+    },
+  });
+
+  return serializeMeetingMinutes(minutes);
+};
+
+const reviewMeetingTranscript = async (meetingId, reviewData, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+  if (!meeting.meetingMinute) {
+    throw new ApiError(404, 'Meeting minutes not found.');
+  }
+
+  const correctedTranscript = String(reviewData.corrected_transcript || '').trim();
+  if (!correctedTranscript) {
+    throw new ApiError(400, 'Corrected transcript is required.');
+  }
+
+  const approved = reviewData.approve !== false;
+  const minutes = await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      corrected_transcript: correctedTranscript,
+      transcript_review_status: approved ? 'approved' : 'draft',
+      summary: null,
+      content: null,
+      summary_draft: null,
+      summary_review_status: approved ? 'pending' : 'none',
+      summary_eval_score: null,
+      summary_eval_metadata: {
+        stage: approved ? 'pending_generation' : 'not_evaluated',
+        transcriptReviewedAt: new Date().toISOString(),
+        transcriptReviewedBy: currentUser.username,
+      },
+      decisions: [],
+      task: [],
+      isbotgenerated: true,
+    },
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'review_required',
+      recording_error: null,
+    },
+  });
+
+  return serializeMeetingMinutes(minutes);
+};
+
+const generateMeetingSummary = async (meetingId, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+  const minutes = meeting.meetingMinute;
+  if (!minutes) {
+    throw new ApiError(404, 'Meeting minutes not found.');
+  }
+  if (minutes.transcript_review_status !== 'approved') {
+    throw new ApiError(409, 'Approve the corrected transcript before generating a summary.');
+  }
+
+  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
+  if (!correctedTranscript) {
+    throw new ApiError(400, 'Corrected transcript is required before summary generation.');
+  }
+
+  let summaryPayload;
+  try {
+    summaryPayload = await ollamaService.summarizeMeetingTranscript(correctedTranscript, meeting.title);
+  } catch (error) {
+    throw new ApiError(500, `Summary generation failed: ${error.message}`);
+  }
+  const summaryText = String(summaryPayload.summary || '').trim();
+
+  const data = {
+    summary: summaryText,
+    content: summaryPayload.notes || summaryText,
+    summary_draft: null,
+    summary_review_status: 'passed',
+    summary_eval_score: null,
+    summary_eval_metadata: { stage: 'not_evaluated', source: 'generated' },
+    decisions: normalizeStringList(summaryPayload.decisions, 50),
+    task: normalizeStringList(summaryPayload.tasks, 100),
+    isbotgenerated: true,
+  };
+
+  const updatedMinutes = await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data,
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: { bot_status: 'completed', recording_error: null },
+  });
+
+  return {
+    minutes: serializeMeetingMinutes(updatedMinutes),
+    published: true,
+  };
+};
+
+const evaluateMeetingSummary = async (meetingId, summaryData, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+  const minutes = meeting.meetingMinute;
+  if (!minutes) {
+    throw new ApiError(404, 'Meeting minutes not found.');
+  }
+  if (minutes.transcript_review_status !== 'approved') {
+    throw new ApiError(409, 'Approve the corrected transcript before evaluating a summary.');
+  }
+
+  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
+  const summaryText = String(summaryData.summary || '').trim();
+  if (!correctedTranscript || !summaryText) {
+    throw new ApiError(400, 'Corrected transcript and summary are required for evaluation.');
+  }
+
+  const evaluation = await evaluateSummaryDraft({
+    correctedTranscript,
+    summary: summaryText,
+  });
+  const evalMetadata = buildSummaryEvalMetadata({
+    evaluation,
+    source: 'manual_review',
+    correctedTranscript,
+    summary: summaryText,
+  });
+  const passed = Boolean(evaluation.passed);
+  const decisions = normalizeStringList(summaryData.decisions ?? minutes.decisions, 50);
+  const tasks = normalizeStringList(summaryData.task ?? minutes.task, 100);
+
+  const data = passed
+    ? {
+      summary: summaryText,
+      content: summaryData.content ?? minutes.content ?? summaryText,
+      summary_draft: null,
+      summary_review_status: 'passed',
+      summary_eval_score: evaluation.score,
+      summary_eval_metadata: evalMetadata,
+      decisions,
+      task: tasks,
+      isbotgenerated: true,
+    }
+    : {
+      summary: null,
+      content: null,
+      summary_draft: summaryText,
+      summary_review_status: 'failed',
+      summary_eval_score: evaluation.score,
+      summary_eval_metadata: evalMetadata,
+      decisions: [],
+      task: [],
+      isbotgenerated: true,
+    };
+
+  const updatedMinutes = await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data,
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: passed ? 'completed' : 'summary_review_required',
+      recording_error: evaluation.error || null,
+    },
+  });
+
+  return {
+    minutes: serializeMeetingMinutes(updatedMinutes),
+    evaluation,
+    published: passed,
+  };
 };
 
 const deleteMeeting = async (meetingId, currentUser) => {
@@ -497,5 +795,9 @@ module.exports = {
   updateMeeting,
   getMeetingMinutes,
   upsertMeetingMinutes,
+  correctMeetingTranscript,
+  reviewMeetingTranscript,
+  generateMeetingSummary,
+  evaluateMeetingSummary,
   deleteMeeting
 };

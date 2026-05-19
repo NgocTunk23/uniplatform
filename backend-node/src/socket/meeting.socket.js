@@ -5,7 +5,7 @@ const SOCKET_EVENTS = require('../constants/socket-events');
 const meetingRooms = new Map();
 
 const registerMeetingHandlers = (io, socket) => {
-  socket.on(SOCKET_EVENTS.JOIN_MEETING, ({ meetingId }) => {
+  socket.on(SOCKET_EVENTS.JOIN_MEETING, ({ meetingId, isRecordingBot }) => {
     console.log(`📡 User ${socket.user.username} (socket: ${socket.id}) attempting to join meeting: ${meetingId}`);
     
     socket.join(`meeting:${meetingId}`);
@@ -16,14 +16,16 @@ const registerMeetingHandlers = (io, socket) => {
     }
     
     const participants = meetingRooms.get(meetingId);
+    const displayName = isRecordingBot ? 'Recording Bot' : (socket.user.fullname || socket.user.username);
     participants.set(socket.id, {
-      id: socket.user.username,
-      name: socket.user.fullname || socket.user.username,
-      initials: (socket.user.fullname || socket.user.username).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
+      id: isRecordingBot ? `recording-bot:${meetingId}` : socket.user.username,
+      name: displayName,
+      initials: isRecordingBot ? 'RB' : displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
       socketId: socket.id,
       isAudioMuted: true,
       isVideoOn: false,
-      isSpeaking: false
+      isSpeaking: false,
+      isRecordingBot: Boolean(isRecordingBot)
     });
     
     const currentParticipants = Array.from(participants.values());
