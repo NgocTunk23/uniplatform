@@ -1,4 +1,5 @@
 const meetingService = require('../services/meeting.service');
+const meetingRecordingService = require('../services/meeting-recording.service');
 const ApiError = require('../utils/api-error');
 const { meetingRooms } = require('../socket/meeting.socket');
 
@@ -130,6 +131,87 @@ const upsertMeetingMinutes = async (req, res, next) => {
   }
 };
 
+const correctTranscript = async (req, res, next) => {
+  try {
+    const minutes = await meetingService.correctMeetingTranscript(req.params.id, req.body, req.user);
+    if (!minutes) throw new ApiError(404, 'Meeting not found');
+    res.json({ success: true, data: minutes });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const reviewTranscript = async (req, res, next) => {
+  try {
+    const minutes = await meetingService.reviewMeetingTranscript(req.params.id, req.body, req.user);
+    if (!minutes) throw new ApiError(404, 'Meeting not found');
+    res.json({ success: true, data: minutes });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const generateSummary = async (req, res, next) => {
+  try {
+    const result = await meetingService.generateMeetingSummary(req.params.id, req.user);
+    if (!result) throw new ApiError(404, 'Meeting not found');
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const evaluateSummary = async (req, res, next) => {
+  try {
+    const result = await meetingService.evaluateMeetingSummary(req.params.id, req.body, req.user);
+    if (!result) throw new ApiError(404, 'Meeting not found');
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getBearerToken = (req) => {
+  const header = req.headers.authorization || '';
+  return header.startsWith('Bearer ') ? header.slice('Bearer '.length) : null;
+};
+
+const startRecording = async (req, res, next) => {
+  try {
+    const status = await meetingRecordingService.startRecording(req.params.id, req.user, getBearerToken(req));
+    res.status(202).json({ success: true, data: status });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const stopRecording = async (req, res, next) => {
+  try {
+    const status = await meetingRecordingService.stopRecording(req.params.id, req.user);
+    res.status(202).json({ success: true, data: status });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getRecordingStatus = async (req, res, next) => {
+  try {
+    const status = await meetingRecordingService.getRecordingStatus(req.params.id, req.user);
+    res.json({ success: true, data: status });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const reprocessRecording = async (req, res, next) => {
+  try {
+    const status = await meetingRecordingService.reprocessRecording(req.params.id, req.user);
+    res.status(202).json({ success: true, data: status });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const deleteMeeting = async (req, res, next) => {
   try {
     await meetingService.deleteMeeting(req.params.id, req.user);
@@ -149,5 +231,13 @@ module.exports = {
   updateMeeting,
   getMeetingMinutes,
   upsertMeetingMinutes,
+  correctTranscript,
+  reviewTranscript,
+  generateSummary,
+  evaluateSummary,
+  startRecording,
+  stopRecording,
+  getRecordingStatus,
+  reprocessRecording,
   deleteMeeting
 };

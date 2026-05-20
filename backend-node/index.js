@@ -18,6 +18,7 @@ dotenv.config();
 require('./src/config/passport'); 
 
 const prisma = require('./src/config/prisma');
+const meetingRecordingService = require('./src/services/meeting-recording.service');
 const SOCKET_EVENTS = require('./src/constants/socket-events');
 const { registerChatHandlers } = require('./src/socket/chat.socket');
 const { registerMeetingHandlers } = require('./src/socket/meeting.socket');
@@ -27,7 +28,10 @@ const errorMiddleware = require('./src/middlewares/error.middleware');
 
 // Prisma Connection Check
 prisma.$connect()
-  .then(() => console.log('🛡️  Prisma connected to MongoDB'))
+  .then(async () => {
+    console.log('🛡️  Prisma connected to MongoDB');
+    await meetingRecordingService.resetStaleRecordingMeetings();
+  })
   .catch((err) => console.error('❌ Prisma connection error:', err));
 
 const workspaceRoutes = require('./src/routes/workspace.routes');

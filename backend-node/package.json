@@ -4,13 +4,16 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit"
+    "test": "NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit",
+    "test:recording": "NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit tests/meeting-recording.test.js tests/recording-processing.test.js tests/ollama.test.js tests/meeting-recording-routes.test.js tests/meeting-summary-gate.test.js tests/recording-api-integration.test.js",
+    "check:recording-env": "node scripts/check-recording-env.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@roamhq/wrtc": "^0.10.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "express": "^4.18.2",
@@ -26,6 +29,7 @@
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.3.6"
@@ -38,7 +42,6 @@
     "jest": "^30.3.0",
     "mongodb-memory-server": "^11.0.1",
     "prisma": "^6.19.3",
-    "socket.io-client": "^4.8.1",
     "supertest": "^7.2.2"
   }
 }
