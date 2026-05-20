@@ -608,7 +608,7 @@ export function PersonalSchedule() {
     setSelectedEvent(null);
   };
 
-  const handleSubmit = async () => { TRANB @
+  const handleSubmit = async () => {
     if (!form.title.trim() || !form.starttime || !form.endtime) {
       toast.error('Please fill in title, start time, and end time');
       return;
