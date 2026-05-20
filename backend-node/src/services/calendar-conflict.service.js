@@ -6,13 +6,13 @@ const BLOCKING_SCHEDULE_TYPES = ['busy', 'tentative'];
 
 const uniqueUsernames = (usernames) => [...new Set((usernames || []).filter(Boolean))];
 
-const findConflictingSchedules = async ({ usernames, starttime, endtime, excludeScheduleId }) => {
+const findConflictingSchedules = async ({ usernames, starttime, endtime, excludeScheduleId, tx }) => {
+  const db = tx || prisma;
   const users = uniqueUsernames(usernames);
   if (users.length === 0) return [];
 
   const where = {
     username: { in: users },
-    type: { in: BLOCKING_SCHEDULE_TYPES },
     starttime: { lt: endtime },
     endtime: { gt: starttime },
   };
@@ -21,18 +21,19 @@ const findConflictingSchedules = async ({ usernames, starttime, endtime, exclude
     where.scheduleid = { not: excludeScheduleId };
   }
 
-  return prisma.schedules.findMany({
+  return db.schedules.findMany({
     where,
     orderBy: { starttime: 'asc' },
   });
 };
 
-const findConflictingMeetings = async ({ usernames, starttime, endtime, excludeMeetingId }) => {
+const findConflictingMeetings = async ({ usernames, starttime, endtime, excludeMeetingId, tx }) => {
+  const db = tx || prisma;
   const users = uniqueUsernames(usernames);
   if (users.length === 0) return [];
 
   const where = {
-    status: { not: 'ended' },
+    status: { in: ['scheduled', 'ongoing'] }, // Sua tu status: { not: 'ended' } sang code nay phong TH cuoc hop bị huy lai bi dem la BUSY
     starttime: { lt: endtime },
     endtime: { gt: starttime },
     OR: [
@@ -45,7 +46,7 @@ const findConflictingMeetings = async ({ usernames, starttime, endtime, excludeM
     where.meetingid = { not: excludeMeetingId };
   }
 
-  return prisma.meeting.findMany({
+  return db.meeting.findMany({
     where,
     orderBy: { starttime: 'asc' },
   });

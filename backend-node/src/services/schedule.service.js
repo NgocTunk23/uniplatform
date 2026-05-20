@@ -70,21 +70,34 @@ const createSchedule = async (data, currentUser) => {
   const starttime = toDate(data.starttime);
   const endtime = toDate(data.endtime);
 
-  await calendarConflictService.assertNoCalendarConflicts({
-    usernames: [currentUser.username],
-    starttime,
-    endtime,
-  });
+  // Bo sung validation cho starttime va endtime
+  if (endtime <= starttime) {
+    throw new ApiError(400, 'End time must be after start time', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
+  }
 
-  const schedule = await prisma.schedules.create({
-    data: {
-      username: currentUser.username,
-      title: data.title,
-      description: data.description || undefined,
+  // Voi quy mo DA nay, minh có nen check TH cung nhan SAVE chinh xac  1 mili-second khong? Hay la check theo minute, 5 minutes, 10 minutes...?
+  const schedule = await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { username: currentUser.username },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    await calendarConflictService.assertNoCalendarConflicts({
+      usernames: [currentUser.username],
       starttime,
       endtime,
-      type: data.type,
-    },
+      tx
+    });
+
+    return await tx.schedules.create({
+      data: {
+        username: currentUser.username,
+        title: data.title,
+        description: data.description || undefined,
+        starttime,
+        endtime,
+        type: data.type,
+      },
+    });
   });
 
   return serializeSchedule(schedule);
@@ -104,22 +117,29 @@ const updateSchedule = async (scheduleId, data, currentUser) => {
     throw new ApiError(400, 'End time must be after start time', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
   }
 
-  await calendarConflictService.assertNoCalendarConflicts({
-    usernames: [existing.username],
-    starttime,
-    endtime,
-    excludeScheduleId: scheduleId,
-  });
+  const schedule = await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { username: existing.username },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    await calendarConflictService.assertNoCalendarConflicts({
+      usernames: [existing.username],
+      starttime,
+      endtime,
+      excludeScheduleId: scheduleId,
+      tx
+    });
 
-  const schedule = await prisma.schedules.update({
-    where: { scheduleid: scheduleId },
-    data: {
-      title: data.title,
-      description: data.description,
-      starttime: data.starttime ? starttime : undefined,
-      endtime: data.endtime ? endtime : undefined,
-      type: data.type,
-    },
+    return await tx.schedules.update({
+      where: { scheduleid: scheduleId },
+      data: {
+        title: data.title,
+        description: data.description,
+        starttime: data.starttime ? starttime : undefined,
+        endtime: data.endtime ? endtime : undefined,
+        type: data.type,
+      },
+    });
   });
 
   return serializeSchedule(schedule);
