@@ -17,13 +17,13 @@ from pathlib import Path
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://root:password@mongodb:27017")
 
-# 2. Khởi tạo các kết nối (AI & Database)
-# Khởi tạo Gemini Client
-if GEMINI_API_KEY:
-    client_ai = genai.Client(api_key=GEMINI_API_KEY)
-else:
-    print("CẢNH BÁO: Chưa tìm thấy GEMINI_API_KEY")
-    client_ai = None
+# # 2. Khởi tạo các kết nối (AI & Database)
+# # Khởi tạo Gemini Client
+# if GEMINI_API_KEY:
+#     client_ai = genai.Client(api_key=GEMINI_API_KEY)
+# else:
+#     print("CẢNH BÁO: Chưa tìm thấy GEMINI_API_KEY")
+#     client_ai = None
 
 # Khởi tạo MongoDB Client
 client_db = AsyncIOMotorClient(MONGO_URI)
