@@ -3,11 +3,6 @@ import {
   Bot, 
   Sparkles, 
   Send,
-  Mic,
-  FileText,
-  Calendar,
-  MoreVertical,
-  Search,
   Loader2
 } from 'lucide-react';
 
@@ -28,9 +23,26 @@ const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001'
 
 export function AIAssistant() {
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 1. KHỞI TẠO STATE: Lấy dữ liệu cũ từ sessionStorage nếu có
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const savedMessages = sessionStorage.getItem('uniplatform_ai_chat');
+    if (savedMessages) {
+      try {
+        return JSON.parse(savedMessages);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // 2. LƯU STATE: Tự động lưu mảng messages vào sessionStorage mỗi khi nó thay đổi
+  useEffect(() => {
+    sessionStorage.setItem('uniplatform_ai_chat', JSON.stringify(messages));
+  }, [messages]);
 
   // Tự động cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
@@ -75,6 +87,7 @@ export function AIAssistant() {
       setIsLoading(false);
     }
   };
+
   return (
     <div className="flex flex-col h-full bg-white relative max-w-5xl mx-auto w-full border-x border-gray-50/50 shadow-sm shadow-gray-100/50">
       {/* Header */}
@@ -90,15 +103,6 @@ export function AIAssistant() {
               <span>Powered by UniPlatform AI</span>
             </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {/* <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
-            <Search size={20} />
-          </button>
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
-            <MoreVertical size={20} />
-          </button> */}
         </div>
       </div>
 
@@ -172,9 +176,6 @@ export function AIAssistant() {
 
           {/* Floating Input Box */}
           <div className="flex items-end gap-2 bg-white p-2 rounded-3xl border border-gray-200 shadow-sm shadow-gray-100 focus-within:ring-4 focus-within:ring-purple-50 focus-within:border-purple-300 transition-all">
-            {/* <button className="p-3 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-full transition-colors shrink-0 group mb-0.5">
-              <Mic size={22} className="group-hover:scale-110 transition-transform" />
-            </button> */}
             
             <textarea
               value={inputText}
