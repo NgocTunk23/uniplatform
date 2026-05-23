@@ -1,22 +1,25 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-// const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
+// Sử dụng cơ chế Agent của thư viện mạng undici (thư viện gốc quản lý fetch của Node.js)
+const { Agent } = require('undici');
+
+const keepAliveDispatcher = new Agent({
+  keepAliveTimeout: 10000, // Duy trì socket sống trong 10 giây để chat tiếp
+  keepAliveMaxTimeout: 60000,
+  connections: 10         // Giới hạn luồng tối đa tránh kẹt port 65535
+});
+
 const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const getOllamaModel = () => process.env.OLLAMA_MODEL || 'qwen3:1.7b';
 
-/**
- * Service to interact with local Ollama API for Chat Assistant
- */
 const generateResponse = async (prompt, context = []) => {
   try {
-    // 1. Chuyển đổi ngữ cảnh cũ (lịch sử chat) thành format của Ollama
     const messages = context.map(c => ({
       role: c.senderusername === 'user' ? 'user' : 'assistant',
       content: c.content
     }));
 
-    // 2. Thêm System Prompt để định hình tính cách cho AI
     if (messages.length === 0 || messages[0].role !== 'system') {
       messages.unshift({
         role: 'system',
@@ -24,19 +27,22 @@ const generateResponse = async (prompt, context = []) => {
       });
     }
 
-    // 3. Thêm câu hỏi hiện tại của người dùng
     messages.push({
       role: 'user',
       content: prompt
     });
 
-    // 4. Gọi tới Ollama API đang chạy ở localhost
+    // Thực hiện cuộc gọi fetch an toàn không rò rỉ socket
     const response = await fetch(`${getOllamaBaseUrl()}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Connection': 'keep-alive'
+      },
+      dispatcher: keepAliveDispatcher, // Ép Node.js tái sử dụng socket cũ tại đây
       body: JSON.stringify({
         model: getOllamaModel(),
-        stream: false, // Trả về 1 lần để UI hiển thị dễ dàng
+        stream: false,
         options: { temperature: 0.6 },
         messages: messages
       })
