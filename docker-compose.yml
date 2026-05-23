@@ -43,11 +43,9 @@ services:
       - "5555:5555"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # network_mode: "host"
     environment:
       - PORT=5001
       - TZ=Asia/Ho_Chi_Minh
-      - PORT=5001
       - MONGO_URI=${MONGO_URI}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
@@ -57,7 +55,8 @@ services:
       - RECORDING_ENABLED=${RECORDING_ENABLED:-true}
       - RECORDINGS_DIR=${RECORDINGS_DIR:-/tmp/uniplatform-recordings}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-vi}
-      - OLLAMA_BASE_URL=http://172.27.0.1:11434
+      # ⬇️ SỬA DÒNG NÀY: Dùng biến host.docker.internal tự động điều hướng kết nối
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
       - OLLAMA_TIMEOUT_MS=${OLLAMA_TIMEOUT_MS:-300000}
     depends_on:
@@ -70,7 +69,6 @@ services:
       - "8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # network_mode: "host"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-small}
@@ -83,7 +81,8 @@ services:
       - WHISPER_RETRY_BEAM_SIZE=${WHISPER_RETRY_BEAM_SIZE:-5}
       - WHISPER_WORD_TIMESTAMPS=${WHISPER_WORD_TIMESTAMPS:-false}
       - WHISPER_RETRY_UNCERTAIN_SEGMENTS=${WHISPER_RETRY_UNCERTAIN_SEGMENTS:-true}
-      - OLLAMA_BASE_URL=http://172.27.0.1:11434
+      # ⬇️ SỬA DÒNG NÀY: Đồng bộ hoá cổng kết nối của bên Python sang Ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
       - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
       - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
