@@ -745,7 +745,7 @@ export function PersonalSchedule() {
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Personal Schedule</h1>
             <p className="text-sm text-gray-400 mt-0.5">Manage your availability and upcoming meetings</p>
           </div>
-          <div className="flex items-center gap-3">
+          {/* <div className="flex items-center gap-3">
             <div className="relative">
 
             </div>
@@ -757,7 +757,7 @@ export function PersonalSchedule() {
               <Plus size={14} />
               Add Availability
             </button>
-          </div>
+          </div> */}
         </div>
 
         <div className="flex items-center gap-4 flex-wrap">

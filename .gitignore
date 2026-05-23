@@ -9,7 +9,7 @@ __pycache__/
 *$py.class
 venv/
 env/
-
+/ollama/
 # Build files
 frontend/build/
 frontend/dist/
