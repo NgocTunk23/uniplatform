@@ -5,6 +5,7 @@ Backend Node.js (API): http://localhost:5001
 Backend Python (Swagger UI): http://localhost:8000/docs
 
 docker-compose up --build
+OLLAMA_HOST="0.0.0.0:11434" ollama serve
 
 docker-compose down
 

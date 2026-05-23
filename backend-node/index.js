@@ -7,7 +7,7 @@ const morgan = require('morgan');
 const dotenv = require('dotenv');
 const passport = require('passport'); // Bổ sung thư viện passport
 const { normalizeDates } = require('./src/utils/timezone.util');
-
+const aiRoutes = require('./src/routes/ai.routes'); // <-- THÊM DÒNG NÀY
 // Set server timezone to GMT+7 for all API responses and local date formatting
 process.env.TZ = 'Asia/Bangkok';
 
@@ -73,6 +73,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Basic Health Check Route
 app.get('/health', (req, res) => {
