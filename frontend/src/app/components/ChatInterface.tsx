@@ -198,7 +198,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       if (response.ok) {
         toast.success(`Updated role for ${username} to ${newRole}`);
         setAllMembers(prev => prev.map(m => 
-          m.username === username ? { ...m, workspacerole: newRole } : m
+          m.username === username ? { ...m, workspacerole: newRole as "Member" | "Viewer" | "Leader"} : m
         ));
       } else {
         const error = await response.json();
@@ -717,7 +717,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
 
             <div className="flex items-center gap-1.5 pb-1 pr-1 shrink-0">
               {/* AI Summarize Action */}
-              <button
+              {/* <button
                 onClick={handleAskAI}
                 disabled={currentUserRole === 'Viewer'}
                 className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors group relative flex items-center justify-center disabled:opacity-30 disabled:hover:bg-transparent"
@@ -726,7 +726,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
                 <span className="absolute -top-8 right-0 bg-gray-800 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                   Ask AI / Summarize
                 </span>
-              </button>
+              </button> */}
 
               {/* Send Action */}
               <button

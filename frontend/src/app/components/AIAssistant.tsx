@@ -12,9 +12,9 @@ import {
 } from 'lucide-react';
 
 const promptSuggestions = [
-  "Summarize last meeting",
-  "What is my schedule tomorrow?",
-  "Extract key points from PRd.pdf"
+  "Tóm tắt nội dung cuộc họp gần nhất của tôi",
+  "Lịch trình làm việc của tôi vào ngày mai",
+  "Cuộc họp nào sẽ diễn ra trong tuần này?",
 ];
 
 interface Message {
@@ -93,12 +93,12 @@ export function AIAssistant() {
         </div>
         
         <div className="flex items-center gap-2">
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
+          {/* <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
             <Search size={20} />
           </button>
           <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
             <MoreVertical size={20} />
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -172,9 +172,9 @@ export function AIAssistant() {
 
           {/* Floating Input Box */}
           <div className="flex items-end gap-2 bg-white p-2 rounded-3xl border border-gray-200 shadow-sm shadow-gray-100 focus-within:ring-4 focus-within:ring-purple-50 focus-within:border-purple-300 transition-all">
-            <button className="p-3 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-full transition-colors shrink-0 group mb-0.5">
+            {/* <button className="p-3 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-full transition-colors shrink-0 group mb-0.5">
               <Mic size={22} className="group-hover:scale-110 transition-transform" />
-            </button>
+            </button> */}
             
             <textarea
               value={inputText}
