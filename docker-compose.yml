@@ -56,7 +56,7 @@ services:
       - RECORDINGS_DIR=${RECORDINGS_DIR:-/tmp/uniplatform-recordings}
       - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-vi}
       # ⬇️ SỬA DÒNG NÀY: Dùng biến host.docker.internal tự động điều hướng kết nối
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://172.27.0.1:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
       - OLLAMA_TIMEOUT_MS=${OLLAMA_TIMEOUT_MS:-300000}
     depends_on:
@@ -82,7 +82,7 @@ services:
       - WHISPER_WORD_TIMESTAMPS=${WHISPER_WORD_TIMESTAMPS:-false}
       - WHISPER_RETRY_UNCERTAIN_SEGMENTS=${WHISPER_RETRY_UNCERTAIN_SEGMENTS:-true}
       # ⬇️ SỬA DÒNG NÀY: Đồng bộ hoá cổng kết nối của bên Python sang Ollama
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://172.27.0.1:11434
       - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
       - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
       - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
