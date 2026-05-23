@@ -5,9 +5,12 @@ dotenv.config();
 const { Agent } = require('undici');
 
 const keepAliveDispatcher = new Agent({
-  keepAliveTimeout: 10000, // Duy trì socket sống trong 10 giây để chat tiếp
+  keepAliveTimeout: 60000, 
   keepAliveMaxTimeout: 60000,
-  connections: 10         // Giới hạn luồng tối đa tránh kẹt port 65535
+  connections: 10,
+  // ⬇️ BỔ SUNG 2 DÒNG NÀY ĐỂ CHỐNG TIMEOUT 20 GIÂY MẶC ĐỊNH CỦA UNDICI
+  headersTimeout: 300000,  // Đợi Ollama chuẩn bị phản hồi trong tối đa 5 phút
+  bodyTimeout: 300000     // Đợi Ollama truyền hết dữ liệu văn bản AI trong tối đa 5 phút
 });
 
 const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
