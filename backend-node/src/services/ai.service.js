@@ -1,7 +1,8 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
+// const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
+const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
 const getOllamaModel = () => process.env.OLLAMA_MODEL || 'qwen3:1.7b';
 
 /**

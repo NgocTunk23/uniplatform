@@ -11,6 +11,7 @@ RUN npm install
 COPY prisma ./prisma/
 RUN npx prisma generate
 
+# Dòng này copy toàn bộ code của bạn vào container
 COPY . .
 
 EXPOSE 5001
