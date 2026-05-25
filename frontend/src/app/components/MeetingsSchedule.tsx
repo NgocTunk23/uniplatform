@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Calendar,
   Clock,
-  FileText,
   Link as LinkIcon,
   Loader2,
   MapPin,
@@ -13,6 +12,7 @@ import {
   Users,
   Video,
   X,
+  Edit3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,6 +31,8 @@ interface Meeting {
   link?: string | null;
   participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
   organizerDetails?: { username: string; fullname?: string; imageggid?: string };
+  rsvpStatus?: Record<string, 'pending' | 'accepted' | 'declined'>;
+  rsvpDetails?: Record<string, { reason?: string; attachment?: string }>;
 }
 
 interface WorkspaceMember {
@@ -167,6 +169,8 @@ export function MeetingsSchedule() {
   const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'ended'>('all');
   const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [declineModal, setDeclineModal] = useState({ isOpen: false, meetingId: '', reason: '', fileName: '' });
   const [form, setForm] = useState<CreateMeetingForm>(emptyForm);
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
 
@@ -257,6 +261,23 @@ export function MeetingsSchedule() {
       workspaceid: workspace ? getWorkspaceId(workspace) : '',
       participants: workspace ? getWorkspaceMembers(workspace).map(member => member.username) : [],
     });
+    setEditingId(null);
+    setShowCreate(true);
+  };
+
+  const openEditModal = (meeting: Meeting) => {
+    const ws = workspaces.find(w => w.name === meeting.workspace?.name) || workspaces[0];
+
+    setForm({
+      title: meeting.title,
+      workspaceid: ws ? getWorkspaceId(ws) : '',
+      starttime: toLocalInputValue(new Date(meeting.starttime)),
+      endtime: toLocalInputValue(new Date(meeting.endtime)),
+      place: meeting.place || '',
+      link: meeting.link || '',
+      participants: meeting.participants || [],
+    });
+    setEditingId(getMeetingId(meeting)); // Bật chế độ SỬA
     setShowCreate(true);
   };
 
@@ -299,13 +320,19 @@ export function MeetingsSchedule() {
   const submitCreateMeeting = async (body: Record<string, unknown>) => {
     setSubmitting(true);
     try {
-      await fetchJson(`${apiUrl}/api/meetings`, {
-        method: 'POST',
+      // Nếu có editingId thì dùng method PUT/PATCH và url có id
+      const url = editingId ? `${apiUrl}/api/meetings/${editingId}` : `${apiUrl}/api/meetings`;
+      const method = editingId ? 'PUT' : 'POST';
+
+      await fetchJson(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      toast.success('Meeting scheduled');
+
+      toast.success(editingId ? 'Đã cập nhật cuộc họp!' : 'Đã tạo cuộc họp!');
       setShowCreate(false);
+      setEditingId(null);
       setConflictInfo(null);
       await fetchMeetings();
     } catch (error) {
@@ -313,7 +340,7 @@ export function MeetingsSchedule() {
       if (apiError.status === 409 && apiError.details?.conflicts?.length) {
         setConflictInfo({ conflicts: apiError.details.conflicts, pendingBody: body });
       } else {
-        toast.error(apiError.message || 'Failed to schedule meeting');
+        toast.error(apiError.message || 'Thao tác thất bại');
       }
     } finally {
       setSubmitting(false);
@@ -362,6 +389,26 @@ export function MeetingsSchedule() {
     }
   };
 
+  const handleRSVP = async (meetingId: string, status: 'accepted' | 'declined', reason?: string, attachment?: string) => {
+    try {
+      await fetchJson(`${apiUrl}/api/meetings/${meetingId}/rsvp`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, reason, attachment })
+      });
+      toast.success(status === 'accepted' ? 'Đã chấp nhận tham gia!' : 'Đã từ chối cuộc họp!');
+      setDeclineModal({ isOpen: false, meetingId: '', reason: '', fileName: '' }); // Đóng modal nếu có
+      await fetchMeetings(); // Load lại danh sách
+    } catch (error) {
+      toast.error('Lỗi khi phản hồi');
+    }
+  };
+
+  const submitDecline = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!declineModal.reason.trim()) return toast.error('Vui lòng nhập lý do từ chối');
+    handleRSVP(declineModal.meetingId, 'declined', declineModal.reason, declineModal.fileName);
+  };
+
   const filteredMeetings = useMemo(() => {
     return meetings.filter(meeting => {
       const status = computeStatus(meeting);
@@ -405,9 +452,8 @@ export function MeetingsSchedule() {
               type="button"
               key={tab.key}
               onClick={() => setFilter(tab.key as typeof filter)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === tab.key ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === tab.key ? 'bg-purple-50 text-purple-600' : 'text-gray-600 hover:bg-gray-50'
+                }`}
             >
               {tab.label}
               <span className="ml-2 text-xs opacity-70">{tab.count}</span>
@@ -444,7 +490,9 @@ export function MeetingsSchedule() {
               const status = computeStatus(meeting);
               const participantCount = meeting.participants?.length || 0;
               const activeCount = meeting.activeParticipantsCount || 0;
-
+              // Thêm 2 biến này:
+              const isOrganizer = meeting.organizer === 'Tôi' || meeting.organizerDetails?.username === 'me';
+              const myRsvp = meeting.rsvpStatus?.['me'] || (isOrganizer ? 'accepted' : 'pending');
               return (
                 <div key={meetingId} className="bg-white border border-gray-100 rounded-xl p-6 hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between gap-4">
@@ -492,34 +540,49 @@ export function MeetingsSchedule() {
                     </div>
 
                     <div className="flex gap-2 shrink-0">
-                      {status === 'ended' ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/meetings/${meetingId}/review`)}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
-                        >
-                          <FileText size={18} />
-                          Review
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/meetings/${meetingId}`)}
-                          className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm"
-                        >
-                          <Video size={18} />
-                          {status === 'ongoing' ? 'Join Now' : 'Join'}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        aria-label="Delete meeting"
-                        onClick={() => handleDelete(meetingId)}
-                        className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {/* CẬP NHẬT NÚT BẤM CHO PHÉP QUAY XE */}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex gap-2 items-center">
+                          {!isOrganizer && myRsvp === 'pending' && (
+                            <>
+                              <button onClick={() => handleRSVP(meetingId, 'accepted')} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium shadow-sm">Chấp nhận</button>
+                              <button onClick={() => setDeclineModal({ isOpen: true, meetingId, reason: '', fileName: '' })} className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium">Từ chối</button>
+                            </>
+                          )}
+
+                          {!isOrganizer && myRsvp === 'accepted' && (
+                            <>
+                              <button onClick={() => navigate(`/meetings/${meetingId}`)} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> Join</button>
+                              <button onClick={() => setDeclineModal({ isOpen: true, meetingId, reason: '', fileName: '' })} className="px-4 py-2 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-lg text-sm font-medium transition-colors" title="Rút lui">Hủy tham gia</button>
+                            </>
+                          )}
+
+                          {!isOrganizer && myRsvp === 'declined' && (
+                            <>
+                              <span className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-100">Đã từ chối</span>
+                              <button onClick={() => handleRSVP(meetingId, 'accepted')} className="px-4 py-1.5 bg-green-50 hover:bg-green-500 text-green-600 hover:text-white rounded-lg text-sm font-medium transition-colors border border-green-200 hover:border-green-500">Đổi ý (Tham gia)</button>
+                            </>
+                          )}
+
+                          {isOrganizer && (
+                            <>
+                              <button onClick={() => navigate(`/meetings/${meetingId}`)} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> {status === 'ongoing' ? 'Join Now' : 'Join'}</button>
+                              <button onClick={() => openEditModal(meeting)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Sửa thông tin">
+                                <Edit3 size={16} />
+                              </button>
+                              <button onClick={() => handleDelete(meetingId)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Hiển thị lý do từ chối nếu có */}
+                        {!isOrganizer && myRsvp === 'declined' && meeting.rsvpDetails?.['me']?.reason && (
+                          <p className="text-[11px] text-gray-400 italic max-w-xs text-right truncate">
+                            Lý do: {meeting.rsvpDetails['me'].reason}
+                            {meeting.rsvpDetails['me'].attachment && <span> (Có đính kèm file)</span>}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -710,6 +773,43 @@ export function MeetingsSchedule() {
                 className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors"
               >
                 Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {/* MODAL TỪ CHỐI */}
+      {declineModal.isOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <form onSubmit={submitDecline} className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Lý do từ chối tham gia</h3>
+            <p className="text-sm text-gray-500 mb-4">Người tổ chức sẽ nhận được thông báo về lý do của bạn.</p>
+
+            <textarea
+              autoFocus
+              required
+              rows={3}
+              value={declineModal.reason}
+              onChange={e => setDeclineModal(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="VD: Mình có lịch gặp khách hàng vào giờ này..."
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-3"
+            />
+
+            <div className="mb-6">
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Đính kèm minh chứng (Tùy chọn)</label>
+              <input
+                type="file"
+                onChange={e => setDeclineModal(prev => ({ ...prev, fileName: e.target.files?.[0]?.name || '' }))}
+                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-600 hover:file:bg-red-100"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button type="submit" className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold text-sm transition-colors">
+                Xác nhận từ chối
+              </button>
+              <button type="button" onClick={() => setDeclineModal({ isOpen: false, meetingId: '', reason: '', fileName: '' })} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors">
+                Hủy
               </button>
             </div>
           </form>
