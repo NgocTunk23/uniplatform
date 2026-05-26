@@ -1,17 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './Sidebar';
 import { Menu, X } from 'lucide-react';
 import { Outlet } from 'react-router';
 import { ChatInterface } from './ChatInterface';
 import { RightPanel } from './RightPanel';
-import { TeamCoordination } from './TeamCoordination'; // <-- Thêm import này
+import { TeamCoordination } from './TeamCoordination';
+
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 export function DashboardLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
-
-  // State mới: xác định đang hiển thị 'chat' hay 'coordination' trong nhóm
   const [groupView, setGroupView] = useState<'chat' | 'coordination'>('chat');
+
+  // 1. Thêm state để lưu danh sách meetings
+  const [meetings, setMeetings] = useState<any[]>([]);
+
+  // 2. Gọi API để lấy danh sách meeting khi layout được load
+  useEffect(() => {
+    const token = localStorage.getItem('uniplatform_user_token') || '';
+    fetch(`${apiUrl}/api/meetings`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setMeetings(Array.isArray(data) ? data : (data.data || []));
+      })
+      .catch(err => console.error('Fetch meetings error:', err));
+  }, []);
+
+  // 3. Biến đổi dữ liệu meetings thành format CalendarEvent mà RightPanel cần
+  const allEvents = useMemo(() => {
+    return meetings.map(meeting => ({
+      id: meeting.meetingid,
+      title: meeting.title,
+      start: new Date(meeting.starttime), // Parse thành Object Date
+      end: new Date(meeting.endtime),     // Parse thành Object Date
+      status: 'meeting',
+      source: 'meeting',
+      // Lưu ý: activeGroup thường lưu ID của workspace. 
+      // Ta lưu thẳng ID vào meta để RightPanel dễ dàng filter.
+      meta: meeting.workspaceid || meeting.workspace?.id || meeting.workspace?.name || '',
+    }));
+  }, [meetings]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-white text-gray-900 font-sans">
@@ -64,7 +95,8 @@ export function DashboardLayout() {
             {/* Cột RightPanel bên phải */}
             <div className="hidden lg:block w-80 shrink-0 h-full border-l border-gray-100">
               <RightPanel
-                workspaceId={activeGroup}
+                groupName={activeGroup} // Cập nhật tên prop cho khớp với RightPanel
+                allEvents={allEvents}   // Truyền danh sách sự kiện đã tính toán vào
                 isCoordinationOpen={groupView === 'coordination'}
                 onToggleCoordination={() => setGroupView(prev => prev === 'chat' ? 'coordination' : 'chat')}
               />
