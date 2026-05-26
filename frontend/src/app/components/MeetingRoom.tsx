@@ -19,7 +19,10 @@ import {
   Send,
   Grid3x3,
   Maximize2,
-  Bot
+  Bot,
+  CircleStop,
+  Loader2,
+  Radio
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,6 +35,7 @@ interface Participant {
   isSpeaking: boolean;
   socketId: string;
   stream?: MediaStream;
+  isRecordingBot?: boolean;
 }
 
 interface MeetingDetails {
@@ -41,6 +45,24 @@ interface MeetingDetails {
   starttime: string;
   endtime: string;
   status: string;
+  organizer: string;
+  bot_status?: 'idle' | 'recording' | 'processing' | 'completed' | 'failed' | string | null;
+  recording_error?: string | null;
+  recording_file?: string | null;
+}
+
+interface RecordingStatus {
+  bot_status: 'idle' | 'recording' | 'processing' | 'completed' | 'failed' | string;
+  recordingDownloadLink?: string | null;
+  recording_error?: string | null;
+}
+
+interface MicTestResult {
+  status: 'good' | 'quiet' | 'clipping' | 'silent' | 'unknown';
+  message: string;
+  rms: number;
+  peak: number;
+  speechRatio: number;
 }
 
 const PEER_CONFIG = {
@@ -49,6 +71,19 @@ const PEER_CONFIG = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
   ]
+};
+
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 24, max: 30 },
 };
 
 // Separate component for remote video to manage stream attachment
@@ -124,6 +159,11 @@ export function MeetingRoom() {
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
   const [isOvertime, setIsOvertime] = useState(false);
   const [userWorkspaceRole, setUserWorkspaceRole] = useState<string | null>(null);
+  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>({ bot_status: 'idle' });
+  const [recordingAction, setRecordingAction] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [micTestRunning, setMicTestRunning] = useState(false);
+  const [micTestResult, setMicTestResult] = useState<MicTestResult | null>(null);
 
   useEffect(() => {
     localStreamRef.current = localStream;
@@ -165,9 +205,16 @@ export function MeetingRoom() {
     };
   }, [meetingId]);
 
+  useEffect(() => {
+    if (!meetingId) return;
+    const timer = window.setInterval(fetchRecordingStatus, 5000);
+    return () => window.clearInterval(timer);
+  }, [meetingId]);
+
   // Speaking Detection logic using Web Audio API
   useEffect(() => {
     if (!localStream || !isMicOn) {
+      setMicLevel(0);
       if (socketRef.current && meetingId) {
         socketRef.current.emit('sync_speaking_state', { meetingId, isSpeaking: false });
       }
@@ -198,6 +245,7 @@ export function MeetingRoom() {
           sum += dataArray[i];
         }
         const average = sum / bufferLength;
+        setMicLevel(Math.min(1, average / 80));
         const speaking = average > 25; // Sensitivity threshold
 
         if (speaking) {
@@ -225,6 +273,7 @@ export function MeetingRoom() {
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
       if (audioContext) audioContext.close();
+      setMicLevel(0);
     };
   }, [localStream, isMicOn, meetingId]);
 
@@ -264,6 +313,7 @@ export function MeetingRoom() {
         }
 
         updatedParticipants.forEach(async (p) => {
+          if (p.isRecordingBot) return;
           if (p.socketId !== socket.id && !peersRef.current.has(p.socketId)) {
             // The peer with the lexicographically smaller socketId will initiate the connection
             if (socket.id! < p.socketId) {
@@ -353,10 +403,63 @@ export function MeetingRoom() {
     socket.on('disconnect', () => console.log('❌ Socket disconnected'));
   };
 
+  const handleToggleRecording = async () => {
+    if (!meetingId || recordingAction) return;
+    const isRecording = recordingStatus.bot_status === 'recording';
+    const endpoint = isRecording ? 'stop' : 'start';
+
+    setRecordingAction(true);
+    try {
+      if (!isRecording) {
+        if (!isMicOn) {
+          toast.warning('Your microphone is muted. Recording can continue if other participants are speaking.');
+        } else if (micTestResult && micTestResult.status !== 'good') {
+          toast.warning(micTestResult.message);
+        }
+      }
+
+      const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/recording/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.message || `Failed to ${endpoint} recording`);
+      }
+      setRecordingStatus(data.data || { bot_status: isRecording ? 'processing' : 'recording' });
+      toast.success(isRecording ? 'Recording stopped. AI is processing the transcript.' : 'Recording started');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Recording action failed');
+      await fetchRecordingStatus();
+    } finally {
+      setRecordingAction(false);
+    }
+  };
+
+  const stopRecordingBeforeEnd = async () => {
+    if (recordingStatus.bot_status !== 'recording') return;
+
+    const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/recording/stop`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.message || 'Failed to stop recording');
+    }
+    setRecordingStatus(data.data || { bot_status: 'processing' });
+  };
+
   const handleEndMeeting = async () => {
     if (!window.confirm("Are you sure you want to end this meeting for everyone?")) return;
 
     try {
+      try {
+        await stopRecordingBeforeEnd();
+      } catch (recordingErr) {
+        toast.error(recordingErr instanceof Error ? recordingErr.message : 'Failed to stop recording before ending meeting');
+      }
+
       const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/status`, {
         method: 'PUT',
         headers: {
@@ -500,17 +603,137 @@ export function MeetingRoom() {
         }
 
         // Fetch user role in this workspace for permissions
-        const wsRes = await fetch(`${apiUrl}/api/workspaces/${data.workspaceid}/members`, {
+        const wsRes = await fetch(`${apiUrl}/api/workspaces/${data.workspaceid}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (wsRes.ok) {
-          const members = await wsRes.json();
+          const wsData = await wsRes.json();
+          const members: any[] = wsData.members || wsData.member || [];
           const me = members.find((m: any) => m.username === currentUser);
           setUserWorkspaceRole(me?.workspacerole || null);
         }
+
+        await fetchRecordingStatus();
       }
     } catch (err) {
       console.error("Fetch meeting error", err);
+    }
+  };
+
+  const fetchRecordingStatus = async () => {
+    if (!meetingId) return;
+    try {
+      const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/recording/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setRecordingStatus(data.data || { bot_status: 'idle' });
+    } catch (err) {
+      console.error("Fetch recording status error", err);
+    }
+  };
+
+  const analyzeMicStream = async (stream: MediaStream, durationMs = 5000): Promise<MicTestResult> => {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const audioContext = new AudioContextClass();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    const dataArray = new Float32Array(analyser.fftSize);
+    let frameCount = 0;
+    let sumRms = 0;
+    let peak = 0;
+    let speechFrames = 0;
+    let clippingFrames = 0;
+    const startedAt = performance.now();
+
+    return await new Promise((resolve) => {
+      const tick = () => {
+        analyser.getFloatTimeDomainData(dataArray);
+        let sumSquares = 0;
+        let framePeak = 0;
+        for (let index = 0; index < dataArray.length; index += 1) {
+          const sample = dataArray[index];
+          const abs = Math.abs(sample);
+          sumSquares += sample * sample;
+          if (abs > framePeak) framePeak = abs;
+        }
+
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        frameCount += 1;
+        sumRms += rms;
+        peak = Math.max(peak, framePeak);
+        if (rms > 0.015) speechFrames += 1;
+        if (framePeak > 0.98) clippingFrames += 1;
+        setMicLevel(Math.min(1, rms * 12));
+
+        if (performance.now() - startedAt < durationMs) {
+          requestAnimationFrame(tick);
+          return;
+        }
+
+        const averageRms = frameCount > 0 ? sumRms / frameCount : 0;
+        const speechRatio = frameCount > 0 ? speechFrames / frameCount : 0;
+        const clippingRatio = frameCount > 0 ? clippingFrames / frameCount : 0;
+        let status: MicTestResult['status'] = 'good';
+        let message = 'Mic sounds usable for recording.';
+
+        if (speechRatio < 0.08 || peak < 0.02) {
+          status = 'silent';
+          message = 'No clear speech detected. Check mic permission, input device, or speak closer.';
+        } else if (averageRms < 0.02) {
+          status = 'quiet';
+          message = 'Mic is too quiet. Move closer or increase input volume.';
+        } else if (peak > 0.98 || clippingRatio > 0.01) {
+          status = 'clipping';
+          message = 'Mic is clipping. Lower input volume or move slightly away.';
+        }
+
+        audioContext.close();
+        resolve({ status, message, rms: averageRms, peak, speechRatio });
+      };
+
+      tick();
+    });
+  };
+
+  const handleMicTest = async () => {
+    if (micTestRunning) return;
+
+    setMicTestRunning(true);
+    let temporaryStream: MediaStream | null = null;
+    try {
+      const stream = localStreamRef.current?.getAudioTracks().length
+        ? localStreamRef.current
+        : await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
+      if (stream !== localStreamRef.current) temporaryStream = stream;
+
+      toast.info('Testing microphone for 5 seconds. Speak normally.');
+      const result = await analyzeMicStream(stream);
+      setMicTestResult(result);
+
+      if (result.status === 'good') {
+        toast.success(result.message);
+      } else {
+        toast.warning(result.message);
+      }
+    } catch (err) {
+      console.error('Mic test failed:', err);
+      setMicTestResult({
+        status: 'unknown',
+        message: 'Could not test microphone. Check browser permission.',
+        rms: 0,
+        peak: 0,
+        speechRatio: 0,
+      });
+      toast.error('Could not test microphone. Check browser permission.');
+    } finally {
+      temporaryStream?.getTracks().forEach(track => track.stop());
+      setMicTestRunning(false);
+      if (!isMicOn) setMicLevel(0);
     }
   };
 
@@ -551,7 +774,9 @@ export function MeetingRoom() {
 
       if (isTurningOn) {
         // --- 1. XỬ LÝ BẬT ---
-        const constraints = type === 'video' ? { video: true } : { audio: true };
+        const constraints: MediaStreamConstraints = type === 'video'
+          ? { video: VIDEO_CONSTRAINTS }
+          : { audio: AUDIO_CONSTRAINTS };
         const newStream = await navigator.mediaDevices.getUserMedia(constraints);
         const newTrack = type === 'video' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
 
@@ -648,6 +873,11 @@ export function MeetingRoom() {
     </div>;
   }
 
+  const visibleParticipants = participants.filter(participant => !participant.isRecordingBot);
+  const canManageRecording = meeting.organizer === currentUser || userWorkspaceRole === 'Leader';
+  const isRecording = recordingStatus.bot_status === 'recording';
+  const isProcessingRecording = recordingStatus.bot_status === 'processing';
+
   return (
     <div className="flex flex-col h-screen bg-gray-950 font-sans selection:bg-purple-500/30 overflow-hidden">
       {/* Top Bar */}
@@ -662,7 +892,7 @@ export function MeetingRoom() {
               <h1 className="text-white font-bold text-lg md:text-xl truncate tracking-tight">{meeting.title}</h1>
               <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
                 <Users size={12} className="text-gray-400" />
-                <span className="text-gray-300 text-[11px] font-bold">{participants.length}</span>
+                <span className="text-gray-300 text-[11px] font-bold">{visibleParticipants.length}</span>
               </div>
             </div>
           </div>
@@ -672,9 +902,11 @@ export function MeetingRoom() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-purple-500/15 border border-purple-500/20 rounded-full">
-            <Bot size={16} className="text-purple-400" />
-            <span className="text-purple-300 text-xs font-bold uppercase tracking-wider">AI Live Assistant</span>
+          <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${isRecording ? 'bg-red-500/15 border-red-500/25' : isProcessingRecording ? 'bg-amber-500/15 border-amber-500/25' : 'bg-purple-500/15 border-purple-500/20'}`}>
+            {isProcessingRecording ? <Loader2 size={16} className="text-amber-300 animate-spin" /> : <Bot size={16} className={isRecording ? 'text-red-300' : 'text-purple-400'} />}
+            <span className={`text-xs font-bold uppercase tracking-wider ${isRecording ? 'text-red-300' : isProcessingRecording ? 'text-amber-300' : 'text-purple-300'}`}>
+              {isRecording ? 'Recording' : isProcessingRecording ? 'AI Processing' : 'AI Recorder'}
+            </span>
           </div>
           <button className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-gray-400 hover:text-white">
             <Settings size={20} />
@@ -682,12 +914,21 @@ export function MeetingRoom() {
         </div>
       </div>
 
+      {(isRecording || isProcessingRecording) && (
+        <div className={`px-4 md:px-8 py-3 border-b z-10 ${isRecording ? 'bg-red-950/95 border-red-500/30 text-red-50' : 'bg-amber-950/95 border-amber-500/30 text-amber-50'}`}>
+          <div className="max-w-[1600px] mx-auto flex items-center gap-3 text-sm font-semibold">
+            {isProcessingRecording ? <Loader2 size={18} className="animate-spin shrink-0" /> : <Radio size={18} className="shrink-0" />}
+            <span>{isRecording ? 'Recording in progress. Everyone in this room is being recorded.' : 'Recording stopped. AI transcript and summary are being generated.'}</span>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative min-h-0">
         {/* Video Grid */}
         <div className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 max-w-[1600px] mx-auto">
-            {participants.map((participant) => (
+            {visibleParticipants.map((participant) => (
               <div
                 key={participant.socketId}
                 className={`group relative bg-gray-900 rounded-2xl md:rounded-3xl overflow-hidden aspect-video w-full transition-all duration-500 border border-white/5 shadow-2xl ${participant.isSpeaking ? 'ring-4 ring-purple-500/50 scale-[1.02] z-10' : 'hover:border-white/20'
@@ -724,7 +965,7 @@ export function MeetingRoom() {
             ))}
 
             {/* If only 1 person, show a call to action or waiting message */}
-            {participants.length === 1 && (
+            {visibleParticipants.length === 1 && (
               <div className="aspect-video rounded-3xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-center p-8 opacity-40 hover:opacity-100 transition-opacity">
                 <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
                   <Users size={24} className="text-white" />
@@ -756,7 +997,7 @@ export function MeetingRoom() {
             {activePanel === 'participants' && (
               <>
                 <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 shrink-0">
-                  <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Attendance ({participants.length})</h3>
+                  <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Attendance ({visibleParticipants.length})</h3>
                   <button onClick={() => setActivePanel(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                     <X size={20} className="text-gray-500" />
                   </button>
@@ -765,15 +1006,21 @@ export function MeetingRoom() {
                   {participants.map((participant) => (
                     <div key={participant.socketId} className="flex items-center gap-4 p-3 hover:bg-purple-50 rounded-2xl transition-all group">
                       <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 text-sm font-black shadow-sm group-hover:scale-110 transition-transform">
-                        {participant.initials}
+                        {participant.isRecordingBot ? <Bot size={18} /> : participant.initials}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-gray-900 truncate">{participant.name}</p>
-                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{participant.socketId === socketRef.current?.id ? 'You' : 'Member'}</p>
+                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{participant.isRecordingBot ? 'Recording' : participant.socketId === socketRef.current?.id ? 'You' : 'Member'}</p>
                       </div>
                       <div className="flex gap-2">
-                        {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-purple-500" />}
-                        {!(participant.socketId === socketRef.current?.id ? isVideoOn : participant.isVideoOn) && <VideoOff size={16} className="text-gray-300" />}
+                        {participant.isRecordingBot ? (
+                          <Radio size={16} className={isRecording ? 'text-red-500' : 'text-gray-300'} />
+                        ) : (
+                          <>
+                            {(participant.socketId === socketRef.current?.id ? !isMicOn : participant.isAudioMuted) ? <MicOff size={16} className="text-red-400" /> : <Mic size={16} className="text-purple-500" />}
+                            {!(participant.socketId === socketRef.current?.id ? isVideoOn : participant.isVideoOn) && <VideoOff size={16} className="text-gray-300" />}
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -804,8 +1051,30 @@ export function MeetingRoom() {
       <div className="px-6 py-4 bg-gray-900/98 backdrop-blur-xl border-t border-white/5 z-20">
         <div className="flex items-center justify-between w-full h-14">
           {/* Left: Meeting ID */}
-          <div className="flex-1 hidden md:flex items-center">
-            <span className="text-white/40 text-[11px] font-medium tracking-tight">Meeting ID: <span className="text-white/70 font-mono tracking-wider uppercase ml-1.5">{meetingId}</span></span>
+          <div className="flex-1 hidden md:flex items-center gap-3 min-w-0">
+            <span className="text-white/40 text-[11px] font-medium tracking-tight truncate">Meeting ID: <span className="text-white/70 font-mono tracking-wider uppercase ml-1.5">{meetingId}</span></span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-20 h-2 rounded-full bg-white/10 overflow-hidden" title="Microphone input level">
+                <div
+                  className={`h-full transition-all ${micLevel > 0.85 ? 'bg-red-400' : micLevel > 0.2 ? 'bg-green-400' : 'bg-amber-400'}`}
+                  style={{ width: `${Math.round(micLevel * 100)}%` }}
+                />
+              </div>
+              <button
+                onClick={handleMicTest}
+                disabled={micTestRunning}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors disabled:opacity-60 ${
+                  micTestResult?.status === 'good'
+                    ? 'bg-green-500/10 text-green-300 border-green-500/20'
+                    : micTestResult && micTestResult.status !== 'unknown'
+                      ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                      : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
+                }`}
+                title={micTestResult?.message || 'Test microphone for recording quality'}
+              >
+                {micTestRunning ? 'Testing' : 'Test Mic'}
+              </button>
+            </div>
           </div>
 
           {/* Center: Controls */}
@@ -832,7 +1101,25 @@ export function MeetingRoom() {
               <PhoneOff size={24} />
             </button>
 
-            {(meeting?.organizer === currentUser || userWorkspaceRole === 'Leader' || userWorkspaceRole === 'Manager') && (
+            {canManageRecording && (
+              <button
+                onClick={handleToggleRecording}
+                disabled={recordingAction || isProcessingRecording}
+                className={`px-4 py-3 rounded-2xl transition-all font-bold text-xs uppercase tracking-wider border flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${isRecording ? 'bg-red-500 text-white border-red-400' : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border-white/10'}`}
+                title={isRecording ? 'Stop recording' : 'Start recording'}
+              >
+                {recordingAction || isProcessingRecording ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : isRecording ? (
+                  <CircleStop size={18} />
+                ) : (
+                  <Radio size={18} />
+                )}
+                <span className="hidden md:inline">{isRecording ? 'Stop Rec' : isProcessingRecording ? 'Processing' : 'Record'}</span>
+              </button>
+            )}
+
+            {(meeting?.organizer === currentUser || userWorkspaceRole === 'Leader') && (
               <button 
                 onClick={handleEndMeeting}
                 className="px-4 py-3 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl transition-all font-bold text-xs uppercase tracking-wider border border-red-500/20 flex items-center gap-2"
@@ -851,9 +1138,9 @@ export function MeetingRoom() {
               className={`relative p-2.5 rounded-2xl transition-all ${activePanel === 'participants' ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
             >
               <Users size={20} />
-              {participants.length > 0 && (
+              {visibleParticipants.length > 0 && (
                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-[10px] font-black flex items-center justify-center text-white border-2 border-gray-900 shadow-lg">
-                  {participants.length}
+                  {visibleParticipants.length}
                 </div>
               )}
             </button>
@@ -889,4 +1176,3 @@ export function MeetingRoom() {
     </div>
   );
 }
-

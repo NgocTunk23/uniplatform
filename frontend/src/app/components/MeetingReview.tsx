@@ -2,13 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   ArrowLeft,
+  AlertTriangle,
   Calendar,
+  CheckCircle,
   Clock,
   Download,
   FileText,
   Loader2,
   Mic,
   Paperclip,
+  Radio,
+  RefreshCw,
   Save,
   Trash2,
   Upload,
@@ -36,6 +40,9 @@ interface Meeting {
   organizerDetails?: { username: string; fullname?: string; imageggid?: string };
   status: 'upcoming' | 'ongoing' | 'ended';
   recording_file?: string | null;
+  recording_error?: string | null;
+  recording_metadata?: Record<string, unknown> | null;
+  bot_status?: 'idle' | 'recording' | 'processing' | 'completed' | 'failed' | string | null;
   workspace?: { name?: string; member?: WorkspaceMember[] };
 }
 
@@ -54,11 +61,33 @@ interface MeetingMinutes {
   id?: string;
   content?: string | null;
   raw_transcript?: string | null;
+  corrected_transcript?: string | null;
+  transcript_review_status?: 'none' | 'draft' | 'approved' | string | null;
+  transcript_correction_notes?: string | null;
+  transcript_segments?: TranscriptSegment[] | null;
+  transcription_metadata?: Record<string, unknown> | null;
   summary?: string | null;
+  summary_draft?: string | null;
+  summary_review_status?: 'none' | 'pending' | 'passed' | 'failed' | string | null;
+  summary_eval_score?: number | null;
+  summary_eval_metadata?: Record<string, unknown> | null;
   decisions?: string[];
   task?: string[];
   isbotgenerated?: boolean | null;
   files?: MinutesFile[];
+}
+
+interface TranscriptSegment {
+  id?: number | string | null;
+  start?: number | null;
+  end?: number | null;
+  text?: string;
+  originalText?: string;
+  uncertain?: boolean;
+  retried?: boolean;
+  avgLogprob?: number | null;
+  noSpeechProb?: number | null;
+  words?: { word?: string; start?: number | null; end?: number | null; probability?: number | null }[];
 }
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
@@ -95,6 +124,28 @@ function joinLines(value?: string[]) {
   return (value || []).join('\n');
 }
 
+function formatTimecode(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--:--';
+  const totalSeconds = Math.max(0, Math.round(value));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function formatPercent(value?: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '0%';
+  return `${Math.round(value * 100)}%`;
+}
+
+function getNestedRecord(metadata: Record<string, unknown> | null | undefined, key: string) {
+  const value = metadata?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function getStringList(value: unknown) {
+  return Array.isArray(value) ? value.map(item => String(item)).filter(Boolean) : [];
+}
+
 function getFileId(file: MinutesFile) {
   return file.fileid || file.id || '';
 }
@@ -113,8 +164,13 @@ export function MeetingReview() {
   const [summary, setSummary] = useState('');
   const [content, setContent] = useState('');
   const [rawTranscript, setRawTranscript] = useState('');
+  const [correctedTranscript, setCorrectedTranscript] = useState('');
+  const [transcriptCorrectionNotes, setTranscriptCorrectionNotes] = useState('');
   const [decisionsText, setDecisionsText] = useState('');
   const [tasksText, setTasksText] = useState('');
+  const [recordingDownloadLink, setRecordingDownloadLink] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reviewAction, setReviewAction] = useState<string | null>(null);
 
   const fetchJson = async (url: string, init?: RequestInit) => {
     const res = await fetch(url, {
@@ -136,29 +192,38 @@ export function MeetingReview() {
     setSummary(nextMinutes?.summary || '');
     setContent(nextMinutes?.content || '');
     setRawTranscript(nextMinutes?.raw_transcript || '');
+    setCorrectedTranscript(nextMinutes?.corrected_transcript || '');
+    setTranscriptCorrectionNotes(nextMinutes?.transcript_correction_notes || '');
     setDecisionsText(joinLines(nextMinutes?.decisions));
     setTasksText(joinLines(nextMinutes?.task));
   };
 
-  const loadReview = async () => {
+  const loadReview = async (showLoader = true) => {
     if (!meetingId) return;
 
-    setLoading(true);
+    if (showLoader) setLoading(true);
     try {
       const data = await fetchJson(`${apiUrl}/api/meetings/${meetingId}/minutes`);
       setMeeting(data.data?.meeting || null);
+      setRecordingDownloadLink(data.data?.recordingDownloadLink || null);
       applyMinutes(data.data?.minutes || null);
     } catch (error) {
       console.error('Load meeting review error', error);
       toast.error(error instanceof Error ? error.message : 'Failed to load meeting review');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadReview();
   }, [meetingId]);
+
+  useEffect(() => {
+    if (!meetingId || !['recording', 'processing'].includes(meeting?.bot_status || '')) return;
+    const timer = window.setInterval(() => loadReview(false), 5000);
+    return () => window.clearInterval(timer);
+  }, [meetingId, meeting?.bot_status]);
 
   const saveMinutes = async (showToast = true) => {
     if (!meetingId) return null;
@@ -172,6 +237,11 @@ export function MeetingReview() {
           summary: summary.trim() || null,
           content: content.trim() || null,
           raw_transcript: rawTranscript.trim() || null,
+          corrected_transcript: correctedTranscript.trim() || null,
+          transcript_review_status: minutes?.transcript_review_status || undefined,
+          transcript_correction_notes: transcriptCorrectionNotes.trim() || null,
+          transcript_segments: minutes?.transcript_segments || undefined,
+          transcription_metadata: minutes?.transcription_metadata || undefined,
           decisions: splitLines(decisionsText),
           task: splitLines(tasksText),
           isbotgenerated: minutes?.isbotgenerated || false,
@@ -240,6 +310,50 @@ export function MeetingReview() {
     }
   };
 
+  const handleApproveTranscript = async () => {
+    if (!meetingId || !canEdit) return;
+
+    setReviewAction('approve');
+    try {
+      const data = await fetchJson(`${apiUrl}/api/meetings/${meetingId}/transcript/review`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          corrected_transcript: correctedTranscript.trim(),
+          approve: true,
+        }),
+      });
+      applyMinutes(data.data);
+      toast.success('Transcript approved');
+      await loadReview(false);
+    } catch (error) {
+      console.error('Approve transcript error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to approve transcript');
+    } finally {
+      setReviewAction(null);
+    }
+  };
+
+  const handleGenerateSummary = async () => {
+    if (!meetingId || !canEdit) return;
+
+    setReviewAction('generate');
+    try {
+      const data = await fetchJson(`${apiUrl}/api/meetings/${meetingId}/summary/generate`, {
+        method: 'POST',
+      });
+      applyMinutes(data.data?.minutes || null);
+      toast.success('Summary generated successfully');
+      await loadReview(false);
+    } catch (error) {
+      console.error('Generate summary error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate summary');
+    } finally {
+      setReviewAction(null);
+    }
+  };
+
+
   const handleDownloadMinutes = () => {
     if (!meeting) return;
     const text = [
@@ -260,6 +374,9 @@ export function MeetingReview() {
       '',
       'Transcript',
       rawTranscript || '(empty)',
+      '',
+      'Corrected Transcript',
+      correctedTranscript || '(empty)',
     ].join('\n');
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -268,6 +385,22 @@ export function MeetingReview() {
     link.download = `${meeting.title.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_minutes.txt`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleReprocessRecording = async () => {
+    if (!meetingId) return;
+
+    setReprocessing(true);
+    try {
+      await fetchJson(`${apiUrl}/api/meetings/${meetingId}/recording/reprocess`, { method: 'POST' });
+      toast.success('Recording reprocess started');
+      await loadReview();
+    } catch (error) {
+      console.error('Reprocess recording error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to reprocess recording');
+    } finally {
+      setReprocessing(false);
+    }
   };
 
   if (loading) {
@@ -289,9 +422,25 @@ export function MeetingReview() {
   }
 
   const attachments = minutes?.files || [];
-  const hasAiDraft = Boolean(minutes?.isbotgenerated || rawTranscript || summary || content);
-  const canEdit = !meeting || meeting.organizer === currentUsername ||
-    (meeting.workspace?.member ?? []).some(m => m.username === currentUsername && m.workspacerole === 'Leader');
+  const hasAiDraft = Boolean(minutes?.isbotgenerated || rawTranscript || correctedTranscript || summary || content);
+  const recordingStatus = meeting.bot_status || 'idle';
+  const isRecordingProcessing = recordingStatus === 'recording' || recordingStatus === 'processing';
+  const hasNoAudioError = recordingStatus === 'failed' && /no audio/i.test(meeting.recording_error || '');
+  const canEdit = Boolean(meeting) && (
+    meeting.organizer === currentUsername ||
+    (meeting.workspace?.member ?? []).some(m => m.username === currentUsername && m.workspacerole === 'Leader')
+  );
+  const transcriptReviewStatus = minutes?.transcript_review_status || 'none';
+  const isTranscriptApproved = transcriptReviewStatus === 'approved';
+  const isReviewBusy = Boolean(reviewAction);
+  const canEditFinalMinutes = canEdit;
+  const transcriptSegments = Array.isArray(minutes?.transcript_segments) ? minutes.transcript_segments : [];
+  const uncertainSegments = transcriptSegments.filter(segment => segment?.uncertain);
+  const retriedSegments = transcriptSegments.filter(segment => segment?.retried);
+  const audioCapture = getNestedRecord(minutes?.transcription_metadata, 'audioCapture') ||
+    getNestedRecord(meeting.recording_metadata, 'captureMetadata');
+  const audioWarnings = getStringList(audioCapture?.qualityWarnings);
+  const audioTracks = Array.isArray(audioCapture?.tracks) ? audioCapture.tracks as Record<string, unknown>[] : [];
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -344,36 +493,231 @@ export function MeetingReview() {
             </div>
           )}
 
-          {!hasAiDraft && (
+          {!hasAiDraft && !isRecordingProcessing && recordingStatus !== 'failed' && (
             <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              AI could not automatically create minutes yet. A blank manual form is ready for review and saving.
+              No AI-generated minutes yet. You can fill in the form below manually and save.
             </div>
           )}
 
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Recording</h2>
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 flex items-center justify-between gap-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Mic size={24} className="text-purple-600" />
+                  {recordingStatus === 'processing' ? (
+                    <Loader2 size={24} className="text-amber-600 animate-spin" />
+                  ) : recordingStatus === 'recording' ? (
+                    <Radio size={24} className="text-red-600" />
+                  ) : (
+                    <Mic size={24} className="text-purple-600" />
+                  )}
                 </div>
                 <div>
                   <h3 className="font-medium text-gray-900">Meeting Recording</h3>
-                  <p className="text-sm text-gray-500">{meeting.recording_file || 'No recording file linked yet'}</p>
+                  <p className="text-sm text-gray-500">
+                    {recordingStatus === 'recording' && 'Recording in progress'}
+                    {recordingStatus === 'processing' && 'AI is transcribing this meeting'}
+                    {recordingStatus === 'review_required' && (isTranscriptApproved ? 'Transcript approved. Generate a summary when ready.' : 'Transcript is ready for review')}
+                    {recordingStatus === 'summary_review_required' && 'Summary needs review before publishing'}
+                    {recordingStatus === 'completed' && 'Recording processing complete'}
+                    {recordingStatus === 'failed' && (hasNoAudioError ? 'No audio captured. Check microphone access and join the meeting again before recording.' : (meeting.recording_error || 'Recording processing failed'))}
+                    {!['recording', 'processing', 'review_required', 'summary_review_required', 'completed', 'failed'].includes(recordingStatus) && (meeting.recording_file || 'No recording file linked yet')}
+                  </p>
                 </div>
               </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => loadReview()}
+                  className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 transition-colors flex items-center gap-2 text-sm font-semibold"
+                >
+                  <RefreshCw size={15} />
+                  Refresh
+                </button>
+                {recordingDownloadLink && (
+                  <button
+                    onClick={() => window.open(recordingDownloadLink, '_blank', 'noopener,noreferrer')}
+                    className="px-3 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white transition-colors flex items-center gap-2 text-sm font-semibold"
+                  >
+                    <Download size={15} />
+                    Recording
+                  </button>
+                )}
+                {canEdit && ['failed', 'completed'].includes(recordingStatus) && (
+                  <button
+                    onClick={handleReprocessRecording}
+                    disabled={reprocessing}
+                    className="px-3 py-2 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-60 text-white transition-colors flex items-center gap-2 text-sm font-semibold"
+                  >
+                    {reprocessing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                    Reprocess
+                  </button>
+                )}
+              </div>
             </div>
+            {(audioWarnings.length > 0 || audioTracks.length > 0) && (
+              <div className="mt-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-gray-700">Audio quality</span>
+                  {audioTracks.length > 0 && (
+                    <span className="rounded-full bg-purple-50 px-2 py-1 font-semibold text-purple-700">
+                      {audioTracks.length} separate track{audioTracks.length > 1 ? 's' : ''} retained
+                    </span>
+                  )}
+                  {audioWarnings.length === 0 ? (
+                    <span className="rounded-full bg-green-50 px-2 py-1 font-semibold text-green-700">No capture warnings</span>
+                  ) : audioWarnings.map(warning => (
+                    <span key={warning} className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700">
+                      {warning.replace(/_/g, ' ')}
+                    </span>
+                  ))}
+                </div>
+                {audioTracks.length > 0 && (
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {audioTracks.slice(0, 6).map((track, index) => (
+                      <div key={String(track.id || index)} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                        <div className="font-semibold text-gray-800 truncate">{String(track.id || `Track ${index + 1}`)}</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <span>Speech {Number(track.speechSeconds || 0).toFixed(1)}s</span>
+                          <span>Peak {formatPercent(typeof track.peak === 'number' ? track.peak : null)}</span>
+                          {track.recordingDownloadLink && (
+                            <button
+                              onClick={() => window.open(String(track.recordingDownloadLink), '_blank', 'noopener,noreferrer')}
+                              className="font-semibold text-purple-600 hover:text-purple-700"
+                            >
+                              Download track
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Transcript Review</h2>
+                <p className="text-sm text-gray-500">Review and edit the transcript before generating minutes.</p>
+              </div>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold w-fit ${
+                isTranscriptApproved ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+              }`}>
+                {isTranscriptApproved ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+                {isTranscriptApproved ? 'Approved' : 'Needs review'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-800">Raw transcript</h3>
+                  <span className="text-xs text-gray-400">Read-only</span>
+                </div>
+                <textarea
+                  value={rawTranscript}
+                  readOnly
+                  rows={12}
+                  placeholder="Raw transcript from Whisper..."
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none bg-gray-100 text-gray-600 cursor-default"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-800">Corrected transcript</h3>
+                  <span className="text-xs text-gray-400">Editable</span>
+                </div>
+                <textarea
+                  value={correctedTranscript}
+                  onChange={event => setCorrectedTranscript(event.target.value)}
+                  readOnly={!canEdit}
+                  rows={12}
+                  placeholder="Edit the transcript before approving..."
+                  className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
+                />
+              </div>
+            </div>
+
+            {transcriptSegments.length > 0 && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-white">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Segment review</h3>
+                    <p className="text-xs text-gray-500">
+                      {transcriptSegments.length} segments, {uncertainSegments.length} uncertain, {retriedSegments.length} retried.
+                    </p>
+                  </div>
+                  {uncertainSegments.length > 0 && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 w-fit">
+                      <AlertTriangle size={14} />
+                      Review highlighted segments
+                    </span>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+                  {transcriptSegments.map((segment, index) => (
+                    <div key={`${segment.id ?? index}-${segment.start ?? index}`} className={`px-4 py-3 text-sm ${segment.uncertain ? 'bg-amber-50/70' : 'bg-white'}`}>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="font-mono text-xs text-gray-500">
+                          {formatTimecode(segment.start)} - {formatTimecode(segment.end)}
+                        </span>
+                        {segment.uncertain && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">uncertain</span>
+                        )}
+                        {segment.retried && (
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">retried</span>
+                        )}
+                        {typeof segment.avgLogprob === 'number' && (
+                          <span className="text-[11px] text-gray-400">logprob {segment.avgLogprob.toFixed(2)}</span>
+                        )}
+                      </div>
+                      <p className="text-gray-800 whitespace-pre-wrap">{segment.text}</p>
+                      {segment.originalText && segment.originalText !== segment.text && (
+                        <p className="mt-1 text-xs text-gray-500 line-through decoration-amber-500">{segment.originalText}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {canEdit && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={handleApproveTranscript}
+                  disabled={isReviewBusy || !correctedTranscript.trim()}
+                  className="px-4 py-2 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-60 text-white transition-colors flex items-center gap-2 text-sm font-semibold"
+                >
+                  {reviewAction === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                  Approve transcript
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Summary</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Summary</h2>
+                {canEdit && (
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={isReviewBusy || !isTranscriptApproved}
+                    className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white transition-colors flex items-center gap-1.5 text-sm font-semibold"
+                  >
+                    {reviewAction === 'generate' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Generate
+                  </button>
+                )}
+              </div>
               <textarea
                 value={summary}
                 onChange={event => setSummary(event.target.value)}
                 readOnly={!canEdit}
                 rows={8}
-                placeholder="Write the meeting summary..."
+                placeholder="Summary — generate from transcript or write manually..."
                 className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
               />
             </div>
@@ -384,7 +728,7 @@ export function MeetingReview() {
                 onChange={event => setContent(event.target.value)}
                 readOnly={!canEdit}
                 rows={8}
-                placeholder="Detailed minutes or discussion notes..."
+                placeholder="Additional notes..."
                 className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
               />
             </div>
@@ -396,10 +740,10 @@ export function MeetingReview() {
               <textarea
                 value={decisionsText}
                 onChange={event => setDecisionsText(event.target.value)}
-                readOnly={!canEdit}
+                readOnly={!canEditFinalMinutes}
                 rows={6}
                 placeholder="One decision per line"
-                className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
+                className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEditFinalMinutes ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
               />
             </div>
             <div>
@@ -407,24 +751,12 @@ export function MeetingReview() {
               <textarea
                 value={tasksText}
                 onChange={event => setTasksText(event.target.value)}
-                readOnly={!canEdit}
+                readOnly={!canEditFinalMinutes}
                 rows={6}
                 placeholder="One task per line"
-                className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
+                className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEditFinalMinutes ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
               />
             </div>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Transcript</h2>
-            <textarea
-              value={rawTranscript}
-              onChange={event => setRawTranscript(event.target.value)}
-              readOnly={!canEdit}
-              rows={10}
-              placeholder="Raw transcript..."
-              className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none resize-none ${canEdit ? 'bg-gray-50 focus:ring-2 focus:ring-purple-300' : 'bg-gray-100 text-gray-600 cursor-default'}`}
-            />
           </section>
 
           <section>

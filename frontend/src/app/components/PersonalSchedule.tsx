@@ -810,7 +810,7 @@ export function PersonalSchedule() {
               <Plus size={14} />
               Add Availability
             </button>
-          </div>
+          </div> */}
         </div>
 
         < div className="flex items-center gap-4 flex-wrap" >

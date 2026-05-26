@@ -7,7 +7,7 @@ const morgan = require('morgan');
 const dotenv = require('dotenv');
 const passport = require('passport'); // Bổ sung thư viện passport
 const { normalizeDates } = require('./src/utils/timezone.util');
-
+const aiRoutes = require('./src/routes/ai.routes'); // <-- THÊM DÒNG NÀY
 // Set server timezone to GMT+7 for all API responses and local date formatting
 process.env.TZ = 'Asia/Bangkok';
 
@@ -18,6 +18,7 @@ dotenv.config();
 require('./src/config/passport'); 
 
 const prisma = require('./src/config/prisma');
+const meetingRecordingService = require('./src/services/meeting-recording.service');
 const SOCKET_EVENTS = require('./src/constants/socket-events');
 const { registerChatHandlers } = require('./src/socket/chat.socket');
 const { registerMeetingHandlers } = require('./src/socket/meeting.socket');
@@ -27,7 +28,10 @@ const errorMiddleware = require('./src/middlewares/error.middleware');
 
 // Prisma Connection Check
 prisma.$connect()
-  .then(() => console.log('🛡️  Prisma connected to MongoDB'))
+  .then(async () => {
+    console.log('🛡️  Prisma connected to MongoDB');
+    await meetingRecordingService.resetStaleRecordingMeetings();
+  })
   .catch((err) => console.error('❌ Prisma connection error:', err));
 
 const workspaceRoutes = require('./src/routes/workspace.routes');
@@ -69,6 +73,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Basic Health Check Route
 app.get('/health', (req, res) => {
