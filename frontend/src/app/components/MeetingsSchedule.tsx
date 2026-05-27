@@ -176,6 +176,18 @@ export function MeetingsSchedule() {
 
   const token = localStorage.getItem('uniplatform_user_token') || '';
 
+  // 1. GIẢI MÃ TOKEN ĐỂ BIẾT USER ĐANG ĐĂNG NHẬP LÀ AI
+  const currentUser = useMemo(() => {
+    let user = localStorage.getItem('uniplatform_username') || '';
+    if (!user && token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        user = payload.username || payload.id || payload.sub || '';
+      } catch (e) { }
+    }
+    return user || 'me';
+  }, [token]);
+
   const selectedWorkspace = workspaces.find(workspace => getWorkspaceId(workspace) === form.workspaceid);
   const selectedMembers = getWorkspaceMembers(selectedWorkspace);
 
@@ -490,9 +502,15 @@ export function MeetingsSchedule() {
               const status = computeStatus(meeting);
               const participantCount = meeting.participants?.length || 0;
               const activeCount = meeting.activeParticipantsCount || 0;
-              // Thêm 2 biến này:
-              const isOrganizer = meeting.organizer === 'Tôi' || meeting.organizerDetails?.username === 'me';
-              const myRsvp = meeting.rsvpStatus?.['me'] || (isOrganizer ? 'accepted' : 'pending');
+
+              // 2. CHECK QUYỀN VỚI THÔNG TIN CỦA CURRENT USER
+              const isOrganizer =
+                meeting.organizer === currentUser ||
+                meeting.organizerDetails?.username === currentUser ||
+                (!meeting.organizer && !meeting.organizerDetails); // Fallback khi DB bị rỗng
+
+              const myRsvp = meeting.rsvpStatus?.[currentUser] || meeting.rsvpStatus?.['me'] || (isOrganizer ? 'accepted' : 'pending');
+
               return (
                 <div key={meetingId} className="bg-white border border-gray-100 rounded-xl p-6 hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between gap-4">
@@ -528,7 +546,8 @@ export function MeetingsSchedule() {
                           {meeting.workspace?.name || 'Workspace'}
                         </span>
                         <span className="px-2.5 py-1 rounded-full bg-gray-50 text-gray-500">
-                          Organizer: {meeting.organizerDetails?.fullname || meeting.organizer}
+                          {/* Sửa lại hiển thị Organizer cho đỡ bị trống */}
+                          Organizer: {meeting.organizerDetails?.fullname || meeting.organizer || (isOrganizer ? 'Bạn' : 'Không rõ')}
                         </span>
                         {meeting.link && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-600">
@@ -540,7 +559,6 @@ export function MeetingsSchedule() {
                     </div>
 
                     <div className="flex gap-2 shrink-0">
-                      {/* CẬP NHẬT NÚT BẤM CHO PHÉP QUAY XE */}
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <div className="flex gap-2 items-center">
                           {!isOrganizer && myRsvp === 'pending' && (
@@ -576,10 +594,10 @@ export function MeetingsSchedule() {
                         </div>
 
                         {/* Hiển thị lý do từ chối nếu có */}
-                        {!isOrganizer && myRsvp === 'declined' && meeting.rsvpDetails?.['me']?.reason && (
+                        {!isOrganizer && myRsvp === 'declined' && meeting.rsvpDetails?.[currentUser]?.reason && (
                           <p className="text-[11px] text-gray-400 italic max-w-xs text-right truncate">
-                            Lý do: {meeting.rsvpDetails['me'].reason}
-                            {meeting.rsvpDetails['me'].attachment && <span> (Có đính kèm file)</span>}
+                            Lý do: {meeting.rsvpDetails[currentUser].reason}
+                            {meeting.rsvpDetails[currentUser].attachment && <span> (Có đính kèm file)</span>}
                           </p>
                         )}
                       </div>

@@ -798,19 +798,7 @@ export function PersonalSchedule() {
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight" > Personal Schedule </h1>
             < p className="text-sm text-gray-400 mt-0.5" > Manage your availability and upcoming meetings </p>
           </div>
-          < div className="flex items-center gap-3" >
-            <div className="relative" >
 
-            </div>
-            {/* <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold text-xs border-2 border-white shadow-sm">{initials}</div> */}
-            <button
-              onClick={() => openCreateForm()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm"
-            >
-              <Plus size={14} />
-              Add Availability
-            </button>
-          </div> */}
         </div>
 
         < div className="flex items-center gap-4 flex-wrap" >
