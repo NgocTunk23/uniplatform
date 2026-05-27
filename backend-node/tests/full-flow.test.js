@@ -5,17 +5,12 @@ dotenv.config();
 process.env.JWT_SECRET = 'fullflowsecret';
 process.env.NODE_ENV = 'test';
 
-if (process.env.MONGO_URI) {
-  const baseUri = process.env.MONGO_URI.split('?')[0].replace('/uniplatform', '/uniplatform_test_full');
-  const params = process.env.MONGO_URI.split('?')[1] || '';
-  process.env.MONGO_URI = `${baseUri}?${params}&directConnection=true`;
-}
 
 jest.setTimeout(30000); // Increase timeout for E2E flow
 
 const request = require('supertest');
 const ioc = require('socket.io-client');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../src/config/prisma');
 const SOCKET_EVENTS = require('../src/constants/socket-events');
 const { server, io, app } = require('../index');
 
@@ -25,21 +20,20 @@ jest.mock('../src/services/ai.service', () => ({
   generateResponse: jest.fn().mockResolvedValue('I am your AI assistant for PROJECT FULL FLOW.')
 }));
 
-let prisma;
 let socketA, socketB;
 const userA = { username: 'leader_a', email: 'leader@flow.com', password: 'password123', fullname: 'Leader Alice' };
 const userB = { username: 'member_b', email: 'member@flow.com', password: 'password123', fullname: 'Member Bob' };
 
-let tokenA, tokenB, workspaceId;
+let tokenA, tokenB, workspaceid;
 
 beforeAll(async () => {
-  prisma = new PrismaClient({
-    datasources: { db: { url: process.env.MONGO_URI } }
-  });
-
-  // Ensure fresh DB
-  await prisma.message.deleteMany({});
+  // Ensure fresh DB in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
   return new Promise((resolve) => {
@@ -63,8 +57,18 @@ afterAll(async () => {
   if (socketB) socketB.disconnect();
   io.close();
   server.close();
-  if (prisma) await prisma.$disconnect();
+  if (prisma) {
+    await prisma.files.deleteMany({});
+    await prisma.messages.deleteMany({});
+    await prisma.meetingMinutes.deleteMany({});
+    await prisma.meeting.deleteMany({});
+    await prisma.workspace.deleteMany({});
+    await prisma.systemLog.deleteMany({});
+    await prisma.user.deleteMany({});
+    await prisma.$disconnect();
+  }
 });
+
 
 describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
 
@@ -97,13 +101,13 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
       .send({ name: 'Alpha Squad', admin: userA.username });
 
     expect(res.statusCode).toBe(201);
-    workspaceId = res.body.id;
-    expect(workspaceId).toBeDefined();
+    workspaceid = res.body.id;
+    expect(workspaceid).toBeDefined();
   });
 
   step('4. User A adds User B to the Workspace', async () => {
     const res = await request(app)
-      .post(`/api/workspaces/${workspaceId}/members`)
+      .post(`/api/workspaces/${workspaceid}/members`)
       .set('Authorization', `Bearer ${tokenA}`)
       .send({ username: userB.username, workspacerole: 'Member' });
 
@@ -121,8 +125,8 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
     socketA.once(SOCKET_EVENTS.WORKSPACE_JOINED, checkJoined);
     socketB.once(SOCKET_EVENTS.WORKSPACE_JOINED, checkJoined);
 
-    socketA.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
-    socketB.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    socketA.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
+    socketB.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
   });
 
   step('6. User A sends a message, User B receives it in real-time', (done) => {
@@ -135,7 +139,7 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
         expect(data.senderusername).toBe(userA.username);
 
         // Verify DB persistence
-        const saved = await prisma.message.findFirst({ where: { content: messageContent } });
+        const saved = await prisma.messages.findFirst({ where: { content: messageContent } });
         expect(saved).toBeDefined();
         done();
       } catch (e) {
@@ -144,7 +148,7 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
     });
 
     socketA.emit(SOCKET_EVENTS.SEND_MESSAGE, {
-      workspaceId,
+      workspaceid,
       content: messageContent
     });
   });
@@ -168,7 +172,7 @@ describe('UniPlatform Full-Flow (E2E) Integration Tests', () => {
     socketB.on(SOCKET_EVENTS.RECEIVE_MESSAGE, handleReceive);
 
     socketB.emit(SOCKET_EVENTS.ASK_AI, {
-      workspaceId,
+      workspaceid,
       prompt: aiPrompt,
       senderusername: userB.username
     });

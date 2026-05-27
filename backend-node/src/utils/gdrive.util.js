@@ -1,4 +1,6 @@
+const fs = require('fs');
 const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const { google } = require('googleapis');
 const dotenv = require('dotenv');
 
@@ -15,6 +17,8 @@ const getDriveConfig = () => {
   };
 };
 
+const isPlaceholderValue = (value) => !value || value.startsWith('your_');
+
 let driveInstance = null;
 let lastConfigHash = '';
 
@@ -26,7 +30,12 @@ const getDriveClient = () => {
     return driveInstance;
   }
 
-  if (!config.clientId || !config.clientSecret || !config.refreshToken || config.mockMode) {
+  if (
+    config.mockMode ||
+    isPlaceholderValue(config.clientId) ||
+    isPlaceholderValue(config.clientSecret) ||
+    isPlaceholderValue(config.refreshToken)
+  ) {
     driveInstance = null;
     lastConfigHash = configHash;
     return null;
@@ -93,6 +102,8 @@ const uploadFile = async (fileObject) => {
       },
     });
 
+    console.log('📦 Drive create response:', response ? 'exists' : 'null');
+    if (response) console.log('📦 Response data:', response.data ? 'exists' : 'null');
     return response.data;
   } catch (error) {
     if (error.response) {
@@ -101,6 +112,76 @@ const uploadFile = async (fileObject) => {
     console.error('❌ Google Drive Upload Error:', error.message);
     throw error;
   }
+};
+
+const uploadFileFromPath = async (filePath, fileObject) => {
+  const drive = getDriveClient();
+  const config = getDriveConfig();
+  const originalname = fileObject.originalname;
+  const mimetype = fileObject.mimetype || 'application/octet-stream';
+
+  try {
+    if (!drive) {
+      console.log('🛡️ Mocking upload for:', originalname);
+      return {
+        id: `mock_drive_id_${Date.now()}`,
+        name: originalname,
+        webViewLink: `https://drive.google.com/mock/${originalname}`
+      };
+    }
+
+    const response = await drive.files.create({
+      requestBody: {
+        name: originalname,
+        mimeType: mimetype,
+        parents: config.folderId ? [config.folderId] : [],
+      },
+      media: {
+        mimeType: mimetype,
+        body: fs.createReadStream(filePath),
+      },
+      fields: 'id, name, webViewLink',
+    }, {
+      timeout: 120000,
+      retry: true
+    });
+
+    await drive.permissions.create({
+      fileId: response.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      console.error('❌ Google Drive Upload Error Details:', JSON.stringify(error.response.data));
+    }
+    console.error('❌ Google Drive Upload Error:', error.message);
+    throw error;
+  }
+};
+
+const downloadFileToPath = async (fileId, destinationPath) => {
+  const drive = getDriveClient();
+
+  if (!fileId) {
+    throw new Error('Missing Google Drive file id');
+  }
+
+  if (!drive || fileId.startsWith('mock_')) {
+    throw new Error('Recording file download is not available in Google Drive mock mode');
+  }
+
+  const response = await drive.files.get(
+    { fileId, alt: 'media' },
+    { responseType: 'stream', timeout: 120000, retry: true }
+  );
+
+  await pipeline(response.data, fs.createWriteStream(destinationPath));
+  return destinationPath;
 };
 
 /**
@@ -138,6 +219,8 @@ const getDownloadLink = (fileId) => {
 const getStorageQuota = async () => {
   try {
     const drive = getDriveClient();
+    if (!drive) return null;
+
     const response = await drive.about.get({
       fields: 'storageQuota',
     });
@@ -157,6 +240,8 @@ const getStorageQuota = async () => {
 
 module.exports = {
   uploadFile,
+  uploadFileFromPath,
+  downloadFileToPath,
   deleteFile,
   getDownloadLink,
   getStorageQuota

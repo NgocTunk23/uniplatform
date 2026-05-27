@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema({
     enum: ['active', 'locked'],
     default: 'active',
   },
-  imageuser: String,
+  imageggid: String,
 }, {
   timestamps: true,
 });

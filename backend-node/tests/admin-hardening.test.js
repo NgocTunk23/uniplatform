@@ -12,10 +12,13 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
   let adminUser;
 
   beforeAll(async () => {
-    // 0. Clean DB for isolation
-    await prisma.file.deleteMany({});
-    await prisma.message.deleteMany({});
+    // 0. Clean DB in correct order for isolation
+    await prisma.files.deleteMany({});
+    await prisma.messages.deleteMany({});
+    await prisma.meetingMinutes.deleteMany({});
+    await prisma.meeting.deleteMany({});
     await prisma.workspace.deleteMany({});
+    await prisma.systemLog.deleteMany({});
     await prisma.user.deleteMany({});
 
     // 1. Setup Admin
@@ -28,7 +31,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
         role: 'Admin'
       }
     });
-    adminToken = generateToken(adminUser.id, adminUser.tokenVersion);
+    adminToken = generateToken(adminUser.username);
 
     // 2. Setup regular User
     const user = await prisma.user.create({
@@ -40,8 +43,8 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
         role: 'Member'
       }
     });
-    userId = user.id;
-    userToken = generateToken(user.id, user.tokenVersion);
+    userId = user.username;
+    userToken = generateToken(user.username);
   });
 
   afterAll(async () => {
@@ -88,7 +91,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
 
   test('PHASE 3: Admin should be able to Force Logout User', async () => {
     // 1. User is still active for this test but we will increment version
-    await prisma.user.update({ where: { id: userId }, data: { status: 'active' } });
+    await prisma.user.update({ where: { username: userId }, data: { status: 'active' } });
 
     // 2. Admin Force Logout
     const forceRes = await request(app)
@@ -96,7 +99,7 @@ describe('Admin Hardening & Audit Logs Integration Tests', () => {
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(forceRes.status).toBe(200);
-    expect(forceRes.body.tokenVersion).toBeGreaterThan(0);
+    expect(parseInt(forceRes.body.tokenVersion)).toBeGreaterThan(0);
 
     // 3. User tries with old token
     const userRes = await request(app)

@@ -3,3 +3,7 @@ uvicorn
 google-genai
 python-dotenv
 motor
+python-multipart
+faster-whisper
+ragas
+openai

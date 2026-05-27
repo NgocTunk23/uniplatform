@@ -6,15 +6,18 @@ const io = require('socket.io-client');
 const SOCKET_EVENTS = require('../src/constants/socket-events');
 
 let adminToken, leaderToken, memberToken, viewerToken, outsiderToken;
-let workspaceId;
+let workspaceid;
 let outsiderWorkspaceId;
 const TEST_PORT = 5006;
 
 beforeAll(async () => {
-  // 1. Clean DB
-  await prisma.file.deleteMany({});
-  await prisma.message.deleteMany({});
+  // 1. Clean DB in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
   // 2. Create Users
@@ -31,7 +34,7 @@ beforeAll(async () => {
     const user = await prisma.user.create({
       data: { ...u, password: 'password123', fullname: u.username }
     });
-    tokens[u.username] = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+    tokens[u.username] = jwt.sign({ id: user.username }, process.env.JWT_SECRET || 'testsecret');
   }
 
   adminToken = tokens['admin_god'];
@@ -45,7 +48,7 @@ beforeAll(async () => {
     data: {
       name: 'Workspace Alpha',
       admin: 'leader_alice',
-      members: {
+      member: {
         set: [
           { username: 'leader_alice', workspacerole: 'Leader' },
           { username: 'member_bob', workspacerole: 'Member' },
@@ -54,17 +57,17 @@ beforeAll(async () => {
       }
     }
   });
-  workspaceId = ws.id;
+  workspaceid = ws.workspaceid;
 
   // 4. Setup Workspace: Beta (Outsider only)
   const ws2 = await prisma.workspace.create({
     data: {
       name: 'Workspace Beta',
       admin: 'outsider_eve',
-      members: { set: [{ username: 'outsider_eve', workspacerole: 'Leader' }] }
+      member: { set: [{ username: 'outsider_eve', workspacerole: 'Leader' }] }
     }
   });
-  outsiderWorkspaceId = ws2.id;
+  outsiderWorkspaceId = ws2.workspaceid;
 
   // Start Server
   await new Promise(r => server.listen(TEST_PORT, r));
@@ -80,7 +83,7 @@ describe('Security & RBAC Enforcement Tests', () => {
   describe('Workspace Access Control (Cross-Tenant)', () => {
     test('User should NOT be able to read details of a workspace they are not member of', async () => {
       const res = await request(app)
-        .get(`/api/workspaces/${workspaceId}`)
+        .get(`/api/workspaces/${workspaceid}`)
         .set('Authorization', `Bearer ${outsiderToken}`);
 
       expect(res.status).toBe(403);
@@ -89,7 +92,7 @@ describe('Security & RBAC Enforcement Tests', () => {
 
     test('System Admin CAN read any workspace', async () => {
       const res = await request(app)
-        .get(`/api/workspaces/${workspaceId}`)
+        .get(`/api/workspaces/${workspaceid}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -107,7 +110,7 @@ describe('Security & RBAC Enforcement Tests', () => {
     test('Outsider should be REJECTED when joining workspace room', (done) => {
       socket = io(`http://localhost:${TEST_PORT}`, { auth: { token: outsiderToken } });
       socket.on('connect', () => {
-        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
       });
       socket.on(SOCKET_EVENTS.ERROR, (err) => {
         expect(err.message).toContain('not a member');
@@ -118,10 +121,10 @@ describe('Security & RBAC Enforcement Tests', () => {
     test('Viewer should be REJECTED when sending a message (Read-only)', (done) => {
       socket = io(`http://localhost:${TEST_PORT}`, { auth: { token: viewerToken } });
       socket.on('connect', () => {
-        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+        socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
         // Viewer can join, but cannot send
         setTimeout(() => {
-          socket.emit(SOCKET_EVENTS.SEND_MESSAGE, { workspaceId, content: 'Hello' });
+          socket.emit(SOCKET_EVENTS.SEND_MESSAGE, { workspaceid, content: 'Hello' });
         }, 100);
       });
       socket.on(SOCKET_EVENTS.ERROR, (err) => {
@@ -134,7 +137,7 @@ describe('Security & RBAC Enforcement Tests', () => {
   describe('Workspace Role Permissions (Leader vs Member)', () => {
     test('Member should NOT be able to add a new member', async () => {
       const res = await request(app)
-        .post(`/api/workspaces/${workspaceId}/members`)
+        .post(`/api/workspaces/${workspaceid}/members`)
         .set('Authorization', `Bearer ${memberToken}`)
         .send({ username: 'outsider_eve', workspacerole: 'Member' });
 
@@ -144,7 +147,7 @@ describe('Security & RBAC Enforcement Tests', () => {
 
     test('Leader CAN add a new member', async () => {
       const res = await request(app)
-        .post(`/api/workspaces/${workspaceId}/members`)
+        .post(`/api/workspaces/${workspaceid}/members`)
         .set('Authorization', `Bearer ${leaderToken}`)
         .send({ username: 'outsider_eve', workspacerole: 'Member' });
 
@@ -157,7 +160,7 @@ describe('Security & RBAC Enforcement Tests', () => {
 
     beforeEach(async () => {
       // Create a file uploaded by Bob
-      const file = await prisma.file.create({
+      const file = await prisma.files.create({
         data: {
           uploader: 'member_bob',
           filename: 'bob_secrets.txt',
@@ -165,7 +168,7 @@ describe('Security & RBAC Enforcement Tests', () => {
           typefile: 'text/plain'
         }
       });
-      fileId = file.id;
+      fileId = file.fileid;
     });
 
     test('Alice (Leader) CANNOT delete Bob\'s file (Only uploader or OS Admin can for now unless linked to message)', async () => {

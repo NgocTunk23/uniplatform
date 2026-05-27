@@ -1,23 +1,92 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Bot, 
   Sparkles, 
   Send,
-  Mic,
-  FileText,
-  Calendar,
-  MoreVertical,
-  Search
+  Loader2
 } from 'lucide-react';
 
 const promptSuggestions = [
-  "Summarize last meeting",
-  "What is my schedule tomorrow?",
-  "Extract key points from PRd.pdf"
+  "Tóm tắt nội dung cuộc họp gần nhất của tôi",
+  "Lịch trình làm việc của tôi vào ngày mai",
+  "Cuộc họp nào sẽ diễn ra trong tuần này?",
 ];
+
+interface Message {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+}
+
+// Bỏ qua lỗi TypeScript với Vite env (nếu có)
+const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
 export function AIAssistant() {
   const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 1. KHỞI TẠO STATE: Lấy dữ liệu cũ từ sessionStorage nếu có
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const savedMessages = sessionStorage.getItem('uniplatform_ai_chat');
+    if (savedMessages) {
+      try {
+        return JSON.parse(savedMessages);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // 2. LƯU STATE: Tự động lưu mảng messages vào sessionStorage mỗi khi nó thay đổi
+  useEffect(() => {
+    sessionStorage.setItem('uniplatform_ai_chat', JSON.stringify(messages));
+  }, [messages]);
+
+  // Tự động cuộn xuống cuối khi có tin nhắn mới
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
+
+  const handleSendMessage = async (textToSend?: string) => {
+    const text = textToSend || inputText;
+    if (!text.trim()) return;
+
+    // Lưu tin nhắn User vào State UI
+    const userMsg: Message = { id: Date.now().toString(), sender: 'user', text: text.trim() };
+    setMessages(prev => [...prev, userMsg]);
+    setInputText('');
+    setIsLoading(true);
+
+    try {
+      const token = localStorage.getItem('uniplatform_user_token');
+      
+      const res = await fetch(`http://localhost:5001/api/ai/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        // Đẩy toàn bộ `messages` (lịch sử) lên làm context cho Ollama
+        body: JSON.stringify({ 
+          prompt: userMsg.text,
+          context: messages.map(m => ({ senderusername: m.sender, content: m.text }))
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'ai', text: data.text }]);
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'ai', text: "Ollama server không phản hồi!" }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-white relative max-w-5xl mx-auto w-full border-x border-gray-50/50 shadow-sm shadow-gray-100/50">
@@ -35,78 +104,55 @@ export function AIAssistant() {
             </div>
           </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
-            <Search size={20} />
-          </button>
-          <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
-            <MoreVertical size={20} />
-          </button>
-        </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-        
         <div className="w-full max-w-3xl space-y-8 mt-4 pb-20">
           
-          {/* Timestamp */}
-          <div className="text-center text-xs text-gray-400 font-medium flex items-center justify-center gap-4">
-            <div className="h-px bg-gray-100 flex-1 max-w-[100px]" />
-            Today, 11:42 AM
-            <div className="h-px bg-gray-100 flex-1 max-w-[100px]" />
-          </div>
-
-          {/* User Message */}
-          <div className="flex justify-end gap-3 w-full">
-            <div className="flex flex-col items-end max-w-[80%]">
-              <div className="px-5 py-3.5 bg-purple-400 text-white rounded-3xl rounded-tr-sm shadow-sm shadow-purple-200 text-[15px] leading-relaxed">
-                <p>Can you summarize the key decisions from the Marketing Team's sync this morning and tell me if it affects my schedule?</p>
-              </div>
+          {messages.length === 0 && (
+            <div className="text-center text-gray-400 mt-10 text-sm">
+              Hãy bắt đầu cuộc trò chuyện với UniPlatform AI
             </div>
-          </div>
+          )}
 
-          {/* AI Response */}
-          <div className="flex gap-4 w-full">
-            <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center text-purple-500 shrink-0 shadow-sm">
-              <Sparkles size={20} className="fill-purple-100" />
-            </div>
-            
-            <div className="flex flex-col items-start max-w-[85%]">
-              <span className="text-[12px] font-semibold text-gray-500 mb-1.5 ml-1">UniPlatform AI</span>
+          {/* Render tin nhắn */}
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} gap-3 w-full`}>
+              {msg.sender === 'ai' && (
+                <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center text-purple-500 shrink-0 shadow-sm">
+                  <Sparkles size={20} className="fill-purple-100" />
+                </div>
+              )}
               
-              <div className="px-5 py-4 bg-gray-50/80 border border-gray-100 text-gray-800 rounded-3xl rounded-tl-sm shadow-sm text-[15px] leading-relaxed">
-                <p className="mb-4">
-                  Here are the key decisions from the Marketing Team sync:
-                </p>
-                <ul className="list-disc list-inside space-y-1 mb-5 text-gray-700">
-                  <li>The Q3 Campaign launch date has been moved up to Oct 28.</li>
-                  <li>Social media assets need to be finalized by Friday.</li>
-                  <li>The budget for paid ads was approved for an extra $5k.</li>
-                </ul>
-                <p className="mb-4">
-                  Regarding your schedule: Yes, this affects you. A new urgent review session has been scheduled for tomorrow at 2:00 PM, which conflicts with your <strong>Software Eng Sync</strong>.
-                </p>
-
-                {/* Citations (RAG UI) */}
-                <div className="pt-4 border-t border-gray-200/60 mt-2">
-                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Sources Referenced</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button className="flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:border-purple-300 hover:text-purple-600 transition-colors shadow-sm">
-                      <FileText size={12} className="text-purple-400" />
-                      Marketing Meeting Minutes
-                    </button>
-                    <button className="flex items-center gap-1.5 bg-white border border-gray-200 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:border-purple-300 hover:text-purple-600 transition-colors shadow-sm">
-                      <Calendar size={12} className="text-purple-400" />
-                      Group Schedule
-                    </button>
-                  </div>
+              <div className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} max-w-[85%]`}>
+                {msg.sender === 'ai' && <span className="text-[12px] font-semibold text-gray-500 mb-1.5 ml-1">UniPlatform AI</span>}
+                
+                <div className={`px-5 py-4 rounded-3xl shadow-sm text-[15px] leading-relaxed ${
+                  msg.sender === 'user' 
+                    ? 'bg-purple-400 text-white rounded-tr-sm shadow-purple-200' 
+                    : 'bg-gray-50/80 border border-gray-100 text-gray-800 rounded-tl-sm'
+                }`}>
+                  {/* Dùng whitespace-pre-wrap để hiển thị đúng dấu xuống dòng của AI */}
+                  <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                 </div>
               </div>
             </div>
-          </div>
-          
+          ))}
+
+          {/* Haptic Loading cho AI */}
+          {isLoading && (
+            <div className="flex gap-4 w-full">
+              <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center text-purple-500 shrink-0 shadow-sm">
+                <Loader2 size={20} className="animate-spin" />
+              </div>
+              <div className="flex flex-col items-start justify-center">
+                 <span className="text-[12px] font-semibold text-gray-500 mb-1.5 ml-1">UniPlatform AI đang suy nghĩ...</span>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -119,8 +165,9 @@ export function AIAssistant() {
             {promptSuggestions.map((suggestion, idx) => (
               <button 
                 key={idx}
-                className="text-xs font-medium text-purple-600 bg-purple-50/50 border border-purple-200 px-3 py-1.5 rounded-full hover:bg-purple-50 hover:border-purple-300 transition-all cursor-pointer shadow-sm"
-                onClick={() => setInputText(suggestion)}
+                disabled={isLoading}
+                className="text-xs font-medium text-purple-600 bg-purple-50/50 border border-purple-200 px-3 py-1.5 rounded-full hover:bg-purple-50 hover:border-purple-300 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                onClick={() => handleSendMessage(suggestion)}
               >
                 {suggestion}
               </button>
@@ -130,13 +177,15 @@ export function AIAssistant() {
           {/* Floating Input Box */}
           <div className="flex items-end gap-2 bg-white p-2 rounded-3xl border border-gray-200 shadow-sm shadow-gray-100 focus-within:ring-4 focus-within:ring-purple-50 focus-within:border-purple-300 transition-all">
             
-            <button className="p-3 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-full transition-colors shrink-0 group mb-0.5">
-              <Mic size={22} className="group-hover:scale-110 transition-transform" />
-            </button>
-            
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
               placeholder="Ask the AI Assistant..."
               className="flex-1 max-h-40 min-h-[52px] py-3.5 px-2 bg-transparent border-none outline-none resize-none text-[15px] text-gray-800 placeholder:text-gray-400"
               rows={1}
@@ -144,14 +193,16 @@ export function AIAssistant() {
             
             <div className="flex items-center gap-2 pb-1 pr-1 shrink-0 mb-0.5">
               <button 
+                onClick={() => handleSendMessage()}
+                disabled={isLoading || !inputText.trim()}
                 className={`
                   p-3 rounded-full transition-all flex items-center justify-center
-                  ${inputText.trim().length > 0 
+                  ${inputText.trim().length > 0 && !isLoading
                     ? 'bg-purple-400 text-white shadow-md shadow-purple-200 hover:bg-purple-500 hover:-translate-y-0.5' 
-                    : 'bg-gray-100 text-gray-400'}
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
                 `}
               >
-                <Send size={18} className={inputText.trim().length > 0 ? "ml-0.5" : ""} />
+                <Send size={18} className={inputText.trim().length > 0 && !isLoading ? "ml-0.5" : ""} />
               </button>
             </div>
           </div>
@@ -161,7 +212,6 @@ export function AIAssistant() {
               AI can make mistakes. Verify important information.
             </p>
           </div>
-          
         </div>
       </div>
     </div>

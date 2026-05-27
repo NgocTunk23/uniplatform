@@ -1,4 +1,5 @@
 services:
+  # Khi cần test local thì bật
   mongodb:
     image: mongo:latest
     container_name: mongodb_uniplatform
@@ -30,7 +31,8 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - REACT_APP_API_URL=http://localhost:5000
+      - REACT_APP_API_URL=http://localhost:5001
+      - VITE_API_URL=http://localhost:5001
     depends_on:
       - backend-node
 
@@ -38,23 +40,61 @@ services:
     build: ./backend-node
     ports:
       - "5001:5001"
+      - "5555:5555"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PORT=5001
+      - TZ=Asia/Ho_Chi_Minh
       - MONGO_URI=${MONGO_URI}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - PYTHON_API_URL=http://backend-python:8000
+      - JWT_SECRET=${JWT_SECRET}
+      - RECORDING_ENABLED=${RECORDING_ENABLED:-true}
+      - RECORDINGS_DIR=${RECORDINGS_DIR:-/tmp/uniplatform-recordings}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-vi}
+      # ⬇️ SỬA DÒNG NÀY: Dùng biến host.docker.internal tự động điều hướng kết nối
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
+      - OLLAMA_TIMEOUT_MS=${OLLAMA_TIMEOUT_MS:-300000}
     depends_on:
-      - mongodb
       - backend-python
+      - mongodb
 
   backend-python:
     build: ./backend-python
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-small}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-vi}
+      - WHISPER_PRELOAD_MODEL=${WHISPER_PRELOAD_MODEL:-true}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-3}
+      - WHISPER_RETRY_MAX_SEGMENTS=${WHISPER_RETRY_MAX_SEGMENTS:-3}
+      - WHISPER_RETRY_BEAM_SIZE=${WHISPER_RETRY_BEAM_SIZE:-5}
+      - WHISPER_WORD_TIMESTAMPS=${WHISPER_WORD_TIMESTAMPS:-false}
+      - WHISPER_RETRY_UNCERTAIN_SEGMENTS=${WHISPER_RETRY_UNCERTAIN_SEGMENTS:-true}
+      # ⬇️ SỬA DÒNG NÀY: Đồng bộ hoá cổng kết nối của bên Python sang Ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
+      - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
+      - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
+      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-300000}
+    
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_uniplatform
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama:/root/.ollama
 
 volumes:
   mongo_data:

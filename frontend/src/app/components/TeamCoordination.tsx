@@ -1,234 +1,353 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getAvatarUrl } from '../utils/avatar';
 import {
-  Users,
-  Calendar,
-  Clock,
-  Zap,
-  Bell,
-  CheckCircle,
-  XCircle,
   AlertTriangle,
-  ChevronRight,
-  Plus,
-  Send,
-  Star,
-  Sparkles,
-  Check,
-  X,
-  RefreshCw,
   BarChart2,
-  UserCheck,
-  Info,
+  Calendar,
+  Check,
+  CheckCircle,
+  Clock,
+  Loader2,
+  Plus,
+  RefreshCw,
   Shield,
+  Sparkles,
+  Users,
+  XCircle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-type ResponseStatus = 'accepted' | 'pending' | 'declined';
+interface TeamCoordinationProps {
+  workspaceId?: string | null;
+}
 
-interface Member {
-  id: string;
+interface WorkspaceMember {
+  username: string;
+  fullname?: string;
+  imageggid?: string;
+  workspacerole?: string;
+}
+
+interface Workspace {
+  workspaceid: string;
+  id?: string;
   name: string;
-  initials: string;
-  role: string;
-  color: string;
-  // [day 0-4, hour slot 0-9] => 'free' | 'busy' | 'tentative'
-  schedule: Record<string, 'free' | 'busy' | 'tentative'>;
+  member?: WorkspaceMember[];
+  members?: WorkspaceMember[];
 }
 
 interface SuggestedSlot {
   id: string;
-  date: string;
-  day: string;
-  time: string;
-  duration: string;
+  starttime: string;
+  endtime: string;
+  durationMinutes: number;
   score: number;
   quality: 'best' | 'good' | 'low';
   freeCount: number;
-  conflicts: string[];
-  label: string;
+  conflicts: unknown[];
 }
 
-interface ParticipantResponse {
-  memberId: string;
-  name: string;
-  initials: string;
-  color: string;
-  status: ResponseStatus;
-  responseTime?: string;
-  note?: string;
-}
-
-interface NotifHistory {
+interface BusyEvent {
+  source: 'schedule' | 'meeting';
   id: string;
   title: string;
-  sentAt: string;
-  recipients: number;
-  type: 'meeting_invite' | 'reminder' | 'update' | 'cancel';
-  deliveredPct: number;
+  usernames: string[];
+  starttime: string;
+  endtime: string;
+  type: 'busy' | 'tentative' | 'meeting';
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const TEAM_DAYS = ['Mon 13', 'Tue 14', 'Wed 15', 'Thu 16', 'Fri 17'];
-const TEAM_HOURS = ['8 AM', '9 AM', '10 AM', '11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM'];
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const MAX_SUGGEST_DAYS = 5;
 
-const makeSchedule = (pattern: (string)[]) => {
-  const s: Record<string, 'free' | 'busy' | 'tentative'> = {};
-  TEAM_DAYS.forEach((_, d) => {
-    TEAM_HOURS.forEach((_, h) => {
-      s[`${d}-${h}`] = (pattern[d * TEAM_HOURS.length + h] as any) || 'free';
-    });
+function getWorkspaceId(workspace?: Workspace | null) {
+  return workspace?.workspaceid || workspace?.id || '';
+}
+
+function getWorkspaceMembers(workspace?: Workspace | null) {
+  return workspace?.members || workspace?.member || [];
+}
+
+function toLocalInputValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function getDefaultRange() {
+  const start = new Date();
+  start.setDate(start.getDate() + 1);
+  start.setHours(8, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(18, 0, 0, 0);
+  return {
+    searchStart: toLocalInputValue(start),
+    searchEnd: toLocalInputValue(end),
+  };
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  return date.toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
-  return s;
-};
-
-const b = 'busy', f = 'free', t = 'tentative';
-const mockMembers: Member[] = [
-  { id: '1', name: 'Alex Chen',   initials: 'AC', role: 'Team Leader',    color: 'bg-purple-200 text-purple-700',
-    schedule: makeSchedule([f,f,b,b,f,b,b,f,f,f, f,b,b,f,f,b,f,f,f,f, f,f,f,f,b,f,f,b,b,f, b,b,f,f,f,f,f,b,f,f, f,f,f,b,b,f,f,f,f,f]) },
-  { id: '2', name: 'Jane Smith',  initials: 'JS', role: 'Developer',      color: 'bg-fuchsia-200 text-fuchsia-700',
-    schedule: makeSchedule([f,f,f,b,b,f,f,b,f,f, b,b,f,f,f,f,t,t,f,f, f,f,b,b,f,f,f,f,b,b, f,f,f,b,f,b,b,f,f,f, f,b,b,f,f,f,f,t,t,f]) },
-  { id: '3', name: 'Marcus Lee',  initials: 'ML', role: 'Designer',       color: 'bg-violet-200 text-violet-700',
-    schedule: makeSchedule([b,b,f,f,f,f,b,b,f,f, f,f,b,b,b,f,f,f,b,f, f,b,b,f,f,b,b,f,f,f, f,f,b,b,f,f,f,b,b,f, b,f,f,f,t,t,f,f,f,b]) },
-  { id: '4', name: 'Sarah Lim',   initials: 'SL', role: 'PM',             color: 'bg-indigo-200 text-indigo-700',
-    schedule: makeSchedule([f,b,b,f,f,f,f,b,b,f, f,f,f,b,b,b,f,f,f,f, b,b,f,f,f,f,b,b,f,f, f,f,f,f,b,b,f,f,t,t, f,f,b,b,f,f,f,f,b,f]) },
-  { id: '5', name: 'Ryan Park',   initials: 'RP', role: 'QA Engineer',    color: 'bg-sky-200 text-sky-700',
-    schedule: makeSchedule([f,f,b,b,b,f,f,f,b,f, f,b,b,f,f,f,b,b,f,f, f,f,f,b,b,f,f,f,f,b, b,f,f,f,f,b,b,f,f,f, f,b,b,b,f,f,f,b,f,f]) },
-  { id: '6', name: 'Priya Nair',  initials: 'PN', role: 'Data Analyst',   color: 'bg-rose-200 text-rose-700',
-    schedule: makeSchedule([f,f,f,f,b,b,f,f,f,t, b,b,f,f,f,b,b,f,f,f, f,f,b,b,b,f,f,b,b,f, f,f,f,b,b,f,f,f,b,b, f,f,f,f,b,b,b,f,f,f]) },
-  { id: '7', name: 'Tom Wu',      initials: 'TW', role: 'Backend Dev',    color: 'bg-teal-200 text-teal-700',
-    schedule: makeSchedule([b,b,f,f,f,b,b,b,f,f, f,f,f,b,b,f,f,f,b,b, f,b,b,f,f,f,b,b,f,f, f,f,b,b,f,f,f,f,b,b, b,b,f,f,f,f,t,t,f,f]) },
-];
-
-const suggestedSlots: SuggestedSlot[] = [
-  { id: '1', date: 'Apr 14', day: 'Tuesday', time: '9:00 – 10:00 AM', duration: '60 min', score: 97, quality: 'best',
-    freeCount: 7, conflicts: [], label: 'Best Match' },
-  { id: '2', date: 'Apr 13', day: 'Monday',  time: '3:00 – 4:00 PM',  duration: '60 min', score: 84, quality: 'good',
-    freeCount: 6, conflicts: ['Ryan Park'], label: 'Good Alternative' },
-  { id: '3', date: 'Apr 15', day: 'Wednesday', time: '11:00 AM – 12:00 PM', duration: '60 min', score: 71, quality: 'low',
-    freeCount: 5, conflicts: ['Ryan Park', 'Tom Wu'], label: 'Low Conflict Slot' },
-];
-
-const participantResponses: ParticipantResponse[] = [
-  { memberId: '1', name: 'Alex Chen',  initials: 'AC', color: 'bg-purple-200 text-purple-700',  status: 'accepted',  responseTime: '2 min ago',  note: 'See you all there!' },
-  { memberId: '2', name: 'Jane Smith', initials: 'JS', color: 'bg-fuchsia-200 text-fuchsia-700', status: 'accepted',  responseTime: '5 min ago' },
-  { memberId: '3', name: 'Marcus Lee', initials: 'ML', color: 'bg-violet-200 text-violet-700',   status: 'pending',   responseTime: undefined },
-  { memberId: '4', name: 'Sarah Lim',  initials: 'SL', color: 'bg-indigo-200 text-indigo-700',   status: 'accepted',  responseTime: '12 min ago' },
-  { memberId: '5', name: 'Ryan Park',  initials: 'RP', color: 'bg-sky-200 text-sky-700',         status: 'declined',  responseTime: '1 hr ago',   note: 'Conflict with uni class' },
-  { memberId: '6', name: 'Priya Nair', initials: 'PN', color: 'bg-rose-200 text-rose-700',       status: 'pending',   responseTime: undefined },
-  { memberId: '7', name: 'Tom Wu',     initials: 'TW', color: 'bg-teal-200 text-teal-700',       status: 'accepted',  responseTime: '30 min ago' },
-];
-
-const notifHistory: NotifHistory[] = [
-  { id: '1', title: 'Sprint Planning – Apr 14 9 AM',   sentAt: '2 hours ago',  recipients: 7, type: 'meeting_invite', deliveredPct: 100 },
-  { id: '2', title: 'Design Review reminder',          sentAt: '5 hours ago',  recipients: 5, type: 'reminder',       deliveredPct: 100 },
-  { id: '3', title: 'Marketing Brainstorm rescheduled',sentAt: '1 day ago',    recipients: 6, type: 'update',         deliveredPct: 83 },
-  { id: '4', title: 'Weekly sync cancelled',           sentAt: '3 days ago',   recipients: 8, type: 'cancel',         deliveredPct: 100 },
-];
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const slotQualityStyle: Record<SuggestedSlot['quality'], { badge: string; bg: string; border: string; ring: string }> = {
-  best: { badge: 'bg-green-50 text-green-700',   bg: 'bg-green-50/30',   border: 'border-green-200',  ring: 'ring-green-100' },
-  good: { badge: 'bg-purple-50 text-purple-700', bg: 'bg-purple-50/20',  border: 'border-purple-200', ring: 'ring-purple-100' },
-  low:  { badge: 'bg-amber-50 text-amber-700',   bg: 'bg-amber-50/20',   border: 'border-amber-200',  ring: 'ring-amber-100' },
-};
-
-const responseStyle: Record<ResponseStatus, { icon: React.ReactNode; cls: string; label: string }> = {
-  accepted: { icon: <CheckCircle size={13} />, cls: 'text-green-500 bg-green-50',  label: 'Accepted' },
-  pending:  { icon: <Clock size={13} />,       cls: 'text-amber-500 bg-amber-50',  label: 'Pending' },
-  declined: { icon: <XCircle size={13} />,     cls: 'text-red-500 bg-red-50',      label: 'Declined' },
-};
-
-const notifTypeStyle: Record<NotifHistory['type'], { label: string; cls: string }> = {
-  meeting_invite: { label: 'Invite',    cls: 'bg-purple-50 text-purple-600' },
-  reminder:       { label: 'Reminder',  cls: 'bg-blue-50 text-blue-600' },
-  update:         { label: 'Update',    cls: 'bg-amber-50 text-amber-600' },
-  cancel:         { label: 'Cancelled', cls: 'bg-red-50 text-red-500' },
-};
-
-// Cell coloring for team grid
-function getCellClass(val: 'free' | 'busy' | 'tentative') {
-  if (val === 'free') return 'bg-green-100/70';
-  if (val === 'busy') return 'bg-red-100/60';
-  return 'bg-amber-100/70';
 }
 
-// Compute per-column (day+hour) free ratio across all members
-function getColumnFreeness(di: number, hi: number): number {
-  const free = mockMembers.filter(m => m.schedule[`${di}-${hi}`] === 'free').length;
-  return free / mockMembers.length;
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function Card({ title, icon, children, className = '', action }: {
-  title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode;
+function formatMember(member: WorkspaceMember) {
+  return member.fullname || member.username;
+}
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function overlaps(event: BusyEvent, start: Date, end: Date) {
+  return new Date(event.starttime) < end && new Date(event.endtime) > start;
+}
+
+function parseHour(value: string) {
+  const hour = new Date(value).getHours();
+  return Number.isFinite(hour) ? hour : 8;
+}
+
+function qualityLabel(slot: SuggestedSlot) {
+  if (slot.quality === 'best') return 'Best match';
+  if (slot.quality === 'good') return 'Good option';
+  return 'Available';
+}
+
+function Card({ title, icon, children, action }: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${className}`}>
+    <section className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl bg-purple-50 flex items-center justify-center text-purple-500 shrink-0">{icon}</div>
+          <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500 shrink-0">{icon}</div>
           <h3 className="font-semibold text-gray-900 text-sm">{title}</h3>
         </div>
         {action}
       </div>
       <div className="p-5">{children}</div>
-    </div>
+    </section>
   );
 }
 
-// Score ring visual
-function ScoreRing({ score, quality }: { score: number; quality: SuggestedSlot['quality'] }) {
-  const color = quality === 'best' ? '#22c55e' : quality === 'good' ? '#a855f7' : '#f59e0b';
-  const r = 18, c = 22, circumf = 2 * Math.PI * r;
-  return (
-    <div className="relative w-11 h-11 shrink-0">
-      <svg width="44" height="44" className="-rotate-90">
-        <circle cx={c} cy={c} r={r} fill="none" stroke="#f1f5f9" strokeWidth="4" />
-        <circle cx={c} cy={c} r={r} fill="none" stroke={color} strokeWidth="4"
-          strokeDasharray={circumf} strokeDashoffset={circumf * (1 - score / 100)}
-          strokeLinecap="round" />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-700">{score}</span>
-    </div>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-export function TeamCoordination() {
-  const [selectedSlot, setSelectedSlot] = useState<string>('1');
+export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
+  const token = localStorage.getItem('uniplatform_user_token') || '';
+  const currentUsername = localStorage.getItem('uniplatform_username') || '';
+  const defaultRange = useMemo(() => getDefaultRange(), []);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analyzed, setAnalyzed] = useState(true);
-  const [participants, setParticipants] = useState(participantResponses);
-  const [responses, setResponses] = useState(participantResponses);
-
-  // Meeting form
+  const [creating, setCreating] = useState(false);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [durationMinutes, setDurationMinutes] = useState(60);
+  const [searchStart, setSearchStart] = useState(defaultRange.searchStart);
+  const [searchEnd, setSearchEnd] = useState(defaultRange.searchEnd);
   const [meetingTitle, setMeetingTitle] = useState('');
-  const [meetingDesc, setMeetingDesc] = useState('');
-  const [meetingDuration, setMeetingDuration] = useState('60');
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [notifSent, setNotifSent] = useState(false);
+  const [meetingPlace, setMeetingPlace] = useState('');
+  const [meetingLink, setMeetingLink] = useState('');
+  const [slots, setSlots] = useState<SuggestedSlot[]>([]);
+  const [busyEvents, setBusyEvents] = useState<BusyEvent[]>([]);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
 
-  const accepted = responses.filter(r => r.status === 'accepted').length;
-  const pending  = responses.filter(r => r.status === 'pending').length;
-  const declined = responses.filter(r => r.status === 'declined').length;
+  const members = getWorkspaceMembers(workspace);
+  const currentMembership = members.find(member => member.username === currentUsername);
+  const canCoordinate = !currentMembership || currentMembership.workspacerole === 'Leader';
+  const selectedSlot = slots.find(slot => slot.id === selectedSlotId) || slots[0];
+  const workspaceName = workspace?.name || 'Workspace';
 
-  const selectedSlotData = suggestedSlots.find(s => s.id === selectedSlot)!;
+  const fetchJson = async (url: string, init?: RequestInit) => {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers || {}),
+      },
+    });
 
-  const handleAnalyze = () => {
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.message || 'Request failed');
+    }
+    return data;
+  };
+
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    const loadWorkspace = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchJson(`${apiUrl}/api/workspaces/${workspaceId}`);
+        setWorkspace(data);
+        const workspaceMembers = getWorkspaceMembers(data);
+        setSelectedParticipants(workspaceMembers.map(member => member.username));
+      } catch (error) {
+        console.error('Load workspace coordination error', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to load workspace');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadWorkspace();
+  }, [workspaceId]);
+
+  useEffect(() => {
+    setSelectedSlotId(slots[0]?.id || '');
+  }, [slots]);
+
+  const selectedMemberObjects = useMemo(() => {
+    const selected = new Set(selectedParticipants);
+    return members.filter(member => selected.has(member.username));
+  }, [members, selectedParticipants]);
+
+  const availabilityDays = useMemo(() => {
+    const start = new Date(searchStart);
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: MAX_SUGGEST_DAYS }, (_, index) => {
+      const day = new Date(start);
+      day.setDate(day.getDate() + index);
+      return day;
+    });
+  }, [searchStart]);
+
+  const availabilityHours = useMemo(() => {
+    const startHour = parseHour(searchStart);
+    const endHour = Math.max(startHour + 1, parseHour(searchEnd));
+    return Array.from({ length: Math.min(16, endHour - startHour) }, (_, index) => startHour + index);
+  }, [searchStart, searchEnd]);
+
+  const handleParticipantToggle = (username: string) => {
+    setSelectedParticipants(prev => {
+      if (prev.includes(username)) return prev.filter(item => item !== username);
+      return [...prev, username];
+    });
+  };
+
+  const getCellState = (username: string, day: Date, hour: number) => {
+    const start = new Date(day);
+    start.setHours(hour, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+    const event = busyEvents.find(item => item.usernames.includes(username) && overlaps(item, start, end));
+    if (!event) return 'free';
+    if (event.source === 'meeting') return 'meeting';
+    return event.type;
+  };
+
+  const handleAnalyze = async () => {
+    const workspaceid = getWorkspaceId(workspace);
+    if (!workspaceid || selectedParticipants.length === 0) {
+      toast.error('Select a workspace and at least one participant');
+      return;
+    }
+
+    if (new Date(searchEnd) <= new Date(searchStart)) {
+      toast.error('Search end must be after search start');
+      return;
+    }
+
     setAnalyzing(true);
-    setTimeout(() => { setAnalyzing(false); setAnalyzed(true); }, 1500);
+    try {
+      const data = await fetchJson(`${apiUrl}/api/meetings/suggest-slots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceid,
+          participants: selectedParticipants,
+          durationMinutes,
+          searchStart: new Date(searchStart).toISOString(),
+          searchEnd: new Date(searchEnd).toISOString(),
+        }),
+      });
+
+      setSlots(data.data?.slots || []);
+      setBusyEvents(data.data?.busyEvents || []);
+      if ((data.data?.slots || []).length === 0) {
+        toast.error('No free slot found. Try a wider date range, shorter duration, or fewer participants.');
+      } else {
+        toast.success('Free slots found');
+      }
+    } catch (error) {
+      console.error('Analyze schedules error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to analyze schedules');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
-  const handleSendNotif = () => {
-    setNotifSent(true);
-    setTimeout(() => setNotifSent(false), 3000);
+  const handleCreateMeeting = async () => {
+    if (!selectedSlot) {
+      toast.error('Choose a suggested slot first');
+      return;
+    }
+
+    if (!meetingTitle.trim()) {
+      toast.error('Meeting title is required');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await fetchJson(`${apiUrl}/api/meetings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceid: getWorkspaceId(workspace),
+          title: meetingTitle.trim(),
+          starttime: new Date(selectedSlot.starttime).toISOString(),
+          endtime: new Date(selectedSlot.endtime).toISOString(),
+          participants: selectedParticipants,
+          place: meetingPlace.trim() || undefined,
+          link: meetingLink.trim() || undefined,
+        }),
+      });
+
+      toast.success('Meeting created and added to calendars');
+      setMeetingTitle('');
+      setMeetingPlace('');
+      setMeetingLink('');
+      await handleAnalyze();
+    } catch (error) {
+      console.error('Create coordinated meeting error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create meeting');
+    } finally {
+      setCreating(false);
+    }
   };
+
+  if (!workspaceId) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-gray-50/40 min-h-full p-8">
+        <div className="max-w-3xl mx-auto bg-white border border-gray-100 rounded-xl p-8 text-center text-gray-500">
+          Select a workspace first to coordinate a meeting.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50/40 min-h-full">
       <div className="max-w-6xl mx-auto px-6 py-8 pb-20 space-y-6">
-
-        {/* ── Header ───────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -238,40 +357,39 @@ export function TeamCoordination() {
               <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Team Leader</span>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Meeting Coordination</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Analyze team schedules, find optimal slots, and notify your team</p>
+            <p className="text-sm text-gray-400 mt-0.5">Analyze real schedules in {workspaceName} and create conflict-free meetings</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-gray-100 shadow-sm">
               <Users size={14} className="text-purple-400" />
-              <span className="text-sm font-semibold text-gray-700">{mockMembers.length} members</span>
+              <span className="text-sm font-semibold text-gray-700">{members.length} members</span>
             </div>
             <button
               onClick={handleAnalyze}
-              disabled={analyzing}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-purple-200 bg-white text-purple-600 text-sm font-semibold hover:bg-purple-50 transition-colors"
+              disabled={loading || analyzing || !canCoordinate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-purple-200 bg-white text-purple-600 text-sm font-semibold hover:bg-purple-50 transition-colors disabled:opacity-60"
             >
               {analyzing ? <RefreshCw size={14} className="animate-spin" /> : <BarChart2 size={14} />}
-              {analyzing ? 'Analyzing…' : 'Analyze Schedules'}
-            </button>
-            <button
-              onClick={() => setShowConfirmModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm"
-            >
-              <Plus size={14} />
-              Create Meeting
+              {analyzing ? 'Analyzing...' : 'Analyze Schedules'}
             </button>
           </div>
         </div>
 
-        {/* Stats row */}
+        {!canCoordinate && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <AlertTriangle size={16} />
+            Only workspace leaders can create coordinated meetings.
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: 'Team Members',    value: mockMembers.length, icon: <Users size={15} />,      color: 'text-purple-500', bg: 'bg-purple-50' },
-            { label: 'Accepted',        value: accepted,           icon: <CheckCircle size={15} />, color: 'text-green-500',  bg: 'bg-green-50'  },
-            { label: 'Pending Reply',   value: pending,            icon: <Clock size={15} />,       color: 'text-amber-500',  bg: 'bg-amber-50'  },
-            { label: 'Declined',        value: declined,           icon: <XCircle size={15} />,     color: 'text-red-400',    bg: 'bg-red-50'    },
-          ].map((stat, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+            { label: 'Selected', value: selectedParticipants.length, icon: <Users size={15} />, color: 'text-purple-500', bg: 'bg-purple-50' },
+            { label: 'Busy blocks', value: busyEvents.filter(event => event.source === 'schedule').length, icon: <XCircle size={15} />, color: 'text-red-500', bg: 'bg-red-50' },
+            { label: 'Meetings', value: busyEvents.filter(event => event.source === 'meeting').length, icon: <Calendar size={15} />, color: 'text-amber-500', bg: 'bg-amber-50' },
+            { label: 'Free slots', value: slots.length, icon: <CheckCircle size={15} />, color: 'text-green-500', bg: 'bg-green-50' },
+          ].map(stat => (
+            <div key={stat.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
               <div className={`w-9 h-9 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center shrink-0`}>{stat.icon}</div>
               <div>
                 <p className="text-xl font-bold text-gray-900">{stat.value}</p>
@@ -281,182 +399,177 @@ export function TeamCoordination() {
           ))}
         </div>
 
-        {/* ── Main Grid ────────────────────────────────────────── */}
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
-
-          {/* LEFT */}
           <div className="space-y-6">
-
-            {/* Team Availability Dashboard */}
-            <Card title="Team Availability Dashboard" icon={<Calendar size={14} />}
-              action={
-                <div className="flex items-center gap-3 text-[10px] font-semibold">
-                  {[{ color: 'bg-green-200', label: 'Free' }, { color: 'bg-red-200', label: 'Busy' }, { color: 'bg-amber-200', label: 'Tentative' }].map(l => (
-                    <div key={l.label} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-sm ${l.color}`} /><span className="text-gray-400">{l.label}</span></div>
-                  ))}
+            <Card title="Search Settings" icon={<Clock size={14} />}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">From</label>
+                  <input
+                    type="datetime-local"
+                    value={searchStart}
+                    onChange={event => setSearchStart(event.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  />
                 </div>
-              }
-            >
-              <div className="overflow-x-auto">
-                <div className="min-w-[520px]">
-                  {/* Column headers */}
-                  <div className="flex mb-2">
-                    <div className="w-28 shrink-0" />
-                    {TEAM_DAYS.map(d => (
-                      <div key={d} className="flex-1 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide py-1">{d}</div>
-                    ))}
-                  </div>
-
-                  {/* Hour rows */}
-                  {TEAM_HOURS.map((h, hi) => (
-                    <div key={h} className="flex items-stretch mb-0.5">
-                      <div className="w-28 shrink-0 flex items-center">
-                        <span className="text-[10px] text-gray-300 font-medium">{h}</span>
-                      </div>
-                      {TEAM_DAYS.map((_, di) => {
-                        const freeness = getColumnFreeness(di, hi);
-                        const allFree = freeness === 1;
-                        const mostFree = freeness >= 0.85;
-                        return (
-                          <div
-                            key={di}
-                            className={`flex-1 mx-px h-6 rounded-sm flex items-center justify-center transition-all relative group cursor-pointer ${
-                              allFree ? 'bg-green-200/80 ring-1 ring-green-300/50' :
-                              mostFree ? 'bg-green-100/70' :
-                              freeness >= 0.5 ? 'bg-amber-100/60' : 'bg-red-100/50'
-                            }`}
-                          >
-                            <div className="absolute z-10 bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col bg-gray-900 text-white text-[9px] rounded-lg px-2 py-1.5 whitespace-nowrap shadow-xl gap-0.5">
-                              <span className="font-semibold">{TEAM_DAYS[di]} · {h}</span>
-                              <span className="text-gray-300">{Math.round(freeness * mockMembers.length)}/{mockMembers.length} free</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-
-                  {/* Member rows detail */}
-                  <div className="mt-4 space-y-1">
-                    {mockMembers.map(m => (
-                      <div key={m.id} className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${m.color}`}>{m.initials}</div>
-                        <div className="w-20 text-[10px] text-gray-500 font-medium truncate">{m.name.split(' ')[0]}</div>
-                        <div className="flex flex-1 gap-px">
-                          {TEAM_DAYS.map((_, di) =>
-                            TEAM_HOURS.map((_, hi) => (
-                              <div
-                                key={`${di}-${hi}`}
-                                className={`h-3 rounded-[2px] flex-1 ${getCellClass(m.schedule[`${di}-${hi}`])}`}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">To</label>
+                  <input
+                    type="datetime-local"
+                    value={searchEnd}
+                    onChange={event => setSearchEnd(event.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Duration</label>
+                  <select
+                    value={durationMinutes}
+                    onChange={event => setDurationMinutes(Number(event.target.value))}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  >
+                    <option value={30}>30 min</option>
+                    <option value={45}>45 min</option>
+                    <option value={60}>60 min</option>
+                    <option value={90}>90 min</option>
+                    <option value={120}>2 hours</option>
+                  </select>
                 </div>
               </div>
             </Card>
 
-            {/* Conflict Handling */}
-            <Card title="Conflict Analysis" icon={<AlertTriangle size={14} />}>
-              <div className="space-y-3">
-                {selectedSlotData.conflicts.length === 0 ? (
-                  <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-100">
-                    <CheckCircle size={16} className="text-green-500 shrink-0" />
-                    <div>
-                      <p className="text-sm font-semibold text-green-700">No conflicts detected</p>
-                      <p className="text-xs text-green-600 mt-0.5">All 7 members are available for the selected slot.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-100">
-                      <AlertTriangle size={16} className="text-amber-500 shrink-0" />
-                      <div>
-                        <p className="text-sm font-semibold text-amber-700">{selectedSlotData.conflicts.length} conflict{selectedSlotData.conflicts.length > 1 ? 's' : ''} found</p>
-                        <p className="text-xs text-amber-600 mt-0.5">{selectedSlotData.conflicts.join(', ')} {selectedSlotData.conflicts.length === 1 ? 'has' : 'have'} a scheduling conflict.</p>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {selectedSlotData.conflicts.map((name, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-full bg-sky-200 text-sky-700 flex items-center justify-center text-[9px] font-bold">
-                              {name.split(' ').map(n => n[0]).join('')}
+            <Card title="Team Availability Dashboard" icon={<Calendar size={14} />}>
+              {loading ? (
+                <div className="py-12 flex flex-col items-center text-gray-400">
+                  <Loader2 size={24} className="animate-spin mb-3" />
+                  <p className="text-sm">Loading workspace members...</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    {members.map(member => {
+                      const checked = selectedParticipants.includes(member.username);
+                      return (
+                        <label key={member.username} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs cursor-pointer ${checked ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-gray-100 bg-white text-gray-500'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleParticipantToggle(member.username)}
+                            className="accent-purple-500"
+                          />
+                          {getAvatarUrl(member.imageggid) ? (
+                            <img
+                              src={getAvatarUrl(member.imageggid) || ''}
+                              alt={`${formatMember(member)} avatar`}
+                              className="w-6 h-6 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px] font-bold">
+                              {initials(formatMember(member))}
                             </div>
-                            <div>
-                              <p className="text-xs font-semibold text-gray-700">{name}</p>
-                              <p className="text-[10px] text-gray-400">Has existing commitment at this time</p>
+                          )}
+                          <span>{formatMember(member)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[700px]">
+                      <div className="grid grid-cols-[140px_repeat(5,1fr)] gap-1 mb-2">
+                        <div />
+                        {availabilityDays.map(day => (
+                          <div key={day.toISOString()} className="text-center text-[10px] font-semibold text-gray-500 uppercase">
+                            {day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </div>
+                        ))}
+                      </div>
+
+                      {selectedMemberObjects.map(member => (
+                        <div key={member.username} className="grid grid-cols-[140px_repeat(5,1fr)] gap-1 mb-2 items-center">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {getAvatarUrl(member.imageggid) ? (
+                              <img
+                                src={getAvatarUrl(member.imageggid) || ''}
+                                alt={`${formatMember(member)} avatar`}
+                                className="w-7 h-7 rounded-full object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+                                {initials(formatMember(member))}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-gray-700 truncate">{formatMember(member)}</p>
+                              <p className="text-[9px] text-gray-400">{member.workspacerole || 'Member'}</p>
                             </div>
                           </div>
-                          <span className="text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-semibold border border-amber-100">Conflict</span>
+                          {availabilityDays.map(day => (
+                            <div key={day.toISOString()} className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${availabilityHours.length}, minmax(0, 1fr))` }}>
+                              {availabilityHours.map(hour => {
+                                const state = getCellState(member.username, day, hour);
+                                const cls = state === 'free'
+                                  ? 'bg-green-100'
+                                  : state === 'meeting'
+                                    ? 'bg-purple-200'
+                                    : state === 'tentative'
+                                      ? 'bg-amber-200'
+                                      : 'bg-red-200';
+                                return <span key={hour} title={`${hour}:00 ${state}`} className={`h-5 rounded-sm ${cls}`} />;
+                              })}
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>
-                  </>
-                )}
+                  </div>
 
-                <div className="pt-2">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Info size={10} />Alternative suggestions</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {['Apr 14, 9–10 AM', 'Apr 15, 2–3 PM', 'Apr 16, 10–11 AM', 'Apr 17, 1–2 PM'].map((alt, i) => (
-                      <button key={i} className="flex items-center gap-2 p-2.5 rounded-xl bg-gray-50 border border-gray-100 hover:border-purple-200 hover:bg-purple-50/30 transition-all text-left group">
-                        <Calendar size={12} className="text-gray-300 group-hover:text-purple-400 shrink-0" />
-                        <span className="text-[10px] text-gray-600 font-medium">{alt}</span>
-                      </button>
+                  <div className="flex flex-wrap gap-3 text-[10px] font-semibold text-gray-400">
+                    {[
+                      ['bg-green-100', 'Free'],
+                      ['bg-red-200', 'Busy'],
+                      ['bg-amber-200', 'Tentative'],
+                      ['bg-purple-200', 'Meeting'],
+                    ].map(([cls, label]) => (
+                      <span key={label} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-sm ${cls}`} />{label}</span>
                     ))}
                   </div>
                 </div>
-              </div>
+              )}
             </Card>
-
           </div>
 
-          {/* RIGHT */}
           <div className="space-y-5">
-
-            {/* Suggested Slots */}
-            <Card title="Suggested Meeting Slots" icon={<Sparkles size={14} />}
-              action={<span className="text-[10px] text-purple-500 font-semibold bg-purple-50 px-2 py-1 rounded-full">AI-powered</span>}
-            >
-              {!analyzed ? (
-                <div className="py-8 text-center text-gray-400">
+            <Card title="Suggested Meeting Slots" icon={<Sparkles size={14} />}>
+              {analyzing ? (
+                <div className="py-10 flex flex-col items-center text-gray-400">
+                  <RefreshCw size={24} className="animate-spin mb-3" />
+                  <p className="text-sm">Finding shared free slots...</p>
+                </div>
+              ) : slots.length === 0 ? (
+                <div className="py-10 text-center text-gray-400">
                   <BarChart2 size={28} className="mx-auto mb-2 text-gray-200" />
-                  <p className="text-xs font-medium">Click "Analyze Schedules" to find optimal slots</p>
+                  <p className="text-xs font-medium">Analyze schedules to find conflict-free slots</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {suggestedSlots.map(slot => {
-                    const qs = slotQualityStyle[slot.quality];
-                    const isSelected = selectedSlot === slot.id;
+                  {slots.map(slot => {
+                    const selected = (selectedSlot?.id || '') === slot.id;
                     return (
                       <button
                         key={slot.id}
-                        onClick={() => setSelectedSlot(slot.id)}
-                        className={`w-full text-left p-3.5 rounded-xl border-2 transition-all ${
-                          isSelected ? `${qs.border} ${qs.bg} ring-2 ${qs.ring}` : 'border-gray-100 hover:border-gray-200 bg-white'
-                        }`}
+                        onClick={() => setSelectedSlotId(slot.id)}
+                        className={`w-full text-left p-3.5 rounded-xl border-2 transition-all ${selected ? 'border-purple-200 bg-purple-50/50 ring-2 ring-purple-100' : 'border-gray-100 hover:border-gray-200 bg-white'}`}
                       >
                         <div className="flex items-center gap-3">
-                          <ScoreRing score={slot.score} quality={slot.quality} />
+                          <div className="w-11 h-11 rounded-full bg-green-50 text-green-600 flex items-center justify-center text-xs font-bold shrink-0">{slot.score}</div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${qs.badge}`}>{slot.label}</span>
-                              {slot.quality === 'best' && <Star size={10} className="text-green-400" fill="currentColor" />}
-                            </div>
-                            <p className="text-xs font-semibold text-gray-800">{slot.day}, {slot.date}</p>
-                            <p className="text-[10px] text-gray-400">{slot.time} · {slot.duration}</p>
-                            <div className="flex items-center gap-1 mt-1">
-                              <Users size={9} className="text-gray-300" />
-                              <span className="text-[9px] text-gray-400">{slot.freeCount}/{mockMembers.length} free</span>
-                              {slot.conflicts.length > 0 && (
-                                <span className="text-[9px] text-amber-500 font-medium ml-1">· {slot.conflicts.length} conflict</span>
-                              )}
-                            </div>
+                            <span className="inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 mb-1">{qualityLabel(slot)}</span>
+                            <p className="text-xs font-semibold text-gray-800">{formatDateTime(slot.starttime)}</p>
+                            <p className="text-[10px] text-gray-400">{formatTime(slot.starttime)} - {formatTime(slot.endtime)} · {slot.durationMinutes} min</p>
+                            <p className="text-[9px] text-gray-400 mt-1">{slot.freeCount}/{selectedParticipants.length} selected members free</p>
                           </div>
-                          {isSelected && <div className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center shrink-0"><Check size={9} className="text-white" /></div>}
+                          {selected && <div className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center shrink-0"><Check size={9} className="text-white" /></div>}
                         </div>
                       </button>
                     );
@@ -465,163 +578,54 @@ export function TeamCoordination() {
               )}
             </Card>
 
-            {/* Create / Confirm Meeting */}
-            <Card title="Meeting Coordination Panel" icon={<Calendar size={14} />}>
+            <Card title="Create Meeting" icon={<Plus size={14} />}>
               <div className="space-y-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Meeting Title</label>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Title</label>
                   <input
                     value={meetingTitle}
-                    onChange={e => setMeetingTitle(e.target.value)}
-                    placeholder="e.g. Sprint Planning Session"
+                    onChange={event => setMeetingTitle(event.target.value)}
+                    placeholder="e.g. Sprint Planning"
                     className="mt-1 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Description</label>
-                  <textarea
-                    value={meetingDesc}
-                    onChange={e => setMeetingDesc(e.target.value)}
-                    rows={2}
-                    placeholder="Brief meeting description…"
-                    className="mt-1 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-purple-300"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Duration</label>
-                    <select value={meetingDuration} onChange={e => setMeetingDuration(e.target.value)}
-                      className="mt-1 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300">
-                      <option value="30">30 min</option>
-                      <option value="45">45 min</option>
-                      <option value="60">60 min</option>
-                      <option value="90">90 min</option>
-                      <option value="120">2 hours</option>
-                    </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Place</label>
+                    <input
+                      value={meetingPlace}
+                      onChange={event => setMeetingPlace(event.target.value)}
+                      placeholder="Room A"
+                      className="mt-1 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    />
                   </div>
-                  <div className="flex-1">
-                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Selected Slot</label>
-                    <div className="mt-1 px-3 py-2 rounded-xl border border-purple-200 bg-purple-50/40 text-[10px] text-purple-700 font-semibold">
-                      {selectedSlotData ? `${selectedSlotData.day}, ${selectedSlotData.date}` : 'None selected'}
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Link</label>
+                    <input
+                      value={meetingLink}
+                      onChange={event => setMeetingLink(event.target.value)}
+                      placeholder="https://..."
+                      className="mt-1 w-full px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    />
                   </div>
                 </div>
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={() => setShowConfirmModal(true)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors"
-                  >
-                    <Check size={12} />
-                    Confirm Slot
-                  </button>
-                  <button
-                    onClick={handleSendNotif}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                      notifSent ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {notifSent ? <><Check size={12} />Sent!</> : <><Send size={12} />Notify Team</>}
-                  </button>
+                <div className="p-3 rounded-xl bg-purple-50 border border-purple-100">
+                  <p className="text-xs font-bold text-purple-700">{selectedSlot ? formatDateTime(selectedSlot.starttime) : 'No slot selected'}</p>
+                  {selectedSlot && <p className="text-[10px] text-purple-600 mt-0.5">{formatTime(selectedSlot.starttime)} - {formatTime(selectedSlot.endtime)}</p>}
                 </div>
+                <button
+                  onClick={handleCreateMeeting}
+                  disabled={creating || !selectedSlot || !canCoordinate}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors disabled:opacity-60"
+                >
+                  {creating ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  {creating ? 'Creating...' : 'Confirm Slot'}
+                </button>
               </div>
             </Card>
-
-            {/* Participant Responses */}
-            <Card title="Participant Responses" icon={<UserCheck size={14} />}
-              action={
-                <div className="flex items-center gap-2 text-[10px] font-semibold">
-                  <span className="text-green-600">{accepted} ✓</span>
-                  <span className="text-amber-500">{pending} ⏳</span>
-                  <span className="text-red-400">{declined} ✗</span>
-                </div>
-              }
-            >
-              {/* Progress bar */}
-              <div className="flex h-2 rounded-full overflow-hidden mb-4 gap-0.5">
-                <div className="bg-green-300 rounded-full transition-all" style={{ flex: accepted }} />
-                <div className="bg-amber-200 rounded-full transition-all" style={{ flex: pending }} />
-                <div className="bg-red-200 rounded-full transition-all" style={{ flex: declined }} />
-              </div>
-
-              <div className="space-y-2">
-                {responses.map(r => {
-                  const rs = responseStyle[r.status];
-                  return (
-                    <div key={r.memberId} className="flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${r.color}`}>{r.initials}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700 truncate">{r.name}</p>
-                        {r.note && <p className="text-[9px] text-gray-400 truncate">"{r.note}"</p>}
-                        {r.responseTime && <p className="text-[9px] text-gray-300">{r.responseTime}</p>}
-                      </div>
-                      <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[9px] font-semibold ${rs.cls}`}>
-                        {rs.icon}
-                        <span>{rs.label}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            {/* Notification History */}
-            <Card title="Notification History" icon={<Bell size={14} />}>
-              <div className="space-y-2.5">
-                {notifHistory.map(n => {
-                  const ns = notifTypeStyle[n.type];
-                  return (
-                    <div key={n.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-50 hover:border-gray-100 transition-all">
-                      <div className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold mt-0.5 ${ns.cls}`}>{ns.label}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-700 truncate">{n.title}</p>
-                        <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-400">
-                          <span>{n.sentAt}</span>
-                          <span>·</span>
-                          <span>{n.recipients} recipients</span>
-                          <span>·</span>
-                          <span className={n.deliveredPct === 100 ? 'text-green-500 font-semibold' : 'text-amber-500 font-semibold'}>{n.deliveredPct}% delivered</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
           </div>
         </div>
       </div>
-
-      {/* ── Confirm Modal ─────────────────────────────────────── */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-8 max-w-sm w-full">
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-500 mb-4">
-              <Calendar size={22} />
-            </div>
-            <h3 className="font-bold text-gray-900 mb-1">Confirm Meeting Slot?</h3>
-            <p className="text-sm text-gray-500 mb-2">
-              You're about to confirm the following slot for your team:
-            </p>
-            <div className="p-3 rounded-xl bg-purple-50 border border-purple-100 mb-5">
-              <p className="text-sm font-bold text-purple-700">{selectedSlotData?.label}</p>
-              <p className="text-xs text-purple-600 mt-0.5">{selectedSlotData?.day}, {selectedSlotData?.date} · {selectedSlotData?.time}</p>
-              <p className="text-xs text-gray-400 mt-1">{selectedSlotData?.freeCount}/{mockMembers.length} members available</p>
-            </div>
-            <p className="text-xs text-gray-400 mb-5">All team members will be notified immediately after confirmation.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowConfirmModal(false)} className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors">Cancel</button>
-              <button
-                onClick={() => { setShowConfirmModal(false); handleSendNotif(); }}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors"
-              >
-                Confirm & Notify
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
