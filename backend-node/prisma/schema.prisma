@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -98,6 +99,9 @@ model Meeting {
   recording_endedat   DateTime?
   recording_error     String?
   recording_metadata  Json?
+
+  rsvpStatus          Json?
+  rsvpDetails         Json?
 
   workspace     Workspace       @relation(fields: [workspaceid], references: [workspaceid])
   meetingMinute MeetingMinutes?

@@ -81,7 +81,7 @@ router.post('/:id/recording/start', validate(meetingIdSchema), meetingController
 router.post('/:id/recording/stop', validate(meetingIdSchema), meetingController.stopRecording);
 router.post('/:id/recording/reprocess', validate(meetingIdSchema), meetingController.reprocessRecording);
 router.get('/:id/recording/status', validate(meetingIdSchema), meetingController.getRecordingStatus);
-
+router.patch('/:id/rsvp', meetingController.rsvpMeeting);
 /**
  * @swagger
  * /api/meetings/{id}:
