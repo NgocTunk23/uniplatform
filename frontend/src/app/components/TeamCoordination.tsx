@@ -71,7 +71,6 @@ interface BusyEvent {
   type: 'busy' | 'tentative' | 'meeting';
 }
 
-// Error mở rộng để giữ status + details từ API
 interface ApiError extends Error {
   status: number;
   details?: { conflicts?: ConflictEvent[] };
@@ -192,24 +191,20 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
 
-  // Đọc token tươi mỗi lần, tránh stale closure
   const getToken = useCallback(() => localStorage.getItem('uniplatform_user_token') || '', []);
   const getCurrentUsername = useCallback(() => localStorage.getItem('uniplatform_username') || '', []);
 
   const members = getWorkspaceMembers(workspace);
 
-  // canCoordinate chỉ true khi user là thành viên VÀ có role Leader/Admin
   const currentMembership = members.find(m => m.username === getCurrentUsername());
   const canCoordinate = ['Leader', 'leader', 'Admin', 'admin'].includes(currentMembership?.workspacerole || '');
 
-  // selectedSlot chỉ được gán khi user chủ động chọn, không fallback ngầm
   const selectedSlot = selectedSlotId != null
     ? (slots.find(s => s.id === selectedSlotId) ?? null)
     : null;
 
   const workspaceName = workspace?.name || 'Workspace';
 
-  // Fix: fetchJson đính kèm status + details vào error để bắt 409
   const fetchJson = useCallback(async (url: string, init?: RequestInit) => {
     const token = getToken();
     const res = await fetch(url, {
@@ -229,7 +224,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     return data;
   }, [getToken]);
 
-  // AbortController để tránh race condition khi workspaceId thay đổi nhanh
   useEffect(() => {
     if (!workspaceId) return;
     const controller = new AbortController();
@@ -259,7 +253,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     return () => { controller.abort(); };
   }, [workspaceId, getToken]);
 
-  // Reset selection khi có kết quả mới, không tự chọn slots[0]
   useEffect(() => {
     setSelectedSlotId(null);
   }, [slots]);
@@ -269,7 +262,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     return members.filter(m => selected.has(m.username));
   }, [members, selectedParticipants]);
 
-  // Số ngày thực sự trong khoảng, tối đa MAX_SUGGEST_DAYS
   const availabilityDays = useMemo(() => {
     const start = new Date(searchStart);
     start.setHours(0, 0, 0, 0);
@@ -284,7 +276,7 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     });
   }, [searchStart, searchEnd]);
 
-  // Khung giờ hiển thị mỗi ngày dựa theo giờ trong ngày, hỗ trợ qua đêm
+  // Fix: Hỗ trợ trường hợp startHour === endHour (Trọn 24 tiếng)
   const availabilityHours = useMemo(() => {
     const startHour = parseHourOnly(searchStart);
     const endHour = parseHourOnly(searchEnd);
@@ -292,9 +284,11 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     if (startHour < endHour) {
       for (let i = startHour; i < endHour; i++) hours.push(i);
     } else if (startHour > endHour) {
-      // qua đêm: ví dụ 20h → 6h sáng
       for (let i = startHour; i <= 23; i++) hours.push(i);
       for (let i = 0; i < endHour; i++) hours.push(i);
+    } else {
+      // Trường hợp tròn 24h hoặc hơn
+      for (let i = 0; i <= 23; i++) hours.push(i);
     }
     return hours.length > 0 ? hours : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
   }, [searchStart, searchEnd]);
@@ -305,11 +299,21 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     );
   };
 
+  // Fix: Logic qua đêm
   const getCellState = (username: string, day: Date, hour: number) => {
     const start = new Date(day);
+
+    // Nếu giờ đang xét nhỏ hơn giờ bắt đầu search => Đây là rạng sáng của ngày hôm sau
+    const startHour = parseHourOnly(searchStart);
+    const endHour = parseHourOnly(searchEnd);
+    if (startHour > endHour && hour <= endHour) {
+      start.setDate(start.getDate() + 1);
+    }
+
     start.setHours(hour, 0, 0, 0);
     const end = new Date(start);
     end.setHours(end.getHours() + 1);
+
     const event = busyEvents.find(e => e.usernames.includes(username) && overlaps(e, start, end));
     if (!event) return 'free';
     if (event.source === 'meeting') return 'meeting';
@@ -354,7 +358,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     }
   }, [workspace, selectedParticipants, durationMinutes, searchStart, searchEnd, fetchJson]);
 
-  // submitCreateMeeting: gọi API, bắt 409 để mở popup conflict
   const submitCreateMeeting = useCallback(async (body: Record<string, unknown>) => {
     setCreating(true);
     try {
@@ -371,7 +374,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
       await handleAnalyze();
     } catch (error) {
       const apiError = error as ApiError;
-      // Fix: status và details giờ được đính kèm đúng từ fetchJson
       if (apiError.status === 409 && apiError.details?.conflicts?.length) {
         setConflictInfo({ conflicts: apiError.details.conflicts, pendingBody: body });
       } else {
@@ -421,11 +423,8 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
     );
   }
 
-  const dayGridCols = `grid-cols-[140px_repeat(${availabilityDays.length},1fr)]`;
-
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50/40 min-h-full">
-      {/* Conflict Popup — đặt ngoài Card để tránh z-index bị clip */}
       {conflictInfo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-md w-full">
@@ -494,7 +493,8 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
             </div>
             <button
               onClick={handleAnalyze}
-              disabled={loading || analyzing || !canCoordinate}
+              // Fix: Disable khi không chọn thành viên nào
+              disabled={loading || analyzing || !canCoordinate || selectedParticipants.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-purple-200 bg-white text-purple-600 text-sm font-semibold hover:bg-purple-50 transition-colors disabled:opacity-60"
             >
               {analyzing ? <RefreshCw size={14} className="animate-spin" /> : <BarChart2 size={14} />}
@@ -509,23 +509,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
             Only workspace leaders can create coordinated meetings.
           </div>
         )}
-
-        {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: 'Selected', value: selectedParticipants.length, icon: <Users size={15} />, color: 'text-purple-500', bg: 'bg-purple-50' },
-            { label: 'Busy blocks', value: busyEvents.filter(e => e.source === 'schedule').length, icon: <XCircle size={15} />, color: 'text-red-500', bg: 'bg-red-50' },
-            { label: 'Meetings', value: busyEvents.filter(e => e.source === 'meeting').length, icon: <Calendar size={15} />, color: 'text-amber-500', bg: 'bg-amber-50' },
-            { label: 'Free slots', value: slots.length, icon: <CheckCircle size={15} />, color: 'text-green-500', bg: 'bg-green-50' },
-          ].map(stat => (
-            <div key={stat.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl ${stat.bg} ${stat.color} flex items-center justify-center shrink-0`}>{stat.icon}</div>
-              <div>
-                <p className="text-xl font-bold text-gray-900">{stat.value}</p>
-                <p className="text-xs text-gray-400">{stat.label}</p>
-              </div>
-            </div>
-          ))}
-        </div> */}
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
@@ -607,7 +590,8 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
 
                   <div className="overflow-x-auto">
                     <div style={{ minWidth: `${140 + availabilityDays.length * 120}px` }}>
-                      <div className={`grid ${dayGridCols} gap-1 mb-2`}>
+                      {/* Fix: CSS Style thay cho class động */}
+                      <div className="grid gap-1 mb-2" style={{ gridTemplateColumns: `140px repeat(${availabilityDays.length}, 1fr)` }}>
                         <div />
                         {availabilityDays.map(day => (
                           <div key={day.toISOString()} className="text-center text-[10px] font-semibold text-gray-500 uppercase">
@@ -617,8 +601,9 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                       </div>
 
                       {selectedMemberObjects.map(member => (
-                        <div key={member.username} className={`grid ${dayGridCols} gap-1 mb-2 items-center`}>
-                          <div className="flex items-center gap-2 min-w-0">
+                        <div key={member.username} className="grid gap-1 mb-2 items-center" style={{ gridTemplateColumns: `140px repeat(${availabilityDays.length}, 1fr)` }}>
+                          {/* Fix: Thêm title để hover hiển thị đủ tên */}
+                          <div className="flex items-center gap-2 min-w-0" title={formatMember(member)}>
                             {getAvatarUrl(member.imageggid) ? (
                               <img
                                 src={getAvatarUrl(member.imageggid) || ''}
@@ -725,7 +710,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
               )}
             </Card>
 
-            {/* Fix: form Create Meeting đầy đủ, không bị mất */}
             <Card title="Create Meeting" icon={<Plus size={14} />}>
               <div className="space-y-3">
                 <div>
@@ -762,7 +746,6 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                   </div>
                 </div>
 
-                {/* Slot preview — yêu cầu user chọn tường minh */}
                 <div className={`p-3 rounded-xl border ${selectedSlot ? 'bg-purple-50 border-purple-100' : 'bg-gray-50 border-gray-100'}`}>
                   {selectedSlot ? (
                     <>

@@ -785,6 +785,49 @@ const deleteMeeting = async (meetingId, currentUser) => {
   });
 };
 
+// ================= HÀM XỬ LÝ RSVP (CHẤP NHẬN / TỪ CHỐI) =================
+const updateRSVP = async (meetingId, rsvpData, currentUser) => {
+  const { status, reason, attachment } = rsvpData;
+
+  // 1. Tìm meeting trong DB
+  const meeting = await prisma.meeting.findUnique({
+    where: { meetingid: meetingId }
+  });
+
+  if (!meeting) return null;
+
+  // 2. Lấy dữ liệu rsvp hiện tại (đảm bảo là dạng object)
+  const currentRsvpStatus = meeting.rsvpStatus || {};
+  const currentRsvpDetails = meeting.rsvpDetails || {};
+
+  // 3. Cập nhật trạng thái cho user đang thao tác
+  currentRsvpStatus[currentUser.username] = status;
+
+  if (reason || attachment) {
+    currentRsvpDetails[currentUser.username] = {
+      ...(currentRsvpDetails[currentUser.username] || {}),
+      reason: reason || undefined,
+      attachment: attachment || undefined
+    };
+  }
+
+  // 4. Lưu lại vào DB
+  const updatedMeeting = await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      rsvpStatus: currentRsvpStatus,
+      rsvpDetails: currentRsvpDetails
+    },
+    include: {
+      workspace: { select: { name: true } },
+      meetingMinute: true
+    }
+  });
+
+  // 5. Trả về data đã được "làm giàu" thêm thông tin user
+  return await enrichMeetingParticipants(updatedMeeting);
+};
+
 module.exports = {
   getAllMeetings,
   getMeetingsByWorkspace,
@@ -799,5 +842,6 @@ module.exports = {
   reviewMeetingTranscript,
   generateMeetingSummary,
   evaluateMeetingSummary,
-  deleteMeeting
+  deleteMeeting,
+  updateRSVP
 };

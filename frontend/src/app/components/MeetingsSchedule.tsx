@@ -405,6 +405,9 @@ export function MeetingsSchedule() {
     try {
       await fetchJson(`${apiUrl}/api/meetings/${meetingId}/rsvp`, {
         method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ status, reason, attachment })
       });
       toast.success(status === 'accepted' ? 'Đã chấp nhận tham gia!' : 'Đã từ chối cuộc họp!');

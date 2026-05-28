@@ -50,7 +50,7 @@ const checkFfmpeg = () => {
 };
 
 const checkPythonWhisper = () => {
-  const pythonBin = process.env.PYTHON_BIN || path.join(repoRoot, 'backend-python', 'venv', 'bin', 'python');
+  const pythonBin = process.env.PYTHON_BIN || path.join(repoRoot, 'backend-python', 'venv', 'Scripts', 'python.exe');
   if (!fs.existsSync(pythonBin)) {
     status.fail('Python venv', `${pythonBin} not found`);
     return;

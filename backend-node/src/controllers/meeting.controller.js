@@ -26,7 +26,7 @@ const { meetingRooms } = require('../socket/meeting.socket');
 const getAllMeetings = async (req, res, next) => {
   try {
     const meetings = await meetingService.getAllMeetings(req.user);
-    
+
     // Add live participant count
     const meetingsWithLiveCount = meetings.map(meeting => {
       const room = meetingRooms.get(meeting.meetingid);
@@ -36,7 +36,7 @@ const getAllMeetings = async (req, res, next) => {
         activeParticipantsCount: room ? room.size : 0
       };
     });
-    
+
     res.json(meetingsWithLiveCount);
   } catch (error) {
     next(error);
@@ -46,7 +46,7 @@ const getAllMeetings = async (req, res, next) => {
 const getMeetingsByWorkspace = async (req, res, next) => {
   try {
     const meetings = await meetingService.getMeetingsByWorkspace(req.params.workspaceId, req.user);
-    
+
     // Add live participant count
     const meetingsWithLiveCount = meetings.map(meeting => {
       const room = meetingRooms.get(meeting.meetingid);
@@ -56,7 +56,7 @@ const getMeetingsByWorkspace = async (req, res, next) => {
         activeParticipantsCount: room ? room.size : 0
       };
     });
-    
+
     res.json(meetingsWithLiveCount);
   } catch (error) {
     next(error);
@@ -106,6 +106,19 @@ const updateMeeting = async (req, res, next) => {
     const meeting = await meetingService.updateMeeting(req.params.id, req.body, req.user);
     if (!meeting) throw new ApiError(404, 'Meeting not found');
     res.json({ ...meeting, id: meeting.meetingid });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const rsvpMeeting = async (req, res, next) => {
+  try {
+    // Gọi xuống service để cập nhật trạng thái rsvp vào DB
+    // req.body sẽ chứa { status, reason, attachment } mà Frontend gửi lên
+    const meeting = await meetingService.updateRSVP(req.params.id, req.body, req.user);
+
+    if (!meeting) throw new ApiError(404, 'Meeting not found');
+    res.json({ success: true, data: meeting });
   } catch (error) {
     next(error);
   }
@@ -239,5 +252,6 @@ module.exports = {
   stopRecording,
   getRecordingStatus,
   reprocessRecording,
-  deleteMeeting
+  deleteMeeting,
+  rsvpMeeting
 };
