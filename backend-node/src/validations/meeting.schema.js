@@ -6,6 +6,7 @@ const dateTimeString = z.string().refine((value) => !Number.isNaN(Date.parse(val
 });
 
 const meetingStatus = z.enum(['upcoming', 'ongoing', 'ended']);
+const rsvpStatus = z.enum(['accepted', 'declined']);
 
 const dateRangeRefinement = (data, ctx) => {
   if (data.starttime && data.endtime && new Date(data.endtime) <= new Date(data.starttime)) {
@@ -54,6 +55,7 @@ const updateMeetingSchema = z.object({
     id: objectId,
   }),
   body: z.object({
+    workspaceid: objectId.optional(),
     title: z.string().trim().min(1).max(180).optional(),
     starttime: dateTimeString.optional(),
     endtime: dateTimeString.optional(),
@@ -86,6 +88,17 @@ const updateMeetingStatusSchema = z.object({
   }),
   body: z.object({
     status: meetingStatus,
+  }),
+});
+
+const rsvpMeetingSchema = z.object({
+  params: z.object({
+    id: objectId,
+  }),
+  body: z.object({
+    status: rsvpStatus,
+    reason: z.string().trim().max(1000).optional().nullable(),
+    attachment: z.string().trim().max(500).optional().nullable(),
   }),
 });
 
@@ -156,6 +169,7 @@ module.exports = {
   meetingIdSchema,
   workspaceMeetingsSchema,
   updateMeetingStatusSchema,
+  rsvpMeetingSchema,
   upsertMeetingMinutesSchema,
   transcriptCorrectionSchema,
   transcriptReviewSchema,

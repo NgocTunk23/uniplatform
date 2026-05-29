@@ -21,7 +21,7 @@ services:
     healthcheck:
       # Sửa lỗi cú pháp bằng cách bọc trong dấu ngoặc kép và dùng CMD-SHELL
       test: >
-        mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
+        mongosh --quiet -u root -p password --authenticationDatabase admin --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,9 +47,20 @@ services:
       - PORT=5001
       - TZ=Asia/Ho_Chi_Minh
       - MONGO_URI=${MONGO_URI}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:5001}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GOOGLE_DRIVE_REDIRECT_URI=${GOOGLE_DRIVE_REDIRECT_URI:-http://localhost:5001/api/auth/google-drive/connect/callback}
+      - GOOGLE_DRIVE_APP_FOLDER_NAME=${GOOGLE_DRIVE_APP_FOLDER_NAME:-UniPlatform}
+      - DRIVE_TOKEN_ENCRYPTION_KEY=${DRIVE_TOKEN_ENCRYPTION_KEY:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-}
+      - SMTP_EMAIL=${SMTP_EMAIL:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - FROM_NAME=${FROM_NAME:-UniPlatform System}
+      - FROM_EMAIL=${FROM_EMAIL:-}
       - PYTHON_API_URL=http://backend-python:8000
       - JWT_SECRET=${JWT_SECRET}
       - RECORDING_ENABLED=${RECORDING_ENABLED:-true}
@@ -58,7 +69,14 @@ services:
       # ⬇️ SỬA DÒNG NÀY: Dùng biến host.docker.internal tự động điều hướng kết nối
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
+      - OLLAMA_JSON_RETRIES=${OLLAMA_JSON_RETRIES:-2}
       - OLLAMA_TIMEOUT_MS=${OLLAMA_TIMEOUT_MS:-300000}
+      - MEETING_SUMMARY_CHUNK_CHARS=${MEETING_SUMMARY_CHUNK_CHARS:-6000}
+      - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
+      - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
+      - SUMMARY_SCORE_CONCISENESS_COEFF=${SUMMARY_SCORE_CONCISENESS_COEFF:-0.5}
+      - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
+      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-300000}
     depends_on:
       - backend-python
       - mongodb

@@ -19,6 +19,7 @@ import {
   Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { canJoinMeeting, JOIN_WINDOW_MINUTES } from '../utils/meeting';
 
 type AvailStatus = 'busy' | 'tentative';
 type CalView = 'day' | 'week' | 'month';
@@ -79,6 +80,21 @@ const statusStyle: Record<AvailStatus | 'meeting', { bg: string; text: string; d
   busy: { bg: 'bg-red-100/70', text: 'text-red-700', dot: 'bg-red-400', badge: 'bg-red-50 text-red-600 border-red-100', label: 'Busy' },
   tentative: { bg: 'bg-amber-100/80', text: 'text-amber-700', dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-600 border-amber-100', label: 'Tentative' },
   meeting: { bg: 'bg-purple-100/80', text: 'text-purple-700', dot: 'bg-purple-400', badge: 'bg-purple-50 text-purple-600 border-purple-100', label: 'Meeting' },
+};
+
+const getStatusStyle = (status: AvailStatus | 'meeting' | string) => (
+  statusStyle[status as AvailStatus | 'meeting'] || statusStyle.tentative
+);
+
+const getMeetingTimelineStatus = (meeting: Meeting, now = Date.now()): Meeting['status'] => {
+  const start = new Date(meeting.starttime).getTime();
+  const end = new Date(meeting.endtime).getTime();
+
+  if (Number.isNaN(start) || Number.isNaN(end)) return meeting.status || 'upcoming';
+  if (now >= end) return 'ended';
+  if (meeting.status === 'ended') return 'ended';
+  if (now >= start && now < end) return 'ongoing';
+  return 'upcoming';
 };
 
 const emptyForm: ScheduleForm = {
@@ -171,7 +187,7 @@ function Card({ title, icon, children, action, className = '' }: {
 }
 
 function StatusBadge({ status }: { status: AvailStatus | 'meeting' }) {
-  const style = statusStyle[status];
+  const style = getStatusStyle(status);
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${style.badge}`
     }>
@@ -305,7 +321,7 @@ function WeekCalendar({ events, selectedDate, hours, onSelectDate, onSelectEvent
 
               const top = Math.min(Math.max(0, (startHour - startHourBoundary) * 48 + 1), gridHeight - 28);
               const height = Math.max(28, Math.min((endHour - startHour) * 48 - 2, gridHeight - top));
-              const style = statusStyle[event.status];
+              const style = getStatusStyle(event.status);
 
               return (
                 <button
@@ -361,7 +377,7 @@ function DayCalendar({ events, selectedDate, hours, onSelectEvent }: {
         {
           dayLayouts.map(({ event, lane, laneCount }) => {
 
-            const style = statusStyle[event.status];
+            const style = getStatusStyle(event.status);
 
             const dayStart = new Date(selectedDate);
             dayStart.setHours(0, 0, 0, 0);
@@ -447,7 +463,7 @@ function MonthCalendar({ events, selectedDate, onSelectDate }: {
                     <span className="flex gap-0.5" >
                       {
                         dayEvents.slice(0, 3).map(event => (
-                          <span key={`${event.source}-${event.id}`} className={`w-1.5 h-1.5 rounded-full ${statusStyle[event.status].dot}`
+                          <span key={`${event.source}-${event.id}`} className={`w-1.5 h-1.5 rounded-full ${getStatusStyle(event.status).dot}`
                           } />
                         ))
                       }
@@ -473,11 +489,24 @@ export function PersonalSchedule() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ScheduleForm>(emptyForm);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
   const [timezone, setTimezone] = useState(() => localStorage.getItem('uniplatform_schedule_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh');
   const [workStart, setWorkStart] = useState(() => localStorage.getItem('uniplatform_schedule_work_start') || '08:00');
   const [workEnd, setWorkEnd] = useState(() => localStorage.getItem('uniplatform_schedule_work_end') || '18:00');
 
   const token = localStorage.getItem('uniplatform_user_token') || '';
+  const currentUser = useMemo(() => {
+    let username = localStorage.getItem('uniplatform_username') || '';
+    if (!username && token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        username = payload.username || payload.id || payload.sub || '';
+      } catch {
+        username = '';
+      }
+    }
+    return username;
+  }, [token]);
   const initials = (localStorage.getItem('uniplatform_fullname') || 'User')
     .split(' ')
     .map(part => part[0])
@@ -520,6 +549,11 @@ export function PersonalSchedule() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setStatusNow(Date.now()), 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const events = useMemo<CalendarEvent[]>(() => {
     const scheduleEvents = schedules.map(item => ({
       id: item.scheduleid || item.id || '',
@@ -533,8 +567,8 @@ export function PersonalSchedule() {
 
     const meetingEvents = meetings
       .filter(meeting => {
-        const isOrganizer = meeting.organizer === 'Tôi' || meeting.organizerDetails?.username === 'me';
-        const myRsvp = meeting.rsvpStatus?.['me'];
+        const isOrganizer = meeting.organizer === currentUser || meeting.organizerDetails?.username === currentUser;
+        const myRsvp = currentUser ? meeting.rsvpStatus?.[currentUser] : undefined;
         if (!isOrganizer && myRsvp === 'declined') return false;
         return true;
       })
@@ -549,21 +583,21 @@ export function PersonalSchedule() {
       }));
 
     return [...scheduleEvents, ...meetingEvents].sort((a, b) => a.start.getTime() - b.start.getTime());
-  }, [schedules, meetings]);
+  }, [schedules, meetings, currentUser]);
 
   const upcomingEvents = useMemo(() => {
-    const now = new Date();
+    const now = new Date(statusNow);
     return events
       .filter(event => {
         if (event.end < now) return false;
         if (event.source === 'meeting') {
           const m = meetings.find(m => m.meetingid === event.id);
-          return m && m.status !== 'ended';
+          return m && getMeetingTimelineStatus(m, statusNow) !== 'ended';
         }
         return event.status === 'busy' || event.status === 'tentative';
       })
       .slice(0, 6);
-  }, [events, meetings]);
+  }, [events, meetings, statusNow]);
 
   const selectedSchedule = selectedEvent?.source === 'schedule'
     ? schedules.find(item => (item.scheduleid || item.id) === selectedEvent.id)
@@ -653,14 +687,12 @@ export function PersonalSchedule() {
     const isConflict = schedules.some(s => {
       const sStart = new Date(s.starttime);
       const sEnd = new Date(s.endtime);
-      // Bỏ qua chính cái lịch đang edit
       if (editingId && (s.scheduleid === editingId || s.id === editingId)) return false;
-      // Công thức check overlap
       return start < sEnd && end > sStart;
     });
 
     if (isConflict) {
-      toast.error('Trùng lịch rồi! Khung giờ này đã có sự kiện khác.');
+      toast.error('Schedule conflict: this time already has another event.');
       return;
     }
     setSaving(true);
@@ -703,9 +735,9 @@ export function PersonalSchedule() {
       const apiErr = error as Error & { status?: number; details?: { conflicts?: Array<{ title: string; starttime: string; endtime: string }> } };
       if (apiErr.status === 409 && apiErr.details?.conflicts?.length) {
         const first = apiErr.details.conflicts[0];
-        const startStr = new Date(first.starttime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        const endStr = new Date(first.endtime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        toast.error(`Trùng lịch: "${first.title}" (${startStr} – ${endStr})`);
+        const startStr = new Date(first.starttime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const endStr = new Date(first.endtime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        toast.error(`Schedule conflict: "${first.title}" (${startStr} - ${endStr})`);
       } else {
         toast.error(apiErr.message || 'Failed to save schedule');
       }
@@ -726,14 +758,16 @@ export function PersonalSchedule() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to update RSVP');
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.message || 'Failed to update RSVP');
       }
 
-      toast.success(status === 'accepted' ? 'Đã chấp nhận cuộc họp!' : 'Đã từ chối và ẩn khỏi lịch!');
+      toast.success(status === 'accepted' ? 'Meeting accepted' : 'Meeting declined and hidden from your calendar');
       setSelectedEvent(null);
-      fetchData(); // Load lại lịch mới nhất sau khi thay đổi
+      fetchData();
     } catch (error) {
-      toast.error('Không thể cập nhật trạng thái họp');
+      console.error('Meeting RSVP error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update meeting RSVP');
     }
   };
 
@@ -767,7 +801,15 @@ export function PersonalSchedule() {
   };
 
   const openMeeting = (meeting: Meeting) => {
-    navigate(meeting.status === 'ended' ? `/meetings/${meeting.meetingid}/review` : `/meetings/${meeting.meetingid}`);
+    if (getMeetingTimelineStatus(meeting, statusNow) === 'ended') {
+      navigate(`/meetings/${meeting.meetingid}/review`);
+      return;
+    }
+    if (!canJoinMeeting(meeting, statusNow)) {
+      toast.error(`This meeting opens ${JOIN_WINDOW_MINUTES} minutes before it starts`);
+      return;
+    }
+    navigate(`/meetings/${meeting.meetingid}`);
   };
 
   const savePreferences = () => {
@@ -804,7 +846,7 @@ export function PersonalSchedule() {
         < div className="flex items-center gap-4 flex-wrap" >
           {(['busy', 'tentative'] as AvailStatus[]).map(status => (
             <div key={status} className="flex items-center gap-1.5" >
-              <span className={`w-3 h-3 rounded-sm ${statusStyle[status].dot}`} />
+              <span className={`w-3 h-3 rounded-sm ${getStatusStyle(status).dot}`} />
               < span className="text-xs text-gray-500 capitalize font-medium" > {status} </span>
             </div>
           ))}
@@ -977,9 +1019,9 @@ export function PersonalSchedule() {
                       const start = new Date(slot.starttime);
                       const end = new Date(slot.endtime);
                       return (
-                        <div key={id} className={`flex items-center gap-3 p-3 rounded-xl border ${statusStyle[slot.type].badge} group hover:shadow-sm transition-all`
+                        <div key={id} className={`flex items-center gap-3 p-3 rounded-xl border ${getStatusStyle(slot.type).badge} group hover:shadow-sm transition-all`
                         }>
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${statusStyle[slot.type].dot}`} />
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${getStatusStyle(slot.type).dot}`} />
                           < div className="flex-1 min-w-0" >
                             <p className="text-xs font-semibold text-gray-800 truncate" > {slot.title} </p>
                             < p className="text-[10px] text-gray-400" >
@@ -1009,7 +1051,7 @@ export function PersonalSchedule() {
                     upcomingEvents.map(event => {
                       const isMeeting = event.source === 'meeting';
                       const meetingData = isMeeting ? meetings.find(m => m.meetingid === event.id) : null;
-                      const style = statusStyle[event.status];
+                      const style = getStatusStyle(event.status);
 
                       return (
                         <div
@@ -1152,11 +1194,19 @@ export function PersonalSchedule() {
                 {
                   selectedMeeting && (
                     <div className="flex flex-col gap-2 w-full" >
-                      {/* Kiểm tra xem mình có phải người tạo không (giả định username là 'me' hoặc tổ chức là 'Tôi') */}
                       {
                         (() => {
-                          const isOrganizer = selectedMeeting.organizer === 'Tôi' || selectedMeeting.organizerDetails?.username === 'me';
-                          const myRsvp = selectedMeeting.rsvpStatus?.['me'] || (isOrganizer ? 'accepted' : 'pending');
+                          const isOrganizer = selectedMeeting.organizer === currentUser || selectedMeeting.organizerDetails?.username === currentUser;
+                          const myRsvp = (currentUser ? selectedMeeting.rsvpStatus?.[currentUser] : undefined) || (isOrganizer ? 'accepted' : 'pending');
+                          const isPastMeeting = getMeetingTimelineStatus(selectedMeeting, statusNow) === 'ended';
+
+                          if (isPastMeeting) {
+                            return (
+                              <p className="w-full py-2 text-center text-xs font-semibold text-gray-400 bg-gray-50 rounded-lg">
+                                This meeting has ended.
+                              </p>
+                            );
+                          }
 
                           if (!isOrganizer && myRsvp === 'pending') {
                             return (
@@ -1167,7 +1217,7 @@ export function PersonalSchedule() {
                                   }
                                   className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
                                 >
-                                  Chấp nhận
+                                  Accept
                                 </button>
                                 < button
                                   type="button"
@@ -1175,13 +1225,12 @@ export function PersonalSchedule() {
                                   }
                                   className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg transition-colors"
                                 >
-                                  Từ chối
+                                  Decline
                                 </button>
                               </div>
                             );
                           }
 
-                          // Nếu đã chấp nhận hoặc là người tạo -> Hiện nút Join vào phòng họp trực tiếp
                           return (
                             <div className="flex flex-col gap-2 w-full" >
                               <button
@@ -1194,7 +1243,6 @@ export function PersonalSchedule() {
                                 {selectedMeeting.status === 'ended' ? 'Review Meeting' : 'Join Meeting'}
                               </button>
 
-                              {/* Nếu đã chấp nhận rồi mà muốn "quay xe" từ chối luôn tại đây */}
                               {
                                 !isOrganizer && myRsvp === 'accepted' && (
                                   <button
@@ -1203,7 +1251,7 @@ export function PersonalSchedule() {
                                     }
                                     className="w-full py-1.5 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                   >
-                                    Hủy không tham gia nữa
+                                    Leave Meeting
                                   </button>
                                 )}
                             </div>

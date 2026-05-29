@@ -25,6 +25,10 @@ model User {
   createdat    DateTime? @default(now()) @map("createdAt")
   tokenVersion BigInt?   @default(0) @map("tokenVersion")
   imageggid    String?
+  googleDriveEmail        String?
+  googleDriveRefreshToken String?
+  googleDriveFolderId     String?
+  googleDriveConnectedAt  DateTime?
 
   // Navigation properties for relationships
   schedules      Schedules[]
@@ -101,7 +105,7 @@ model Meeting {
   recording_metadata  Json?
 
   rsvpStatus          Json?
-  rsvpDetails         Json?
+  rsvpDetails         Json?
 
   workspace     Workspace       @relation(fields: [workspaceid], references: [workspaceid])
   meetingMinute MeetingMinutes?

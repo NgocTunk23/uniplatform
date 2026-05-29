@@ -46,6 +46,14 @@ interface Workspace {
   name: string;
 }
 
+interface DriveStatus {
+  connected: boolean;
+  googleDriveEmail: string | null;
+  googleDriveFolderId: string | null;
+  folderUrl: string | null;
+  connectedAt: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const categoryMeta: Record<string, { icon: React.ReactNode; bg: string; text: string }> = {
@@ -136,6 +144,13 @@ function StorageBar({ used, total }: { used: number; total: number }) {
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+const disconnectedDriveStatus: DriveStatus = {
+  connected: false,
+  googleDriveEmail: null,
+  googleDriveFolderId: null,
+  folderUrl: null,
+  connectedAt: null,
+};
 
 function mimeToType(mime: string): string {
   if (mime.includes('pdf')) return 'PDF';
@@ -186,8 +201,32 @@ function apiFileToLocal(f: any, currentUsername: string): DriveFile {
   };
 }
 
+function formatConnectedAt(value: string | null): string {
+  if (!value) return 'Unknown';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function withAuthUser(url: string | undefined, email: string | null): string | null {
+  if (!url) return null;
+  if (!email) return url;
+
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('authuser', email);
+    return parsed.toString();
+  } catch {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}authuser=${encodeURIComponent(email)}`;
+  }
+}
+
 export function DriveFiles() {
-  const [driveConnected, setDriveConnected] = useState(() => localStorage.getItem('uniplatform_drive_visible') !== 'false');
+  const [driveStatus, setDriveStatus] = useState<DriveStatus>(disconnectedDriveStatus);
+  const [driveStatusLoading, setDriveStatusLoading] = useState(true);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const [driveNotConfigured, setDriveNotConfigured] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState('just now');
   const [uploading, setUploading] = useState(false);
@@ -212,6 +251,7 @@ export function DriveFiles() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentUsername = localStorage.getItem('uniplatform_username') || '';
   const token = localStorage.getItem('uniplatform_user_token') || '';
+  const driveConnected = driveStatus.connected;
 
   const fetchFiles = async () => {
     setLoading(true);
@@ -254,6 +294,11 @@ export function DriveFiles() {
   };
 
   const fetchQuota = async () => {
+    if (!driveConnected) {
+      setDriveQuota({ usedGb: 0, totalGb: 15 });
+      return;
+    }
+
     try {
       const res = await fetch(`${apiUrl}/api/files/quota`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -272,19 +317,109 @@ export function DriveFiles() {
     }
   };
 
+  const fetchDriveStatus = async () => {
+    setDriveStatusLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/google-drive/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setDriveStatus(data);
+      } else {
+        setDriveStatus(disconnectedDriveStatus);
+      }
+    } catch (err) {
+      console.error('Fetch Drive status error', err);
+      setDriveStatus(disconnectedDriveStatus);
+    } finally {
+      setDriveStatusLoading(false);
+    }
+  };
+
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const driveResult = params.get('drive');
+    const driveError = params.get('drive_error');
+
+    if (driveResult === 'connected') {
+      toast.success('Google Drive connected');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (driveError) {
+      toast.error('Unable to connect Google Drive. Please try again.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     fetchWorkspaces();
-    fetchQuota();
+    fetchDriveStatus();
   }, []);
 
   useEffect(() => {
     fetchFiles();
   }, [workspaceFilter]);
 
+  useEffect(() => {
+    fetchQuota();
+  }, [driveConnected]);
+
   const handleSync = async () => {
     setSyncing(true);
-    await fetchFiles();
+    await Promise.all([fetchDriveStatus(), fetchFiles()]);
     setSyncing(false);
+  };
+
+  const handleConnectDrive = async () => {
+    setConnectingDrive(true);
+    setDriveNotConfigured(false);
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/google-drive/connect/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.authUrl) {
+        const message = data?.message || 'Unable to start Google Drive connection';
+        // Server-side OAuth isn't configured — show a calm inline state instead of a raw error.
+        if (res.status === 503 || /not configured|oauth/i.test(message)) {
+          setDriveNotConfigured(true);
+          return;
+        }
+        toast.error(message);
+        return;
+      }
+
+      window.location.href = data.authUrl;
+    } catch (err) {
+      console.error('Connect Drive error', err);
+      toast.error('Network error while connecting Google Drive');
+    } finally {
+      setConnectingDrive(false);
+    }
+  };
+
+  const handleDisconnectDrive = async () => {
+    if (!window.confirm('Disconnect Google Drive from UniPlatform?')) return;
+
+    try {
+      const res = await fetch(`${apiUrl}/api/auth/google-drive/disconnect`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        toast.error(data?.message || 'Failed to disconnect Google Drive');
+        return;
+      }
+
+      setDriveStatus(data || disconnectedDriveStatus);
+      toast.success('Google Drive disconnected');
+    } catch (err) {
+      console.error('Disconnect Drive error', err);
+      toast.error('Network error while disconnecting Google Drive');
+    }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -294,6 +429,11 @@ export function DriveFiles() {
 
     if (file.size > MAX_UPLOAD_SIZE) {
       toast.error('File exceeds 50MB');
+      return;
+    }
+
+    if (!driveConnected) {
+      toast.error('Google Drive is not connected. Connect it in Drive Files first.');
       return;
     }
 
@@ -315,7 +455,11 @@ export function DriveFiles() {
         toast.success('Personal file uploaded');
       } else {
         const error = await res.json().catch(() => null);
-        toast.error(error?.message || 'Failed to upload file');
+        if (error?.errorCode === 'GOOGLE_DRIVE_NOT_CONNECTED') {
+          toast.error('Google Drive is not connected. Connect it in Drive Files first.');
+        } else {
+          toast.error(error?.message || 'Failed to upload file');
+        }
       }
     } catch (err) {
       console.error('Upload error', err);
@@ -364,13 +508,6 @@ export function DriveFiles() {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, starred: !f.starred } : f));
   };
 
-  const setDriveVisibility = (visible: boolean) => {
-    localStorage.setItem('uniplatform_drive_visible', String(visible));
-    setDriveConnected(visible);
-    toast.success(visible ? 'Drive files shown' : 'Drive files hidden');
-    if (visible) fetchFiles();
-  };
-
   const openStorageUpgrade = () => {
     window.open('https://one.google.com/storage', '_blank', 'noopener,noreferrer');
   };
@@ -380,7 +517,7 @@ export function DriveFiles() {
       toast.error('Download link unavailable');
       return;
     }
-    window.open(file.downloadLink, '_blank', 'noopener,noreferrer');
+    window.open(withAuthUser(file.downloadLink, driveStatus.googleDriveEmail) || file.downloadLink, '_blank', 'noopener,noreferrer');
   };
 
   const openFileInDrive = (file: DriveFile) => {
@@ -388,7 +525,7 @@ export function DriveFiles() {
       toast.error('Drive link unavailable');
       return;
     }
-    window.open(file.webViewLink, '_blank', 'noopener,noreferrer');
+    window.open(withAuthUser(file.webViewLink, driveStatus.googleDriveEmail) || file.webViewLink, '_blank', 'noopener,noreferrer');
   };
 
   const tabs: { key: FileCategory; label: string }[] = [
@@ -427,7 +564,7 @@ export function DriveFiles() {
               Drive Files
             </h1>
             <p className="text-sm text-gray-500 mt-1 ml-0.5">
-              Manage personal uploads and workspace attachments through your backend-managed Google Drive account.
+              Manage personal uploads and workspace attachments through your connected Google Drive account.
             </p>
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
@@ -454,7 +591,12 @@ export function DriveFiles() {
         <SectionCard>
           <CardHeader title="Google Drive" icon={<Cloud size={15} />} />
           <div className="p-6">
-            {driveConnected ? (
+            {driveStatusLoading ? (
+              <div className="flex items-center gap-3 py-2 text-sm text-gray-400">
+                <RefreshCw size={16} className="animate-spin" />
+                Checking Google Drive connection...
+              </div>
+            ) : driveConnected ? (
               <div className="flex flex-col sm:flex-row sm:items-center gap-5">
                 {/* Drive info */}
                 <div className="flex items-center gap-4 flex-1">
@@ -470,25 +612,33 @@ export function DriveFiles() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-600 font-medium">
-                      {currentUsername ? `@${currentUsername}` : 'Backend managed Drive'}
+                      Connected as {driveStatus.googleDriveEmail || 'Unknown account'}
+                    </p>
+                    <p className="text-xs text-gray-500 font-medium">
+                      Folder: UniPlatform
                     </p>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      Last synced {lastSync}
+                      Last connected {formatConnectedAt(driveStatus.connectedAt)} · Last synced {lastSync}
                     </p>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <a
-                    href="https://drive.google.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => {
+                      const folderUrl = withAuthUser(driveStatus.folderUrl || undefined, driveStatus.googleDriveEmail);
+                      if (!folderUrl) {
+                        toast.error('Google Drive folder link unavailable');
+                        return;
+                      }
+                      window.open(folderUrl, '_blank', 'noopener,noreferrer');
+                    }}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors shadow-sm"
                   >
                     <ExternalLink size={13} />
                     Open Google Drive
-                  </a>
+                  </button>
                   <button
                     onClick={handleSync}
                     disabled={syncing}
@@ -498,11 +648,11 @@ export function DriveFiles() {
                     {syncing ? 'Syncing…' : 'Sync Now'}
                   </button>
                   <button
-                    onClick={() => setDriveVisibility(false)}
+                    onClick={handleDisconnectDrive}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-100 bg-red-50 text-red-500 text-xs font-semibold hover:bg-red-100 transition-colors"
                   >
                     <X size={13} />
-                    Hide Drive
+                    Disconnect
                   </button>
                 </div>
               </div>
@@ -521,17 +671,21 @@ export function DriveFiles() {
                         Not Connected
                       </span>
                     </div>
-                    <p className="text-xs text-gray-400">
-                      Show your backend-managed Google Drive files in this workspace.
+                    <p className="text-xs text-gray-400 max-w-md">
+                      {driveNotConfigured
+                        ? "Google Drive isn't set up on this server yet. An administrator needs to configure Google OAuth (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) before Drive can be connected."
+                        : 'Choose a Google account to connect Drive uploads for UniPlatform.'}
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setDriveVisibility(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm shrink-0"
+                  onClick={handleConnectDrive}
+                  disabled={connectingDrive || driveNotConfigured}
+                  title={driveNotConfigured ? 'Google Drive OAuth is not configured on the server' : undefined}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <ExternalLink size={14} />
-                  Show Drive Files
+                  {connectingDrive ? <RefreshCw size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                  {connectingDrive ? 'Connecting...' : 'Connect Google Drive'}
                 </button>
               </div>
             )}
@@ -764,7 +918,7 @@ export function DriveFiles() {
           <div>
             <p className="text-sm font-semibold text-gray-800 mb-1">Drive Files is your central document hub</p>
             <p className="text-xs text-gray-500 leading-relaxed">
-              Personal uploads from this page and project files attached from chat or meeting minutes are managed through the backend Drive integration, keeping everything accessible in one place.
+              Personal uploads and project files attached from chat or meeting minutes are stored in the connected Google Drive account shown above.
             </p>
           </div>
         </div>

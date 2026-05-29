@@ -489,7 +489,7 @@ export function MeetingReview() {
         <div className="max-w-5xl space-y-8">
           {!canEdit && (
             <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-              Bạn đang xem biên bản ở chế độ chỉ đọc. Chỉ người tổ chức hoặc trưởng nhóm mới có thể chỉnh sửa.
+              You are viewing these minutes in read-only mode. Only the organizer or team lead can edit them.
             </div>
           )}
 

@@ -432,8 +432,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     if (!workspaceId) return;
     const socket = connectSocket();
 
-    // Nếu có input text, dùng nó làm prompt. Nếu không, tóm tắt chung.
-    const prompt = inputText.trim() || "Tóm tắt các nội dung quan trọng đã trao đổi trong nhóm này.";
+    const prompt = inputText.trim() || "Summarize the key points discussed in this group.";
 
     socket.emit('ask_ai', {
       workspaceId,
@@ -471,7 +470,12 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
           const data = await res.json();
           fileIds.push(data.file.id || data.file.fileid || data.file._id);
         } else {
-          console.error("File upload failed");
+          const error = await res.json().catch(() => null);
+          if (error?.errorCode === 'GOOGLE_DRIVE_NOT_CONNECTED') {
+            toast.error('Google Drive is not connected. Connect it in Drive Files first.');
+          } else {
+            toast.error(error?.message || 'File upload failed');
+          }
           setIsUploading(false);
           return; // Stop if upload fails
         }

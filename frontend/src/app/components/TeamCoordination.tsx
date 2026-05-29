@@ -433,9 +433,9 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                 <AlertTriangle size={20} className="text-amber-500" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Lịch bị trùng</h3>
+                <h3 className="font-semibold text-gray-900 mb-1">Schedule conflict</h3>
                 <p className="text-sm text-gray-500">
-                  Một số thành viên đã có lịch bận trong khung giờ này. Bạn vẫn có thể ép tiếp tục lưu cuộc họp.
+                  Some members already have events during this time. You can still save the meeting.
                 </p>
               </div>
             </div>
@@ -458,14 +458,14 @@ export function TeamCoordination({ workspaceId }: TeamCoordinationProps) {
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors"
               >
                 {creating && <Loader2 size={14} className="animate-spin" />}
-                Lưu/Tiếp tục
+                Save Anyway
               </button>
               <button
                 type="button"
                 onClick={() => setConflictInfo(null)}
                 className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors"
               >
-                Hủy
+                Cancel
               </button>
             </div>
           </div>

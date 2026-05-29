@@ -28,6 +28,19 @@ const normalizeParticipants = (participants, workspace, organizer) => {
   return deduped;
 };
 
+const isPlainObject = (value) => (
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value)
+);
+
+const buildInitialRsvpStatus = (participants, organizer) => (
+  participants.reduce((acc, username) => {
+    acc[username] = username === organizer ? 'accepted' : 'pending';
+    return acc;
+  }, {})
+);
+
 const addMinutes = (date, minutes) => new Date(date.getTime() + minutes * 60000);
 const minutesOfDay = (date) => date.getHours() * 60 + date.getMinutes();
 
@@ -338,6 +351,8 @@ const createMeeting = async (meetingData, currentUser) => {
       endtime,
       organizer: currentUser.username,
       participants,
+      rsvpStatus: buildInitialRsvpStatus(participants, currentUser.username),
+      rsvpDetails: {},
       status: 'upcoming',
       link: meetingData.link || buildMeetingLink(),
       place: meetingData.place,
@@ -438,9 +453,14 @@ const updateMeeting = async (meetingId, updateData, currentUser) => {
     throw new ApiError(400, 'End time must be after start time');
   }
 
+  const targetWorkspaceId = data.workspaceid || meeting.workspaceid;
+  if (data.workspaceid && data.workspaceid !== meeting.workspaceid) {
+    await permissionUtil.ensureCanWrite(data.workspaceid, currentUser);
+  }
+
   if (data.participants) {
     const workspace = await prisma.workspace.findUnique({
-      where: { workspaceid: meeting.workspaceid },
+      where: { workspaceid: targetWorkspaceId },
       select: { member: true }
     });
     data.participants = normalizeParticipants(data.participants, workspace, meeting.organizer);
@@ -796,14 +816,28 @@ const updateRSVP = async (meetingId, rsvpData, currentUser) => {
 
   if (!meeting) return null;
 
+  const hasEnded = meeting.status === 'ended' || new Date(meeting.endtime).getTime() < Date.now();
+  if (hasEnded) {
+    throw new ApiError(400, 'Cannot RSVP to a past meeting.', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
+  }
+
+  const isOrganizer = meeting.organizer === currentUser.username;
+  const isParticipant = (meeting.participants || []).includes(currentUser.username);
+
+  if (!isOrganizer && !isParticipant) {
+    throw new ApiError(403, 'Only meeting participants can RSVP.', ERROR_CODES.AUTH.AUTH_ERROR);
+  }
+
   // 2. Lấy dữ liệu rsvp hiện tại (đảm bảo là dạng object)
-  const currentRsvpStatus = meeting.rsvpStatus || {};
-  const currentRsvpDetails = meeting.rsvpDetails || {};
+  const currentRsvpStatus = isPlainObject(meeting.rsvpStatus) ? { ...meeting.rsvpStatus } : {};
+  const currentRsvpDetails = isPlainObject(meeting.rsvpDetails) ? { ...meeting.rsvpDetails } : {};
 
   // 3. Cập nhật trạng thái cho user đang thao tác
   currentRsvpStatus[currentUser.username] = status;
 
-  if (reason || attachment) {
+  if (status === 'accepted') {
+    delete currentRsvpDetails[currentUser.username];
+  } else if (reason || attachment) {
     currentRsvpDetails[currentUser.username] = {
       ...(currentRsvpDetails[currentUser.username] || {}),
       reason: reason || undefined,

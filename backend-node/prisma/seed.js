@@ -266,7 +266,7 @@ async function main() {
       description: "Open time for student support requests.",
       starttime: daysFromNow(7, 9),
       endtime: daysFromNow(7, 11),
-      type: "available",
+      type: "tentative",
     },
     {
       username: "admin1",
@@ -290,7 +290,7 @@ async function main() {
       description: "Free slot for team review or mentoring.",
       starttime: daysFromNow(9, 10),
       endtime: daysFromNow(9, 12),
-      type: "available",
+      type: "tentative",
     },
     {
       username: "2152392",
@@ -322,7 +322,7 @@ async function main() {
       description: "Available slot for peer mentoring.",
       starttime: daysFromNow(11, 15),
       endtime: daysFromNow(11, 17),
-      type: "available",
+      type: "tentative",
     },
     {
       username: "2033364",
@@ -338,7 +338,7 @@ async function main() {
       description: "Available for project questions.",
       starttime: daysFromNow(12, 13),
       endtime: daysFromNow(12, 15),
-      type: "available",
+      type: "tentative",
     },
     {
       username: "2115302",

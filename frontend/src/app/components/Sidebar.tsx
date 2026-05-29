@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Dispatch, SetStateAction } from 'react'; // Thêm useState, useEffect
+import React, { useState, useEffect } from 'react'; // Thêm useState, useEffect
 import { useLocation, useNavigate } from 'react-router';
 import { 
   // MessageSquare, 
@@ -33,7 +33,7 @@ import { connectSocket } from '../utils/socket';
 interface SidebarProps {
   onCloseMobile?: () => void;
   activeGroup: string | null;
-  onSelectGroup: Dispatch<SetStateAction<string | null>>;
+  onSelectGroup: (group: string | null) => void;
 }
 const navItems = [
   // { icon: MessageSquare, label: 'Chat',              path: '/chat' },

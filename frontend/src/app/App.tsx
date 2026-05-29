@@ -22,7 +22,7 @@ function App() {
     const patchFetch = async (...args: Parameters<typeof window.fetch>) => {
       const response = await originalFetch(...args);
       const token = localStorage.getItem('uniplatform_user_token');
-      if (token && response && (response.status === 401 || response.status === 403)) {
+      if (token && response?.status === 401) {
         logoutAndRedirect();
       }
       return response;

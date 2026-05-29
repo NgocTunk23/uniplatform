@@ -8,11 +8,8 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm install
 
-COPY prisma ./prisma/
-RUN npx prisma generate
-
-# Dòng này copy toàn bộ code của bạn vào container
 COPY . .
+RUN npx prisma generate
 
 EXPOSE 5001
 CMD ["npm", "start"]
