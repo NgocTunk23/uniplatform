@@ -130,7 +130,7 @@ export function UserProfile() {
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Lỗi tải dữ liệu: ${response.status}`);
+          throw new Error(`Failed to load profile: ${response.status}`);
         }
 
         const result = await response.json();
@@ -192,9 +192,9 @@ export function UserProfile() {
         })
       });
 
-      if (!response.ok) throw new Error('Cập nhật thông tin thất bại');
+      if (!response.ok) throw new Error('Failed to update profile');
       
-      setSuccessMsg('Cập nhật thông tin thành công!');
+      setSuccessMsg('Profile updated successfully');
       setEditingProfile(false);
       setTimeout(() => setSuccessMsg(''), 3000);
 
@@ -208,7 +208,7 @@ export function UserProfile() {
   // 3. Đổi mật khẩu
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
-      setError('Mật khẩu mới không khớp!');
+      setError('New passwords do not match');
       return;
     }
     
@@ -228,9 +228,9 @@ export function UserProfile() {
         })
       });
 
-      if (!response.ok) throw new Error('Đổi mật khẩu thất bại. Vui lòng kiểm tra lại mật khẩu cũ.');
+      if (!response.ok) throw new Error('Failed to change password. Please check your current password.');
       
-      setSuccessMsg('Đổi mật khẩu thành công! Bạn sẽ được đăng xuất để đăng nhập lại.');
+      setSuccessMsg('Password changed successfully. You will be signed out to log in again.');
       setShowChangePassword(false);
       setCurrentPassword('');
       setNewPassword('');
@@ -257,11 +257,11 @@ export function UserProfile() {
 
     // Validate file type and size
     if (!file.type.startsWith('image/')) {
-      setError('Chỉ chấp nhận file ảnh!');
+      setError('Only image files are allowed');
       return;
     }
     if (file.size > 5 * 1024 * 1024) { // 5MB
-      setError('File ảnh không được vượt quá 5MB!');
+      setError('Image file size must not exceed 5MB');
       return;
     }
 
@@ -288,7 +288,7 @@ export function UserProfile() {
             })
           });
 
-          if (!updateResponse.ok) throw new Error('Cập nhật ảnh thất bại');
+          if (!updateResponse.ok) throw new Error('Failed to update avatar');
 
 
           const updateResult = await updateResponse.json();
@@ -309,7 +309,7 @@ export function UserProfile() {
           setTimeout(() => window.location.reload(), 1000);
 
 
-          setSuccessMsg('Cập nhật ảnh đại diện thành công!');
+          setSuccessMsg('Avatar updated successfully');
           setTimeout(() => setSuccessMsg(''), 3000);
         } catch (err: any) {
           setError(err.message);
@@ -394,7 +394,7 @@ export function UserProfile() {
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-50 text-purple-600 text-sm font-semibold hover:bg-purple-100 transition-colors"
                 >
                   <Edit3 size={14} />
-                  {editingProfile ? 'Đang sửa...' : 'Edit Profile'}
+                  {editingProfile ? 'Editing...' : 'Edit Profile'}
                 </button>
               </div>
             </div>
@@ -409,7 +409,7 @@ export function UserProfile() {
                 <CheckCircle size={11} />{status}
               </span>
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
-                <Building2 size={11} />{address || 'Chưa cập nhật địa chỉ'}
+                <Building2 size={11} />{address || 'No address added'}
               </span>
             </div>
           </div>
@@ -421,11 +421,11 @@ export function UserProfile() {
           {/* ── 2. Personal Information ───────────────────────────── */}
           <SectionCard title="Personal Information" icon={<User size={15} />} className="lg:col-span-2">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <InputField label="Full Name"             value={fullName} onChange={setFullName} placeholder="Nguyễn Văn A"            disabled={!editingProfile} />
+              <InputField label="Full Name"             value={fullName} onChange={setFullName} placeholder="Alex Nguyen"            disabled={!editingProfile} />
               {/* <InputField label="Email Address"         value={email}    onChange={setEmail}    type="email" placeholder="email@example.com" disabled={!editingProfile} /> */}
               <InputField label="Phone Number"          value={phone}    onChange={setPhone}    placeholder="0912345678"         disabled={!editingProfile} />
               <InputField label="Date of Birth"         value={dob}      onChange={setDob}      type="date"                      disabled={!editingProfile} />
-              <InputField label="Address"            value={address}  onChange={setAddress}  placeholder="TP. Hồ Chí Minh"    disabled={!editingProfile} />
+              <InputField label="Address"            value={address}  onChange={setAddress}  placeholder="Ho Chi Minh City"    disabled={!editingProfile} />
               <InputField label="Account Created"    value={createdAt} onChange={() => {}}   disabled={true} />
             </div>
             
@@ -516,11 +516,11 @@ export function UserProfile() {
             </div>
             <h3 className="font-bold text-gray-900 mb-1">Deactivate Account?</h3>
             <p className="text-sm text-gray-500 mb-6">
-              Tài khoản của bạn sẽ bị vô hiệu hóa. Bạn có thể kích hoạt lại bất kỳ lúc nào bằng cách đăng nhập lại.
+              Your account will be deactivated. You can reactivate it anytime by logging in again.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setShowDeactivateModal(false)} className="flex-1 px-4 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200 transition-colors">
-                Hủy
+                Cancel
               </button>
               <button
                 onClick={() => { 
@@ -531,7 +531,7 @@ export function UserProfile() {
                 }}
                 className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 transition-colors"
               >
-                Vô hiệu hóa
+                Deactivate
               </button>
             </div>
           </div>

@@ -27,22 +27,22 @@ export function ResetPassword() {
     setSuccess('');
 
     if (!token) {
-      setError('Token đặt lại mật khẩu không hợp lệ. Vui lòng kiểm tra lại liên kết.');
+      setError('Invalid password reset token. Please check the link again.');
       return;
     }
 
     if (!password || !confirmPassword) {
-      setError('Vui lòng nhập đầy đủ mật khẩu mới và xác nhận mật khẩu.');
+      setError('Please enter and confirm your new password.');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Mật khẩu và xác nhận mật khẩu không khớp.');
+      setError('Password and confirmation do not match.');
       return;
     }
 
     if (password.length < 6) {
-      setError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+      setError('New password must be at least 6 characters.');
       return;
     }
 
@@ -56,14 +56,14 @@ export function ResetPassword() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || 'Không thể đặt lại mật khẩu.');
+        throw new Error(data.message || 'Unable to reset password.');
       }
 
-      setSuccess('Đặt lại mật khẩu thành công. Bạn đang được chuyển về trang đăng nhập...');
+      setSuccess('Password reset successfully. Redirecting you to the login page...');
       localStorage.setItem('uniplatform_logout', Date.now().toString());
       setTimeout(() => navigate('/login'), 2500);
     } catch (err: any) {
-      setError(err.message || 'Đã có lỗi xảy ra.');
+      setError(err.message || 'An error occurred.');
     } finally {
       setIsLoading(false);
     }
@@ -77,17 +77,17 @@ export function ResetPassword() {
           onClick={() => navigate('/login')}
           className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-4"
         >
-          <ArrowLeft size={18} /> Quay lại đăng nhập
+          <ArrowLeft size={18} /> Back to login
         </button>
 
-        <h1 className="text-2xl font-semibold text-slate-900 mb-2">Đặt lại mật khẩu</h1>
+        <h1 className="text-2xl font-semibold text-slate-900 mb-2">Reset Password</h1>
         <p className="text-sm text-slate-500 mb-6">
-          Nhập mật khẩu mới của bạn để hoàn tất quá trình đặt lại. Nếu link đã hết hạn, hãy yêu cầu lại.
+          Enter your new password to complete the reset. If the link has expired, request a new one.
         </p>
 
         {!token && (
           <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-rose-700 mb-6">
-            Token không hợp lệ hoặc liên kết đã bị thay đổi.
+            The token is invalid or the link has been changed.
           </div>
         )}
 
@@ -105,14 +105,14 @@ export function ResetPassword() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-slate-600">Mật khẩu mới</label>
+            <label className="text-sm font-medium text-slate-600">New Password</label>
             <div className="mt-2 relative">
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 focus:border-slate-400 focus:outline-none"
-                placeholder="Nhập mật khẩu mới"
+                placeholder="Enter your new password"
               />
               <button
                 type="button"
@@ -125,14 +125,14 @@ export function ResetPassword() {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-slate-600">Xác nhận mật khẩu</label>
+            <label className="text-sm font-medium text-slate-600">Confirm Password</label>
             <div className="mt-2 relative">
               <input
                 type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-900 focus:border-slate-400 focus:outline-none"
-                placeholder="Nhập lại mật khẩu mới"
+                placeholder="Re-enter your new password"
               />
               <button
                 type="button"
@@ -149,7 +149,7 @@ export function ResetPassword() {
             disabled={isLoading || !token}
             className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
-            {isLoading ? 'Đang xử lý...' : 'Cập nhật mật khẩu'}
+            {isLoading ? 'Processing...' : 'Update Password'}
           </button>
         </form>
       </div>

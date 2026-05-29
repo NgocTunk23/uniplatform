@@ -4,12 +4,52 @@ const ApiError = require('../utils/api-error');
 const ERROR_CODES = require('../constants/error-codes');
 const permissionUtil = require('../utils/permission.util');
 const ROLES = require('../constants/roles');
+const { decryptSecret } = require('../utils/secret.util');
 
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
 const sanitizeObjectId = (value) => {
   if (!value || typeof value !== 'string') return undefined;
   return OBJECT_ID_REGEX.test(value) ? value : undefined;
+};
+
+const getConnectedDriveForUser = async (username) => {
+  const user = await prisma.user.findUnique({
+    where: { username },
+    select: {
+      username: true,
+      googleDriveEmail: true,
+      googleDriveRefreshToken: true,
+      googleDriveFolderId: true,
+    },
+  });
+
+  if (!user?.googleDriveEmail || !user?.googleDriveRefreshToken) {
+    throw new ApiError(
+      409,
+      'Google Drive is not connected. Connect it in Drive Files first.',
+      ERROR_CODES.FILE.GOOGLE_DRIVE_NOT_CONNECTED
+    );
+  }
+
+  const refreshToken = decryptSecret(user.googleDriveRefreshToken);
+  let folderId = user.googleDriveFolderId;
+
+  if (!folderId) {
+    const drive = gdriveUtil.getDriveClientForRefreshToken(refreshToken);
+    const folder = await gdriveUtil.ensureAppFolder(drive);
+    folderId = folder.id;
+    await prisma.user.update({
+      where: { username },
+      data: { googleDriveFolderId: folderId },
+    });
+  }
+
+  return {
+    email: user.googleDriveEmail,
+    refreshToken,
+    folderId,
+  };
 };
 
 const assertCanAttachToMessage = async (messageid, user) => {
@@ -118,10 +158,12 @@ const uploadFile = async (req, res, next) => {
     const messageid = await assertCanAttachToMessage(sanitizedMessageId, req.user);
     const meetingminuteid = await assertCanAttachToMeetingMinute(sanitizedMeetingMinuteId, req.user);
 
-    // Upload to Google Drive only after authorization for linked resources succeeds.
+    const driveAuth = await getConnectedDriveForUser(req.user.username);
+
+    // Upload to the authenticated user's connected Google Drive only after authorization succeeds.
     console.log('📤 Uploading file to Drive:', req.file.originalname);
-    const driveData = await gdriveUtil.uploadFile(req.file);
-    console.log('✅ Drive response:', driveData);
+    const driveData = await gdriveUtil.uploadFileForUser(req.file, driveAuth);
+    console.log('✅ Drive response:', { id: driveData?.id, name: driveData?.name, owner: driveAuth.email });
 
     // Save metadata to database via Prisma
     if (!driveData) {
@@ -252,8 +294,18 @@ const deleteFile = async (req, res, next) => {
       throw new ApiError(403, 'Unauthorized. Only uploader, Workspace Leader, meeting organizer, or System Admin can delete this file.', ERROR_CODES.AUTH.AUTH_ERROR);
     }
 
-    // Delete from Google Drive
-    await gdriveUtil.deleteFile(file.ggid);
+    // Delete from the uploader's connected Google Drive. Old mock/global files fall back
+    // to the legacy delete path so existing records can still be removed.
+    const uploader = await prisma.user.findUnique({
+      where: { username: file.uploader },
+      select: { googleDriveRefreshToken: true },
+    });
+
+    if (uploader?.googleDriveRefreshToken && !file.ggid.startsWith('mock_')) {
+      await gdriveUtil.deleteFileForUser(file.ggid, decryptSecret(uploader.googleDriveRefreshToken));
+    } else {
+      await gdriveUtil.deleteFile(file.ggid);
+    }
 
     // Delete from database
     await prisma.files.delete({
@@ -320,7 +372,8 @@ const getFiles = async (req, res, next) => {
 
 const getFilesQuota = async (req, res, next) => {
   try {
-    const quota = await gdriveUtil.getStorageQuota();
+    const driveAuth = await getConnectedDriveForUser(req.user.username);
+    const quota = await gdriveUtil.getStorageQuotaForUser(driveAuth.refreshToken);
     if (!quota) {
       return res.json({ limit: null, usage: null, remaining: null });
     }

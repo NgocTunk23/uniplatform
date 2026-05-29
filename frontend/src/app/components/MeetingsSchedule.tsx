@@ -13,12 +13,15 @@ import {
   Video,
   X,
   Edit3,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { canJoinMeeting, JOIN_WINDOW_MINUTES } from '../utils/meeting';
 
 interface Meeting {
   meetingid: string;
   id?: string;
+  workspaceid?: string;
   title: string;
   starttime: string;
   endtime: string;
@@ -73,6 +76,8 @@ interface ConflictInfo {
   pendingBody: Record<string, unknown>;
 }
 
+type DeclineModalAction = 'decline' | 'leave';
+
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 const emptyForm: CreateMeetingForm = {
@@ -97,17 +102,14 @@ function getWorkspaceMembers(workspace?: Workspace) {
   return workspace?.members || workspace?.member || [];
 }
 
-function computeStatus(meeting: Meeting): Meeting['status'] {
-  if (meeting.status === 'ended') return 'ended';
-  if (meeting.status === 'ongoing') return 'ongoing';
-
-  const now = Date.now();
+function computeStatus(meeting: Meeting, now = Date.now()): Meeting['status'] {
   const start = new Date(meeting.starttime).getTime();
   const end = new Date(meeting.endtime).getTime();
 
   if (Number.isNaN(start) || Number.isNaN(end)) return meeting.status || 'upcoming';
-  if (now > end) return 'ended';
-  if (now >= start && now <= end) return 'ongoing';
+  if (now >= end) return 'ended';
+  if (meeting.status === 'ended') return 'ended';
+  if (now >= start && now < end) return 'ongoing';
   return 'upcoming';
 }
 
@@ -125,6 +127,32 @@ function formatDuration(starttime: string, endtime: string) {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function getWorkingHours() {
+  const parse = (value: string | null, fallback: number) => {
+    if (!value) return fallback;
+    const [h, m] = value.split(':').map(Number);
+    return Number.isFinite(h) ? h * 60 + (Number.isFinite(m) ? m : 0) : fallback;
+  };
+  return {
+    start: parse(localStorage.getItem('uniplatform_schedule_work_start'), 8 * 60),
+    end: parse(localStorage.getItem('uniplatform_schedule_work_end'), 18 * 60),
+  };
+}
+
+function formatMinutesOfDay(mins: number) {
+  const h = Math.floor(mins / 60).toString().padStart(2, '0');
+  const m = (mins % 60).toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+// Warn when a meeting starts before, or ends after, the user's saved working hours.
+function isOutsideWorkingHours(start: Date, end: Date) {
+  const { start: ws, end: we } = getWorkingHours();
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const endMin = end.getHours() * 60 + end.getMinutes();
+  return startMin < ws || endMin > we;
 }
 
 function toLocalInputValue(date = new Date()) {
@@ -170,9 +198,18 @@ export function MeetingsSchedule() {
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'ended'>('all');
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [declineModal, setDeclineModal] = useState({ isOpen: false, meetingId: '', reason: '', fileName: '' });
+  const [declineModal, setDeclineModal] = useState<{ isOpen: boolean; meetingId: string; reason: string; fileName: string; action: DeclineModalAction }>({
+    isOpen: false,
+    meetingId: '',
+    reason: '',
+    fileName: '',
+    action: 'decline',
+  });
   const [form, setForm] = useState<CreateMeetingForm>(emptyForm);
   const [conflictInfo, setConflictInfo] = useState<ConflictInfo | null>(null);
+  const [detailMeeting, setDetailMeeting] = useState<Meeting | null>(null);
+  const [hoursWarning, setHoursWarning] = useState<Record<string, unknown> | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
 
   const token = localStorage.getItem('uniplatform_user_token') || '';
 
@@ -217,10 +254,7 @@ export function MeetingsSchedule() {
   const fetchMeetings = async () => {
     try {
       const data = await fetchJson(`${apiUrl}/api/meetings`);
-      setMeetings((Array.isArray(data) ? data : []).map(meeting => ({
-        ...meeting,
-        status: computeStatus(meeting),
-      })));
+      setMeetings(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Fetch meetings error', error);
       toast.error(error instanceof Error ? error.message : 'Failed to load meetings');
@@ -264,6 +298,11 @@ export function MeetingsSchedule() {
     loadPageData();
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setStatusNow(Date.now()), 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const openCreateModal = () => {
     const workspace = workspaces[0];
     const times = getDefaultTimes();
@@ -278,7 +317,9 @@ export function MeetingsSchedule() {
   };
 
   const openEditModal = (meeting: Meeting) => {
-    const ws = workspaces.find(w => w.name === meeting.workspace?.name) || workspaces[0];
+    const ws = workspaces.find(w => getWorkspaceId(w) === meeting.workspaceid)
+      || workspaces.find(w => w.name === meeting.workspace?.name)
+      || workspaces[0];
 
     setForm({
       title: meeting.title,
@@ -289,7 +330,7 @@ export function MeetingsSchedule() {
       link: meeting.link || '',
       participants: meeting.participants || [],
     });
-    setEditingId(getMeetingId(meeting)); // Bật chế độ SỬA
+    setEditingId(getMeetingId(meeting));
     setShowCreate(true);
   };
 
@@ -332,9 +373,8 @@ export function MeetingsSchedule() {
   const submitCreateMeeting = async (body: Record<string, unknown>) => {
     setSubmitting(true);
     try {
-      // Nếu có editingId thì dùng method PUT/PATCH và url có id
       const url = editingId ? `${apiUrl}/api/meetings/${editingId}` : `${apiUrl}/api/meetings`;
-      const method = editingId ? 'PUT' : 'POST';
+      const method = editingId ? 'PATCH' : 'POST';
 
       await fetchJson(url, {
         method,
@@ -342,7 +382,7 @@ export function MeetingsSchedule() {
         body: JSON.stringify(body),
       });
 
-      toast.success(editingId ? 'Đã cập nhật cuộc họp!' : 'Đã tạo cuộc họp!');
+      toast.success(editingId ? 'Meeting updated' : 'Meeting created');
       setShowCreate(false);
       setEditingId(null);
       setConflictInfo(null);
@@ -352,7 +392,7 @@ export function MeetingsSchedule() {
       if (apiError.status === 409 && apiError.details?.conflicts?.length) {
         setConflictInfo({ conflicts: apiError.details.conflicts, pendingBody: body });
       } else {
-        toast.error(apiError.message || 'Thao tác thất bại');
+        toast.error(apiError.message || 'Action failed');
       }
     } finally {
       setSubmitting(false);
@@ -380,7 +420,19 @@ export function MeetingsSchedule() {
       return;
     }
 
+    if (isOutsideWorkingHours(start, end)) {
+      setHoursWarning(buildMeetingBody(false));
+      return;
+    }
+
     await submitCreateMeeting(buildMeetingBody(false));
+  };
+
+  const handleForceOutsideHours = () => {
+    if (!hoursWarning) return;
+    const body = hoursWarning;
+    setHoursWarning(null);
+    submitCreateMeeting(body);
   };
 
   const handleForceCreate = () => {
@@ -401,7 +453,15 @@ export function MeetingsSchedule() {
     }
   };
 
-  const handleRSVP = async (meetingId: string, status: 'accepted' | 'declined', reason?: string, attachment?: string) => {
+  const openDeclineModal = (meetingId: string, action: DeclineModalAction) => {
+    setDeclineModal({ isOpen: true, meetingId, reason: '', fileName: '', action });
+  };
+
+  const closeDeclineModal = () => {
+    setDeclineModal({ isOpen: false, meetingId: '', reason: '', fileName: '', action: 'decline' });
+  };
+
+  const handleRSVP = async (meetingId: string, status: 'accepted' | 'declined', reason?: string, attachment?: string, successMessage?: string) => {
     try {
       await fetchJson(`${apiUrl}/api/meetings/${meetingId}/rsvp`, {
         method: 'PATCH',
@@ -410,34 +470,44 @@ export function MeetingsSchedule() {
         },
         body: JSON.stringify({ status, reason, attachment })
       });
-      toast.success(status === 'accepted' ? 'Đã chấp nhận tham gia!' : 'Đã từ chối cuộc họp!');
-      setDeclineModal({ isOpen: false, meetingId: '', reason: '', fileName: '' }); // Đóng modal nếu có
-      await fetchMeetings(); // Load lại danh sách
+      toast.success(successMessage || (status === 'accepted' ? 'Meeting accepted' : 'Meeting declined'));
+      closeDeclineModal();
+      await fetchMeetings();
     } catch (error) {
-      toast.error('Lỗi khi phản hồi');
+      console.error('RSVP error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update RSVP');
     }
   };
 
   const submitDecline = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!declineModal.reason.trim()) return toast.error('Vui lòng nhập lý do từ chối');
-    handleRSVP(declineModal.meetingId, 'declined', declineModal.reason, declineModal.fileName);
+    if (!declineModal.reason.trim()) {
+      return toast.error(declineModal.action === 'leave' ? 'Please enter a reason for leaving' : 'Please enter a reason for declining');
+    }
+    const reason = declineModal.reason.trim();
+    handleRSVP(
+      declineModal.meetingId,
+      'declined',
+      reason,
+      declineModal.fileName,
+      declineModal.action === 'leave' ? 'Meeting left' : undefined
+    );
   };
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter(meeting => {
-      const status = computeStatus(meeting);
+      const status = computeStatus(meeting, statusNow);
       if (filter === 'all') return true;
       if (filter === 'upcoming') return status === 'upcoming' || status === 'ongoing';
       return status === 'ended';
     });
-  }, [meetings, filter]);
+  }, [meetings, filter, statusNow]);
 
   const counts = useMemo(() => ({
     all: meetings.length,
-    upcoming: meetings.filter(meeting => ['upcoming', 'ongoing'].includes(computeStatus(meeting))).length,
-    ended: meetings.filter(meeting => computeStatus(meeting) === 'ended').length,
-  }), [meetings]);
+    upcoming: meetings.filter(meeting => ['upcoming', 'ongoing'].includes(computeStatus(meeting, statusNow))).length,
+    ended: meetings.filter(meeting => computeStatus(meeting, statusNow) === 'ended').length,
+  }), [meetings, statusNow]);
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -502,20 +572,21 @@ export function MeetingsSchedule() {
           <div className="space-y-4 max-w-5xl">
             {filteredMeetings.map(meeting => {
               const meetingId = getMeetingId(meeting);
-              const status = computeStatus(meeting);
+              const status = computeStatus(meeting, statusNow);
+              const isPastMeeting = status === 'ended';
+              const joinable = canJoinMeeting(meeting, statusNow);
               const participantCount = meeting.participants?.length || 0;
               const activeCount = meeting.activeParticipantsCount || 0;
 
-              // 2. CHECK QUYỀN VỚI THÔNG TIN CỦA CURRENT USER
               const isOrganizer =
                 meeting.organizer === currentUser ||
                 meeting.organizerDetails?.username === currentUser ||
-                (!meeting.organizer && !meeting.organizerDetails); // Fallback khi DB bị rỗng
+                (!meeting.organizer && !meeting.organizerDetails);
 
               const myRsvp = meeting.rsvpStatus?.[currentUser] || meeting.rsvpStatus?.['me'] || (isOrganizer ? 'accepted' : 'pending');
 
               return (
-                <div key={meetingId} className="bg-white border border-gray-100 rounded-xl p-6 hover:shadow-md transition-shadow">
+                <div key={meetingId} onClick={() => setDetailMeeting(meeting)} className="bg-white border border-gray-100 rounded-xl p-6 hover:shadow-md hover:border-purple-100 transition-all cursor-pointer">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2">
@@ -549,8 +620,7 @@ export function MeetingsSchedule() {
                           {meeting.workspace?.name || 'Workspace'}
                         </span>
                         <span className="px-2.5 py-1 rounded-full bg-gray-50 text-gray-500">
-                          {/* Sửa lại hiển thị Organizer cho đỡ bị trống */}
-                          Organizer: {meeting.organizerDetails?.fullname || meeting.organizer || (isOrganizer ? 'Bạn' : 'Không rõ')}
+                          Organizer: {meeting.organizerDetails?.fullname || meeting.organizer || (isOrganizer ? 'You' : 'Unknown')}
                         </span>
                         {meeting.link && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-600">
@@ -564,43 +634,54 @@ export function MeetingsSchedule() {
                     <div className="flex gap-2 shrink-0">
                       <div className="flex flex-col items-end gap-2 shrink-0">
                         <div className="flex gap-2 items-center">
-                          {!isOrganizer && myRsvp === 'pending' && (
+                          {!isPastMeeting && !isOrganizer && myRsvp === 'pending' && (
                             <>
-                              <button onClick={() => handleRSVP(meetingId, 'accepted')} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium shadow-sm">Chấp nhận</button>
-                              <button onClick={() => setDeclineModal({ isOpen: true, meetingId, reason: '', fileName: '' })} className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium">Từ chối</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleRSVP(meetingId, 'accepted'); }} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium shadow-sm">Accept</button>
+                              <button onClick={(e) => { e.stopPropagation(); openDeclineModal(meetingId, 'decline'); }} className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium">Decline</button>
                             </>
                           )}
 
-                          {!isOrganizer && myRsvp === 'accepted' && (
+                          {!isPastMeeting && !isOrganizer && myRsvp === 'accepted' && (
                             <>
-                              <button onClick={() => navigate(`/meetings/${meetingId}`)} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> Join</button>
-                              <button onClick={() => setDeclineModal({ isOpen: true, meetingId, reason: '', fileName: '' })} className="px-4 py-2 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-lg text-sm font-medium transition-colors" title="Rút lui">Hủy tham gia</button>
+                              {joinable ? (
+                                <button onClick={(e) => { e.stopPropagation(); navigate(`/meetings/${meetingId}`); }} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> Join</button>
+                              ) : (
+                                <button disabled title={`Join opens ${JOIN_WINDOW_MINUTES} minutes before the meeting starts`} className="px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium flex items-center gap-2 cursor-not-allowed"><Video size={16} /> Join</button>
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); openDeclineModal(meetingId, 'leave'); }} className="px-4 py-2 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-lg text-sm font-medium transition-colors" title="Leave meeting">Leave</button>
                             </>
                           )}
 
                           {!isOrganizer && myRsvp === 'declined' && (
                             <>
-                              <span className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-100">Đã từ chối</span>
-                              <button onClick={() => handleRSVP(meetingId, 'accepted')} className="px-4 py-1.5 bg-green-50 hover:bg-green-500 text-green-600 hover:text-white rounded-lg text-sm font-medium transition-colors border border-green-200 hover:border-green-500">Đổi ý (Tham gia)</button>
+                              <span className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium border border-red-100">Declined</span>
+                              {!isPastMeeting && (
+                                <button onClick={(e) => { e.stopPropagation(); handleRSVP(meetingId, 'accepted'); }} className="px-4 py-1.5 bg-green-50 hover:bg-green-500 text-green-600 hover:text-white rounded-lg text-sm font-medium transition-colors border border-green-200 hover:border-green-500">Join instead</button>
+                              )}
                             </>
                           )}
 
                           {isOrganizer && (
                             <>
-                              <button onClick={() => navigate(`/meetings/${meetingId}`)} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> {status === 'ongoing' ? 'Join Now' : 'Join'}</button>
-                              <button onClick={() => openEditModal(meeting)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Sửa thông tin">
+                              {!isPastMeeting && (
+                                joinable ? (
+                                  <button onClick={(e) => { e.stopPropagation(); navigate(`/meetings/${meetingId}`); }} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"><Video size={16} /> {status === 'ongoing' ? 'Join Now' : 'Join'}</button>
+                                ) : (
+                                  <button disabled title={`Join opens ${JOIN_WINDOW_MINUTES} minutes before the meeting starts`} className="px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium flex items-center gap-2 cursor-not-allowed"><Video size={16} /> Join</button>
+                                )
+                              )}
+                              <button onClick={(e) => { e.stopPropagation(); openEditModal(meeting); }} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Edit meeting">
                                 <Edit3 size={16} />
                               </button>
-                              <button onClick={() => handleDelete(meetingId)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete(meetingId); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
                             </>
                           )}
                         </div>
 
-                        {/* Hiển thị lý do từ chối nếu có */}
                         {!isOrganizer && myRsvp === 'declined' && meeting.rsvpDetails?.[currentUser]?.reason && (
                           <p className="text-[11px] text-gray-400 italic max-w-xs text-right truncate">
-                            Lý do: {meeting.rsvpDetails[currentUser].reason}
-                            {meeting.rsvpDetails[currentUser].attachment && <span> (Có đính kèm file)</span>}
+                            Reason: {meeting.rsvpDetails[currentUser].reason}
+                            {meeting.rsvpDetails[currentUser].attachment && <span> (attachment included)</span>}
                           </p>
                         )}
                       </div>
@@ -621,9 +702,9 @@ export function MeetingsSchedule() {
                 <AlertTriangle size={20} className="text-amber-500" />
               </div>
               <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Lịch bị trùng</h3>
+                <h3 className="font-semibold text-gray-900 mb-1">Schedule conflict</h3>
                 <p className="text-sm text-gray-500">
-                  Một số thành viên đã có lịch bận trong khung giờ này. Bạn vẫn có thể tiếp tục lưu cuộc họp.
+                  Some participants already have events during this time. You can still save the meeting.
                 </p>
               </div>
             </div>
@@ -648,19 +729,58 @@ export function MeetingsSchedule() {
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors"
               >
                 {submitting && <Loader2 size={14} className="animate-spin" />}
-                Lưu/Tiếp tục
+                Save Anyway
               </button>
               <button
                 type="button"
                 onClick={() => setConflictInfo(null)}
                 className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors"
               >
-                Hủy
+                Cancel
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {hoursWarning && (() => {
+        const { start: ws, end: we } = getWorkingHours();
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-md w-full">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="p-2 bg-amber-50 rounded-lg shrink-0">
+                  <AlertTriangle size={20} className="text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-1">Outside working hours</h3>
+                  <p className="text-sm text-gray-500">
+                    This meeting falls outside your working hours ({formatMinutesOfDay(ws)}–{formatMinutesOfDay(we)}). You can still schedule it.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleForceOutsideHours}
+                  disabled={submitting}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors"
+                >
+                  {submitting && <Loader2 size={14} className="animate-spin" />}
+                  Schedule Anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHoursWarning(null)}
+                  className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showCreate && (
         <div
@@ -673,7 +793,7 @@ export function MeetingsSchedule() {
             onClick={event => event.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Create Meeting</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{editingId ? 'Edit Meeting' : 'Create Meeting'}</h2>
               <button type="button" aria-label="Close" onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
@@ -786,7 +906,7 @@ export function MeetingsSchedule() {
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors"
               >
                 {submitting && <Loader2 size={14} className="animate-spin" />}
-                {submitting ? 'Creating...' : 'Create Meeting'}
+                {submitting ? (editingId ? 'Saving...' : 'Creating...') : (editingId ? 'Save Changes' : 'Create Meeting')}
               </button>
               <button
                 type="button"
@@ -799,12 +919,15 @@ export function MeetingsSchedule() {
           </form>
         </div>
       )}
-      {/* MODAL TỪ CHỐI */}
       {declineModal.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <form onSubmit={submitDecline} className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Lý do từ chối tham gia</h3>
-            <p className="text-sm text-gray-500 mb-4">Người tổ chức sẽ nhận được thông báo về lý do của bạn.</p>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{declineModal.action === 'leave' ? 'Leave Meeting' : 'Decline Meeting'}</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {declineModal.action === 'leave'
+                ? 'You will remain invited, but your RSVP will be marked as declined. The organizer will see your reason.'
+                : 'The organizer will see your reason.'}
+            </p>
 
             <textarea
               autoFocus
@@ -812,12 +935,12 @@ export function MeetingsSchedule() {
               rows={3}
               value={declineModal.reason}
               onChange={e => setDeclineModal(prev => ({ ...prev, reason: e.target.value }))}
-              placeholder="VD: Mình có lịch gặp khách hàng vào giờ này..."
+              placeholder={declineModal.action === 'leave' ? 'Example: I can no longer attend this meeting...' : 'Example: I already have another commitment at this time...'}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none mb-3"
             />
 
             <div className="mb-6">
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Đính kèm minh chứng (Tùy chọn)</label>
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Attachment (optional)</label>
               <input
                 type="file"
                 onChange={e => setDeclineModal(prev => ({ ...prev, fileName: e.target.files?.[0]?.name || '' }))}
@@ -827,15 +950,111 @@ export function MeetingsSchedule() {
 
             <div className="flex gap-3">
               <button type="submit" className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold text-sm transition-colors">
-                Xác nhận từ chối
+                {declineModal.action === 'leave' ? 'Confirm Leave' : 'Confirm Decline'}
               </button>
-              <button type="button" onClick={() => setDeclineModal({ isOpen: false, meetingId: '', reason: '', fileName: '' })} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors">
-                Hủy
+              <button type="button" onClick={closeDeclineModal} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-colors">
+                Cancel
               </button>
             </div>
           </form>
         </div>
       )}
+
+      {detailMeeting && (() => {
+        const meetingId = getMeetingId(detailMeeting);
+        const status = computeStatus(detailMeeting, statusNow);
+        const isPastMeeting = status === 'ended';
+        const joinable = canJoinMeeting(detailMeeting, statusNow);
+        const isOrganizer =
+          detailMeeting.organizer === currentUser ||
+          detailMeeting.organizerDetails?.username === currentUser ||
+          (!detailMeeting.organizer && !detailMeeting.organizerDetails);
+        const myRsvp = detailMeeting.rsvpStatus?.[currentUser] || (isOrganizer ? 'accepted' : 'pending');
+        const participants = detailMeeting.participantDetails
+          || detailMeeting.participants?.map(username => ({ username }))
+          || [];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onClick={() => setDetailMeeting(null)}>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={event => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3 mb-1">
+                    <h3 className="text-lg font-semibold text-gray-900">{detailMeeting.title}</h3>
+                    <StatusBadge status={status} />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    {formatDate(detailMeeting.starttime)} · {formatTime(detailMeeting.starttime)} - {formatDuration(detailMeeting.starttime, detailMeeting.endtime)}
+                  </p>
+                </div>
+                <button type="button" aria-label="Close" onClick={() => setDetailMeeting(null)} className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-50">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-2 text-sm text-gray-600 mb-5">
+                <p><span className="text-gray-400">Workspace:</span> {detailMeeting.workspace?.name || 'Workspace'}</p>
+                <p><span className="text-gray-400">Organizer:</span> {detailMeeting.organizerDetails?.fullname || detailMeeting.organizer || (isOrganizer ? 'You' : 'Unknown')}</p>
+                {detailMeeting.place && <p className="flex items-center gap-1.5"><MapPin size={14} className="text-gray-400" />{detailMeeting.place}</p>}
+                {detailMeeting.link && (
+                  <p className="flex items-center gap-1.5">
+                    <LinkIcon size={14} className="text-gray-400" />
+                    <a href={detailMeeting.link} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-purple-600 hover:underline truncate">{detailMeeting.link}</a>
+                  </p>
+                )}
+              </div>
+
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Participants ({participants.length})</p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {participants.map(p => {
+                    const rsvp = detailMeeting.rsvpStatus?.[p.username] || 'pending';
+                    const rsvpStyle = rsvp === 'accepted' ? 'bg-green-50 text-green-600' : rsvp === 'declined' ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-500';
+                    return (
+                      <div key={p.username} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate text-gray-700">{p.fullname || p.username}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize shrink-0 ${rsvpStyle}`}>{rsvp}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {!isPastMeeting && !isOrganizer && myRsvp === 'pending' && (
+                <div className="flex gap-2">
+                  <button onClick={() => { handleRSVP(meetingId, 'accepted'); setDetailMeeting(null); }} className="flex-1 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-semibold">Accept</button>
+                  <button onClick={() => { openDeclineModal(meetingId, 'decline'); setDetailMeeting(null); }} className="flex-1 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold">Decline</button>
+                </div>
+              )}
+
+              {!isPastMeeting && isOrganizer && (
+                joinable ? (
+                  <button onClick={() => { setDetailMeeting(null); navigate(`/meetings/${meetingId}`); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-semibold shadow-sm"><Video size={16} /> {status === 'ongoing' ? 'Join Now' : 'Join'}</button>
+                ) : (
+                  <button disabled className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-400 rounded-xl text-sm font-semibold cursor-not-allowed"><Video size={16} /> Opens {JOIN_WINDOW_MINUTES} min before start</button>
+                )
+              )}
+
+              {!isPastMeeting && !isOrganizer && myRsvp === 'accepted' && (
+                <div className="flex gap-2">
+                  {joinable ? (
+                    <button onClick={() => { setDetailMeeting(null); navigate(`/meetings/${meetingId}`); }} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl text-sm font-semibold shadow-sm"><Video size={16} /> {status === 'ongoing' ? 'Join Now' : 'Join'}</button>
+                  ) : (
+                    <button disabled className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 text-gray-400 rounded-xl text-sm font-semibold cursor-not-allowed"><Video size={16} /> Opens {JOIN_WINDOW_MINUTES} min before start</button>
+                  )}
+                  <button onClick={() => { openDeclineModal(meetingId, 'leave'); setDetailMeeting(null); }} className="px-4 py-2.5 bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-500 rounded-xl text-sm font-semibold transition-colors">
+                    Leave
+                  </button>
+                </div>
+              )}
+
+              {isPastMeeting && (
+                <button onClick={() => { setDetailMeeting(null); navigate(`/meetings/${meetingId}/review`); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold"><FileText size={16} /> Review Meeting</button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,12 +1,39 @@
 const prisma = require('../config/prisma');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 const { generateToken } = require('../utils/jwt.util');
 const { formatToGMT7 } = require('../utils/timezone.util');
 const ApiError = require('../utils/api-error');
 const ERROR_CODES = require('../constants/error-codes');
 const ROLES = require('../constants/roles');
+const gdriveUtil = require('../utils/gdrive.util');
+const { encryptSecret, decryptSecret } = require('../utils/secret.util');
+
+const sanitizeAuthUser = (user) => {
+  if (!user) return user;
+  const { password, googleDriveRefreshToken, ...safeUser } = user;
+  return safeUser;
+};
+
+const buildDriveFolderUrl = (folderId, email) => {
+  if (!folderId) return null;
+  const authUser = email ? `?authuser=${encodeURIComponent(email)}` : '';
+  return `https://drive.google.com/drive/folders/${folderId}${authUser}`;
+};
+
+const buildDriveStatus = (user) => {
+  const connected = Boolean(user?.googleDriveEmail && user?.googleDriveRefreshToken);
+  return {
+    connected,
+    googleDriveEmail: connected ? user.googleDriveEmail : null,
+    googleDriveFolderId: connected ? user.googleDriveFolderId || null : null,
+    folderUrl: connected ? buildDriveFolderUrl(user.googleDriveFolderId, user.googleDriveEmail) : null,
+    connectedAt: connected && user.googleDriveConnectedAt ? user.googleDriveConnectedAt : null,
+  };
+};
 
 /**
  * @swagger
@@ -215,7 +242,7 @@ const getMe = async (req, res, next) => {
     });
     
     if (user) {
-      const { password, ...userData } = user;
+      const userData = sanitizeAuthUser(user);
       if (userData.createdat) {
         userData.createdAt = formatToGMT7(userData.createdat);
       }
@@ -478,6 +505,178 @@ const googleDriveTokenCallback = async (req, res, next) => {
   }
 };
 
+const getGoogleDriveStatus = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username: req.user.username },
+    });
+
+    if (!user) {
+      throw new ApiError(404, 'User not found', ERROR_CODES.AUTH.USER_NOT_FOUND);
+    }
+
+    res.json(buildDriveStatus(user));
+  } catch (error) {
+    next(error);
+  }
+};
+
+const startGoogleDriveConnect = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username: req.user.username },
+    });
+
+    if (!user) {
+      throw new ApiError(404, 'User not found', ERROR_CODES.AUTH.USER_NOT_FOUND);
+    }
+
+    if (!user.email) {
+      throw new ApiError(400, 'Your UniPlatform account needs an email before connecting Google Drive.', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
+    }
+
+    const redirectUri = gdriveUtil.getDriveRedirectUri();
+    const oauth2Client = gdriveUtil.createOAuth2Client(redirectUri);
+    const state = jwt.sign(
+      {
+        purpose: 'google-drive-connect',
+        username: user.username,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent select_account',
+      include_granted_scopes: true,
+      scope: [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/userinfo.email',
+      ],
+      state,
+    });
+
+    res.json({ authUrl });
+  } catch (error) {
+    if (error.message === 'Google OAuth client is not configured') {
+      return next(new ApiError(
+        503,
+        'Google Drive OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before connecting Drive.',
+        ERROR_CODES.FILE.UPLOAD_FAILED
+      ));
+    }
+    next(error);
+  }
+};
+
+const googleDriveConnectCallback = async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  const fail = (code, extra = {}) => {
+    const params = new URLSearchParams({ drive_error: code, ...extra });
+    return res.redirect(`${frontendUrl}/files?${params.toString()}`);
+  };
+
+  try {
+    const { code, state } = req.query;
+    if (!code || !state) {
+      return fail('missing_code');
+    }
+
+    let decodedState;
+    try {
+      decodedState = jwt.verify(state, process.env.JWT_SECRET);
+    } catch {
+      return fail('invalid_state');
+    }
+
+    if (decodedState.purpose !== 'google-drive-connect' || !decodedState.username) {
+      return fail('invalid_state');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { username: decodedState.username },
+    });
+
+    if (!user) {
+      return fail('user_not_found');
+    }
+
+    const redirectUri = gdriveUtil.getDriveRedirectUri();
+    const oauth2Client = gdriveUtil.createOAuth2Client(redirectUri);
+    const { tokens } = await oauth2Client.getToken(code);
+
+    if (!tokens?.refresh_token) {
+      return fail('missing_refresh_token');
+    }
+
+    oauth2Client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const googleProfile = await oauth2.userinfo.get();
+    const googleEmail = googleProfile.data.email;
+
+    if (!googleEmail) {
+      return fail('missing_google_email');
+    }
+
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const folder = await gdriveUtil.ensureAppFolder(drive);
+
+    await prisma.user.update({
+      where: { username: user.username },
+      data: {
+        googleDriveEmail: googleEmail,
+        googleDriveRefreshToken: encryptSecret(tokens.refresh_token),
+        googleDriveFolderId: folder.id,
+        googleDriveConnectedAt: new Date(),
+      },
+    });
+
+    return res.redirect(`${frontendUrl}/files?drive=connected`);
+  } catch (error) {
+    console.error('Google Drive connect callback error:', error.message);
+    return fail('connect_failed');
+  }
+};
+
+const disconnectGoogleDrive = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username: req.user.username },
+    });
+
+    if (!user) {
+      throw new ApiError(404, 'User not found', ERROR_CODES.AUTH.USER_NOT_FOUND);
+    }
+
+    if (user.googleDriveRefreshToken) {
+      try {
+        const refreshToken = decryptSecret(user.googleDriveRefreshToken);
+        const oauth2Client = gdriveUtil.createOAuth2Client();
+        oauth2Client.setCredentials({ refresh_token: refreshToken });
+        await oauth2Client.revokeCredentials();
+      } catch (error) {
+        console.warn('Google Drive token revoke failed:', error.message);
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { username: user.username },
+      data: {
+        googleDriveEmail: null,
+        googleDriveRefreshToken: null,
+        googleDriveFolderId: null,
+        googleDriveConnectedAt: null,
+      },
+    });
+
+    res.json(buildDriveStatus(updatedUser));
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -486,5 +685,9 @@ module.exports = {
   forgotPassword,
   resetPassword,
   oauthCallback,
-  googleDriveTokenCallback
+  googleDriveTokenCallback,
+  getGoogleDriveStatus,
+  startGoogleDriveConnect,
+  googleDriveConnectCallback,
+  disconnectGoogleDrive,
 };

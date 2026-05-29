@@ -5,7 +5,7 @@ const dateTimeString = z.string().refine((value) => !Number.isNaN(Date.parse(val
   message: 'Invalid date-time value',
 });
 
-const scheduleType = z.enum(['available', 'busy', 'tentative']);
+const scheduleType = z.enum(['busy', 'tentative']);
 
 const dateRangeRefinement = (data, ctx) => {
   if (data.starttime && data.endtime) {

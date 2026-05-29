@@ -1,7 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const passport = require('passport');
-const { registerUser, loginUser, getMe, logoutUser, forgotPassword, resetPassword, oauthCallback, googleDriveTokenCallback } = require('../controllers/auth.controller');
+const {
+  registerUser,
+  loginUser,
+  getMe,
+  logoutUser,
+  forgotPassword,
+  resetPassword,
+  oauthCallback,
+  googleDriveTokenCallback,
+  getGoogleDriveStatus,
+  startGoogleDriveConnect,
+  googleDriveConnectCallback,
+  disconnectGoogleDrive,
+} = require('../controllers/auth.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const validate = require('../middlewares/validate.middleware');
 const { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } = require('../validations/auth.schema');
@@ -156,7 +169,13 @@ router.get('/oauth-fail', (req, res) => {
   res.redirect(`${frontendUrl}/login?error=AuthenticationFailed`);
 });
 
-// 5. Google Drive Token Callback (for gdrive.util.js refresh token setup)
+// 5. Per-user Google Drive connection
+router.get('/google-drive/status', protect, getGoogleDriveStatus);
+router.post('/google-drive/connect/start', protect, startGoogleDriveConnect);
+router.get('/google-drive/connect/callback', googleDriveConnectCallback);
+router.delete('/google-drive/disconnect', protect, disconnectGoogleDrive);
+
+// 6. Google Drive Token Callback (legacy setup helper for gdrive.util.js)
 router.get('/google-drive/callback', googleDriveTokenCallback);
 
 module.exports = router;

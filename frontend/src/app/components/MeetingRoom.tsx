@@ -25,6 +25,7 @@ import {
   Radio
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { JOIN_WINDOW_MINUTES } from '../utils/meeting';
 
 interface Participant {
   id: string;
@@ -567,6 +568,15 @@ export function MeetingRoom() {
       });
       if (res.ok) {
         const data = await res.json();
+
+        // Block joining a meeting earlier than JOIN_WINDOW_MINUTES before it starts.
+        const startMs = new Date(data.starttime).getTime();
+        if (data.status !== 'ended' && Number.isFinite(startMs) && Date.now() < startMs - JOIN_WINDOW_MINUTES * 60_000) {
+          toast.error(`This meeting opens ${JOIN_WINDOW_MINUTES} minutes before it starts`);
+          navigate('/meetings');
+          return;
+        }
+
         setMeeting(data);
 
         // Auto-update status to ongoing if it was upcoming
@@ -597,8 +607,10 @@ export function MeetingRoom() {
               starttime: newStartISO,
               endtime: newEndISO
             })
-          }).then(() => {
-            setMeeting({ ...data, status: 'ongoing', starttime: newStartISO, endtime: newEndISO });
+          }).then(updateRes => {
+            if (updateRes.ok) {
+              setMeeting({ ...data, status: 'ongoing', starttime: newStartISO, endtime: newEndISO });
+            }
           });
         }
 
@@ -614,6 +626,12 @@ export function MeetingRoom() {
         }
 
         await fetchRecordingStatus();
+      } else if (res.status === 403) {
+        toast.error('You do not have access to this meeting');
+        navigate('/meetings');
+      } else if (res.status === 404) {
+        toast.error('Meeting not found');
+        navigate('/meetings');
       }
     } catch (err) {
       console.error("Fetch meeting error", err);

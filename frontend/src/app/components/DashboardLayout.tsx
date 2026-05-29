@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './Sidebar';
 import { Menu, X } from 'lucide-react';
-import { Outlet } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { ChatInterface } from './ChatInterface';
 import { RightPanel } from './RightPanel';
 import { TeamCoordination } from './TeamCoordination';
@@ -9,38 +9,53 @@ import { TeamCoordination } from './TeamCoordination';
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 export function DashboardLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [groupView, setGroupView] = useState<'chat' | 'coordination'>('chat');
 
-  // 1. Thêm state để lưu danh sách meetings
-  const [meetings, setMeetings] = useState<any[]>([]);
+  // A meeting sub-route (e.g. /meetings/:id/review) is rendered via <Outlet/>.
+  // Don't let a selected workspace mask it, otherwise navigating from the
+  // workspace right panel (Latest Minutes) would silently keep the chat view.
+  const isMeetingSubRoute = /^\/meetings\/.+/.test(location.pathname);
 
-  // 2. Gọi API để lấy danh sách meeting khi layout được load
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+
   useEffect(() => {
     const token = localStorage.getItem('uniplatform_user_token') || '';
-    fetch(`${apiUrl}/api/meetings`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        setMeetings(Array.isArray(data) ? data : (data.data || []));
+
+    const fetchJson = async (path: string) => {
+      const res = await fetch(`${apiUrl}${path}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error(`Request failed: ${path}`);
+      return res.json();
+    };
+
+    Promise.all([fetchJson('/api/meetings'), fetchJson('/api/workspaces')])
+      .then(([meetingsData, workspacesData]) => {
+        setMeetings(Array.isArray(meetingsData) ? meetingsData : (meetingsData.data || []));
+        setWorkspaces(Array.isArray(workspacesData) ? workspacesData : (workspacesData.data || []));
       })
-      .catch(err => console.error('Fetch meetings error:', err));
+      .catch(err => console.error('Fetch dashboard data error:', err));
   }, []);
 
-  // 3. Biến đổi dữ liệu meetings thành format CalendarEvent mà RightPanel cần
+  const activeWorkspace = useMemo(() => (
+    workspaces.find(workspace => (workspace.workspaceid || workspace.id || workspace._id) === activeGroup)
+  ), [workspaces, activeGroup]);
+
   const allEvents = useMemo(() => {
     return meetings.map(meeting => ({
       id: meeting.meetingid,
       title: meeting.title,
-      start: new Date(meeting.starttime), // Parse thành Object Date
-      end: new Date(meeting.endtime),     // Parse thành Object Date
+      start: new Date(meeting.starttime),
+      end: new Date(meeting.endtime),
       status: 'meeting',
       source: 'meeting',
-      // Lưu ý: activeGroup thường lưu ID của workspace. 
-      // Ta lưu thẳng ID vào meta để RightPanel dễ dàng filter.
       meta: meeting.workspaceid || meeting.workspace?.id || meeting.workspace?.name || '',
+      meetingMinute: meeting.meetingMinute,
     }));
   }, [meetings]);
 
@@ -69,6 +84,9 @@ export function DashboardLayout() {
           onCloseMobile={() => setMobileMenuOpen(false)}
           activeGroup={activeGroup}
           onSelectGroup={(group) => {
+            if (group) {
+              navigate('/chat');
+            }
             setActiveGroup(group);
             setGroupView('chat'); // Reset màn hình về chat mỗi khi đổi nhóm
           }}
@@ -77,7 +95,7 @@ export function DashboardLayout() {
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col md:flex-row h-full overflow-hidden mt-[73px] md:mt-0 relative">
-        {activeGroup ? (
+        {activeGroup && !isMeetingSubRoute ? (
           <div className="flex flex-1 w-full h-full">
 
             {/* Cột giữa hiển thị dựa theo state groupView */}
@@ -95,8 +113,9 @@ export function DashboardLayout() {
             {/* Cột RightPanel bên phải */}
             <div className="hidden lg:block w-80 shrink-0 h-full border-l border-gray-100">
               <RightPanel
-                groupName={activeGroup} // Cập nhật tên prop cho khớp với RightPanel
-                allEvents={allEvents}   // Truyền danh sách sự kiện đã tính toán vào
+                groupName={activeWorkspace?.name || activeGroup}
+                workspaceId={activeGroup}
+                allEvents={allEvents}
                 isCoordinationOpen={groupView === 'coordination'}
                 onToggleCoordination={() => setGroupView(prev => prev === 'chat' ? 'coordination' : 'chat')}
               />

@@ -31,7 +31,7 @@ export function Login() {
     setSuccessMsg('');
 
     if (!identifier || !password) {
-      setError('Vui lòng nhập Email hoặc Username và mật khẩu');
+      setError('Please enter your email or username and password');
       return;
     }
 
@@ -44,7 +44,7 @@ export function Login() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Đăng nhập thất bại.');
+      if (!response.ok) throw new Error(data.message || 'Login failed.');
 
       // Lưu trữ trạng thái và thông tin
       const token = data.token || data.data?.token;
@@ -68,7 +68,7 @@ export function Login() {
     setSuccessMsg('');
 
     if (!username || !email || !password || !fullname) {
-      setError('Vui lòng điền đầy đủ thông tin');
+      setError('Please fill in all required information');
       return;
     }
 
@@ -81,7 +81,7 @@ export function Login() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Đăng ký thất bại.');
+      if (!response.ok) throw new Error(data.message || 'Registration failed.');
 
       // Tự động đăng nhập sau khi đăng ký thành công
       localStorage.setItem('uniplatform_authenticated', 'true');
@@ -104,7 +104,7 @@ export function Login() {
     setSuccessMsg('');
 
     if (!email) {
-      setError('Vui lòng nhập email của bạn');
+      setError('Please enter your email address');
       return;
     }
 
@@ -117,9 +117,9 @@ export function Login() {
         body: JSON.stringify({ email }),
       });
 
-      if (!response.ok) throw new Error('Không thể gửi yêu cầu đặt lại mật khẩu.');
+      if (!response.ok) throw new Error('Unable to send the password reset request.');
 
-      setSuccessMsg('Liên kết đặt lại mật khẩu đã được gửi đến email của bạn!');
+      setSuccessMsg('A password reset link has been sent to your email.');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -191,7 +191,7 @@ export function Login() {
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
                       autoComplete="username"
-                      placeholder="student@university.edu hoặc username"
+                      placeholder="student@university.edu or username"
                       className="w-full pl-11 pr-4 py-3 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 transition-all"
                       disabled={isLoading}
                     />
@@ -236,10 +236,10 @@ export function Login() {
             {mode === 'register' && (
               <form onSubmit={handleRegister} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Họ và Tên</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                   <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><User className="w-5 h-5" /></div>
-                    <input type="text" value={fullname} onChange={(e) => setFullname(e.target.value)} placeholder="Nguyễn Văn A" className="w-full pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 transition-all" disabled={isLoading} />
+                    <input type="text" value={fullname} onChange={(e) => setFullname(e.target.value)} placeholder="Alex Nguyen" className="w-full pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 transition-all" disabled={isLoading} />
                   </div>
                 </div>
                 <div>

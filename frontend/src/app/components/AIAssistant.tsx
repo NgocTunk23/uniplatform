@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 
 const promptSuggestions = [
-  "Tóm tắt nội dung cuộc họp gần nhất của tôi",
-  "Lịch trình làm việc của tôi vào ngày mai",
-  "Cuộc họp nào sẽ diễn ra trong tuần này?",
+  "Summarize my most recent meeting",
+  "What is my work schedule tomorrow?",
+  "Which meetings are happening this week?",
 ];
 
 interface Message {
@@ -18,33 +18,76 @@ interface Message {
   text: string;
 }
 
-// Bỏ qua lỗi TypeScript với Vite env (nếu có)
 const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
+const legacyStorageKey = 'uniplatform_ai_chat';
+
+function getUsernameFromToken(token: string | null): string {
+  if (!token) return '';
+
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return '';
+
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(window.atob(normalized));
+    return typeof decoded?.id === 'string' ? decoded.id : '';
+  } catch {
+    return '';
+  }
+}
+
+function getCurrentUsername(): string {
+  return localStorage.getItem('uniplatform_username') || getUsernameFromToken(localStorage.getItem('uniplatform_user_token'));
+}
+
+function getUserStorageKey(username: string): string | null {
+  return username ? `uniplatform_ai_chat:${username}` : null;
+}
+
+function loadMessages(storageKey: string | null): Message[] {
+  if (!storageKey) return [];
+
+  const savedMessages = sessionStorage.getItem(storageKey);
+  if (!savedMessages) return [];
+
+  try {
+    const parsed = JSON.parse(savedMessages);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderMessageText(text: string) {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+}
 
 export function AIAssistant() {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const username = getCurrentUsername();
+  const storageKey = getUserStorageKey(username);
 
-  // 1. KHỞI TẠO STATE: Lấy dữ liệu cũ từ sessionStorage nếu có
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const savedMessages = sessionStorage.getItem('uniplatform_ai_chat');
-    if (savedMessages) {
-      try {
-        return JSON.parse(savedMessages);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  });
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(storageKey));
 
-  // 2. LƯU STATE: Tự động lưu mảng messages vào sessionStorage mỗi khi nó thay đổi
   useEffect(() => {
-    sessionStorage.setItem('uniplatform_ai_chat', JSON.stringify(messages));
-  }, [messages]);
+    sessionStorage.removeItem(legacyStorageKey);
+  }, []);
 
-  // Tự động cuộn xuống cuối khi có tin nhắn mới
+  useEffect(() => {
+    if (!storageKey) return;
+    sessionStorage.setItem(storageKey, JSON.stringify(messages));
+  }, [messages, storageKey]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
@@ -53,7 +96,6 @@ export function AIAssistant() {
     const text = textToSend || inputText;
     if (!text.trim()) return;
 
-    // Lưu tin nhắn User vào State UI
     const userMsg: Message = { id: Date.now().toString(), sender: 'user', text: text.trim() };
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
@@ -62,13 +104,12 @@ export function AIAssistant() {
     try {
       const token = localStorage.getItem('uniplatform_user_token');
       
-      const res = await fetch(`http://localhost:5001/api/ai/chat`, {
+      const res = await fetch(`${apiUrl}/api/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
-        // Đẩy toàn bộ `messages` (lịch sử) lên làm context cho Ollama
         body: JSON.stringify({ 
           prompt: userMsg.text,
           context: messages.map(m => ({ senderusername: m.sender, content: m.text }))
@@ -82,7 +123,7 @@ export function AIAssistant() {
         throw new Error(data.message);
       }
     } catch (error) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'ai', text: "Ollama server không phản hồi!" }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), sender: 'ai', text: "Ollama server is not responding." }]);
     } finally {
       setIsLoading(false);
     }
@@ -112,11 +153,11 @@ export function AIAssistant() {
           
           {messages.length === 0 && (
             <div className="text-center text-gray-400 mt-10 text-sm">
-              Hãy bắt đầu cuộc trò chuyện với UniPlatform AI
+              Start a conversation with UniPlatform AI
             </div>
           )}
 
-          {/* Render tin nhắn */}
+          {/* Render messages */}
           {messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} gap-3 w-full`}>
               {msg.sender === 'ai' && (
@@ -133,21 +174,19 @@ export function AIAssistant() {
                     ? 'bg-purple-400 text-white rounded-tr-sm shadow-purple-200' 
                     : 'bg-gray-50/80 border border-gray-100 text-gray-800 rounded-tl-sm'
                 }`}>
-                  {/* Dùng whitespace-pre-wrap để hiển thị đúng dấu xuống dòng của AI */}
-                  <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  <div className="whitespace-pre-wrap">{renderMessageText(msg.text)}</div>
                 </div>
               </div>
             </div>
           ))}
 
-          {/* Haptic Loading cho AI */}
           {isLoading && (
             <div className="flex gap-4 w-full">
               <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-center text-purple-500 shrink-0 shadow-sm">
                 <Loader2 size={20} className="animate-spin" />
               </div>
               <div className="flex flex-col items-start justify-center">
-                 <span className="text-[12px] font-semibold text-gray-500 mb-1.5 ml-1">UniPlatform AI đang suy nghĩ...</span>
+                 <span className="text-[12px] font-semibold text-gray-500 mb-1.5 ml-1">UniPlatform AI is thinking...</span>
               </div>
             </div>
           )}
