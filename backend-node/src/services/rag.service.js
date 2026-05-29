@@ -173,7 +173,19 @@ const getVisibleMeetingQuery = async (currentUser, filter = {}) => {
   };
 };
 
+const isMeetingVisibleToUser = (meeting, currentUser) => {
+  const isOrganizer = meeting.organizer === currentUser.username;
+  const rsvpStatus = meeting.rsvpStatus && typeof meeting.rsvpStatus === 'object'
+    ? meeting.rsvpStatus[currentUser.username]
+    : undefined;
+  return isOrganizer || rsvpStatus !== 'declined';
+};
+
 const fetchCalendarEvents = async (currentUser, range) => {
+  const meetingFilter = {
+    starttime: { gte: range.start, lt: range.end },
+  };
+
   const [schedules, meetings] = await Promise.all([
     prisma.schedules.findMany({
       where: {
@@ -183,7 +195,7 @@ const fetchCalendarEvents = async (currentUser, range) => {
       },
       orderBy: { starttime: 'asc' },
     }),
-    getVisibleMeetingQuery(currentUser, range).then(where => prisma.meeting.findMany({
+    getVisibleMeetingQuery(currentUser, meetingFilter).then(where => prisma.meeting.findMany({
       where,
       include: {
         workspace: { select: { name: true } },
@@ -201,13 +213,7 @@ const fetchCalendarEvents = async (currentUser, range) => {
   }));
 
   const meetingEvents = meetings
-    .filter(meeting => {
-      const isOrganizer = meeting.organizer === currentUser.username;
-      const rsvpStatus = meeting.rsvpStatus && typeof meeting.rsvpStatus === 'object'
-        ? meeting.rsvpStatus[currentUser.username]
-        : undefined;
-      return isOrganizer || rsvpStatus !== 'declined';
-    })
+    .filter(meeting => isMeetingVisibleToUser(meeting, currentUser))
     .map(meeting => ({
       source: 'meeting',
       title: meeting.title,
@@ -331,6 +337,22 @@ const answerMostRecentMeetingSummary = async (currentUser) => {
   return await buildMeetingSummaryAnswer(meeting);
 };
 
+const buildPrivacyFallbackResponse = (prompt = '') => {
+  const text = normalizeText(prompt);
+
+  if (text.includes('schedule') || text.includes('lịch') || text.includes('lich')) {
+    return 'Tôi đang gặp sự cố khi truy xuất lịch của bạn. Vui lòng thử lại sau hoặc kiểm tra lịch trực tiếp trong ứng dụng để xem các sự kiện ngày mai.';
+  }
+
+  if (text.includes('meeting') || text.includes('họp') || text.includes('hop') || text.includes('biên bản') || text.includes('bien ban')) {
+    if (text.includes('this week') || text.includes('tuần này') || text.includes('tuan nay') || text.includes('week')) {
+      return 'Tôi không thể lấy danh sách cuộc họp tuần này ngay lúc này. Vui lòng thử lại sau hoặc kiểm tra lịch cuộc họp trong ứng dụng.';
+    }
+  }
+
+  return 'Tôi đang gặp lỗi khi truy xuất dữ liệu an toàn của bạn. Vui lòng thử lại sau hoặc kiểm tra trực tiếp trong ứng dụng.';
+};
+
 /**
  * Trích xuất Lịch trình của người dùng hiện tại (Bảo mật 100%)
  */
@@ -355,23 +377,29 @@ const fetchUserSchedules = async (username) => {
 };
 
 /**
- * Trích xuất Biên bản cuộc họp của người dùng hiện tại
+ * Trích xuất các cuộc họp sắp tới của người dùng hiện tại (theo phạm vi truy cập của user)
  */
-const fetchUserMeetings = async (username) => {
-  const minutes = await prisma.meetingMinutes.findMany({
-    where: { 
-      createby: username 
-    },
-    // SỬA Ở ĐÂY: Dùng 'createdat' thay vì '_id'
-    orderBy: { createdat: 'desc' }, 
-    take: 3
+const fetchUserMeetings = async (currentUser) => {
+  const where = await getVisibleMeetingQuery(currentUser, {
+    starttime: { gte: new Date() },
   });
 
-  if (minutes.length === 0) return "Không tìm thấy biên bản cuộc họp nào gần đây.";
+  const meetings = await prisma.meeting.findMany({
+    where,
+    include: {
+      workspace: { select: { name: true } },
+    },
+    orderBy: { starttime: 'asc' },
+    take: 5,
+  });
 
-  return minutes.map(m => 
-    `Biên bản:\n+ Tóm tắt: ${m.summary || 'Trống'}\n+ Quyết định: ${(m.decisions && m.decisions.length > 0) ? m.decisions.join(', ') : 'Không có'}`
-  ).join('\n\n');
+  const visibleMeetings = meetings.filter(meeting => isMeetingVisibleToUser(meeting, currentUser));
+
+  if (visibleMeetings.length === 0) return "Không tìm thấy cuộc họp nào sắp tới cho bạn.";
+
+  return visibleMeetings.map(meeting =>
+    `- ${meeting.title}: ${formatDate(meeting.starttime)} ${formatTime(meeting.starttime)}-${formatTime(meeting.endtime)}${meeting.workspace?.name ? ` (${meeting.workspace.name})` : ''}`
+  ).join('\n');
 };
 
 /**
@@ -408,7 +436,7 @@ const processChatWithPrivacy = async (user, prompt, chatHistory) => {
     }
 
     if (askForMeeting) {
-      const meetingData = await fetchUserMeetings(username);
+      const meetingData = await fetchUserMeetings(user);
       injectedContext += `\n--- CUỘC HỌP CỦA [${username}] ---\n${meetingData}\n`;
     }
 
@@ -432,7 +460,7 @@ HƯỚNG DẪN TRẢ LỜI (QUAN TRỌNG):
 
   } catch (error) {
     console.error('❌ RAG Service Error:', error.message);
-    return "Xin lỗi, tôi gặp lỗi khi truy xuất dữ liệu an toàn của bạn.";
+    return buildPrivacyFallbackResponse(prompt);
   }
 };
 

@@ -189,6 +189,121 @@ describe('RAG calendar answers', () => {
     expect(answer).not.toBe('AI fallback response');
   });
 
+  test('processChatWithPrivacy handles ordinary chat without querying private data', async () => {
+    const answer = await processChatWithPrivacy(user, 'Chào bạn, hôm nay thế nào?', []);
+
+    expect(answer).toBe('AI fallback response');
+    expect(aiService.generateResponse).toHaveBeenCalledWith(
+      'Chào bạn, hôm nay thế nào?',
+      [],
+      expect.stringContaining('UniPlatform AI')
+    );
+    expect(prisma.schedules.findMany).not.toHaveBeenCalled();
+    expect(prisma.workspace.findMany).not.toHaveBeenCalled();
+    expect(prisma.meeting.findMany).not.toHaveBeenCalled();
+    expect(prisma.meetingMinutes.findMany).not.toHaveBeenCalled();
+  });
+
+  test('processChatWithPrivacy queries only the current user schedule', async () => {
+    prisma.schedules.findMany.mockResolvedValue([]);
+
+    await processChatWithPrivacy(user, 'What is my work schedule tomorrow?', []);
+
+    expect(prisma.schedules.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        username: user.username,
+      }),
+    }));
+  });
+
+  test('processChatWithPrivacy returns only visible meetings for the current user this week', async () => {
+    prisma.workspace.findMany.mockResolvedValue([
+      {
+        workspaceid: 'workspace-1',
+        member: [
+          { username: user.username, workspacerole: 'Member' },
+          { username: 'other-user', workspacerole: 'Member' },
+        ],
+      },
+    ]);
+    prisma.meeting.findMany.mockImplementation(async (args) => {
+      expect(args.where).not.toHaveProperty('label');
+      expect(args.where).not.toHaveProperty('start');
+      expect(args.where).not.toHaveProperty('end');
+      expect(args.where.starttime).toEqual({ gte: expect.any(Date), lt: expect.any(Date) });
+      expect(args.where.OR).toEqual(expect.arrayContaining([
+        { workspaceid: { in: [] } },
+        {
+          AND: [
+            { workspaceid: { in: ['workspace-1'] } },
+            { participants: { has: user.username } },
+          ],
+        },
+      ]));
+      return [
+        {
+          title: 'Personal sync',
+          starttime: new Date('2026-05-30T06:00:00.000Z'),
+          endtime: new Date('2026-05-30T07:00:00.000Z'),
+          organizer: 'other-user',
+          participants: [user.username],
+          rsvpStatus: {},
+          workspace: { name: 'Workspace A' },
+        },
+        {
+          title: 'Hidden meeting',
+          starttime: new Date('2026-05-30T08:00:00.000Z'),
+          endtime: new Date('2026-05-30T09:00:00.000Z'),
+          organizer: 'other-user',
+          participants: ['someone-else'],
+          rsvpStatus: { [user.username]: 'declined' },
+          workspace: { name: 'Workspace B' },
+        },
+      ];
+    });
+
+    jest.useFakeTimers().setSystemTime(now);
+    const answer = await processChatWithPrivacy(user, 'Which meetings are happening this week?', []);
+    jest.useRealTimers();
+
+    expect(answer).toContain('Personal sync');
+    expect(answer).not.toContain('Hidden meeting');
+    expect(aiService.generateResponse).not.toHaveBeenCalled();
+    expect(prisma.meetingMinutes.findMany).not.toHaveBeenCalled();
+  });
+
+  test('processChatWithPrivacy does not look for workspace messages outside the current membership', async () => {
+    const answer = await processChatWithPrivacy(user, 'Có tin nhắn mới trong workspace của tôi không?', []);
+
+    expect(answer).toBe('AI fallback response');
+    expect(aiService.generateResponse).toHaveBeenCalledWith(
+      'Có tin nhắn mới trong workspace của tôi không?',
+      [],
+      expect.stringContaining('UniPlatform AI')
+    );
+    expect(prisma.workspace.findMany).not.toHaveBeenCalled();
+    expect(prisma.meeting.findMany).not.toHaveBeenCalled();
+    expect(prisma.schedules.findMany).not.toHaveBeenCalled();
+  });
+
+  test('processChatWithPrivacy returns a helpful fallback when schedule retrieval fails', async () => {
+    prisma.schedules.findMany.mockRejectedValue(new Error('safe retrieval failed'));
+
+    const answer = await processChatWithPrivacy(user, 'What is my work schedule tomorrow?', []);
+
+    expect(answer).toContain('Tôi đang gặp sự cố khi truy xuất lịch của bạn');
+    expect(answer).not.toContain('Xin lỗi, tôi gặp lỗi khi truy xuất dữ liệu an toàn của bạn.');
+  });
+
+  test('processChatWithPrivacy returns a helpful fallback when meeting retrieval fails', async () => {
+    prisma.workspace.findMany.mockRejectedValue(new Error('safe retrieval failed'));
+
+    const answer = await processChatWithPrivacy(user, 'Which meetings are happening this week?', []);
+
+    expect(answer).toContain('Tôi không thể lấy danh sách cuộc họp tuần này');
+    expect(answer).not.toContain('Xin lỗi, tôi gặp lỗi khi truy xuất dữ liệu an toàn của bạn.');
+  });
+
   test('summarizes the most recent visible meeting from stored minutes', async () => {
     prisma.workspace.findMany.mockResolvedValue([
       {

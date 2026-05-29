@@ -32,7 +32,18 @@ const getConnectedDriveForUser = async (username) => {
     );
   }
 
-  const refreshToken = decryptSecret(user.googleDriveRefreshToken);
+  let refreshToken;
+  try {
+    refreshToken = decryptSecret(user.googleDriveRefreshToken);
+  } catch (error) {
+    console.error('❌ Decryption Error:', error.message);
+    throw new ApiError(
+      500,
+      'Failed to decrypt Google Drive credentials. Your refresh token may be corrupted. Please reconnect Google Drive in Drive Files.',
+      ERROR_CODES.FILE.GOOGLE_DRIVE_NOT_CONNECTED
+    );
+  }
+
   let folderId = user.googleDriveFolderId;
 
   if (!folderId) {
@@ -302,7 +313,13 @@ const deleteFile = async (req, res, next) => {
     });
 
     if (uploader?.googleDriveRefreshToken && !file.ggid.startsWith('mock_')) {
-      await gdriveUtil.deleteFileForUser(file.ggid, decryptSecret(uploader.googleDriveRefreshToken));
+      try {
+        const refreshToken = decryptSecret(uploader.googleDriveRefreshToken);
+        await gdriveUtil.deleteFileForUser(file.ggid, refreshToken);
+      } catch (decryptError) {
+        console.warn('Failed to decrypt uploader refresh token, falling back to generic delete:', decryptError.message);
+        await gdriveUtil.deleteFile(file.ggid);
+      }
     } else {
       await gdriveUtil.deleteFile(file.ggid);
     }
