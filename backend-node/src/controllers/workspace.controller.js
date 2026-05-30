@@ -49,7 +49,7 @@ const ERROR_CODES = require('../constants/error-codes');
 const createWorkspace = async (req, res, next) => {
   try {
     const workspace = await workspaceService.createWorkspace(req.body);
-    res.status(201).json(workspace);
+    res.status(201).json({ ...workspace, id: workspace.workspaceid, members: workspace.member });
   } catch (error) {
     next(error);
   }
@@ -58,7 +58,7 @@ const createWorkspace = async (req, res, next) => {
 const getWorkspaces = async (req, res, next) => {
   try {
     const workspaces = await workspaceService.getAllWorkspaces(req.user);
-    res.json(workspaces);
+    res.json(workspaces.map(w => ({ ...w, id: w.workspaceid, members: w.member })));
   } catch (error) {
     next(error);
   }
@@ -68,7 +68,7 @@ const getWorkspaceById = async (req, res, next) => {
   try {
     const workspace = await workspaceService.getWorkspaceById(req.params.id, req.user);
     if (!workspace) throw new ApiError(404, 'Workspace not found', ERROR_CODES.WORKSPACE.WKS_NOT_FOUND);
-    res.json(workspace);
+    res.json({ ...workspace, id: workspace.workspaceid, members: workspace.member });
   } catch (error) {
     next(error);
   }
@@ -77,7 +77,7 @@ const getWorkspaceById = async (req, res, next) => {
 const addMember = async (req, res, next) => {
   try {
     const workspace = await workspaceService.addMember(req.params.id, req.body, req.user);
-    res.json(workspace);
+    res.json({ ...workspace, id: workspace.workspaceid, members: workspace.member });
   } catch (error) {
     next(error);
   }
@@ -86,7 +86,7 @@ const addMember = async (req, res, next) => {
 const removeMember = async (req, res, next) => {
   try {
     const workspace = await workspaceService.removeMember(req.params.id, req.params.username, req.user);
-    res.json(workspace);
+    res.json({ ...workspace, id: workspace.workspaceid, members: workspace.member });
   } catch (error) {
     next(error);
   }
@@ -96,7 +96,16 @@ const updateMemberRole = async (req, res, next) => {
   try {
     const { workspacerole } = req.body;
     const workspace = await workspaceService.updateMemberRole(req.params.id, req.params.username, workspacerole, req.user);
-    res.json(workspace);
+    res.json({ ...workspace, id: workspace.workspaceid, members: workspace.member });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const deleteWorkspace = async (req, res, next) => {
+  try {
+    await workspaceService.deleteWorkspace(req.params.id, req.user);
+    res.status(204).send();
   } catch (error) {
     next(error);
   }
@@ -109,4 +118,5 @@ module.exports = {
   addMember,
   removeMember,
   updateMemberRole,
+  deleteWorkspace,
 };

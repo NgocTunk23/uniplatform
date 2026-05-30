@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
   Calendar,
   Clock,
@@ -13,598 +14,1256 @@ import {
   Trash2,
   Users,
   CheckCircle,
-  AlertCircle,
-  Info,
   Settings,
-  Zap,
-  ToggleLeft,
+  Loader2,
+  Video,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { canJoinMeeting, JOIN_WINDOW_MINUTES } from '../utils/meeting';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-type AvailStatus = 'available' | 'busy' | 'tentative';
+type AvailStatus = 'busy' | 'tentative';
 type CalView = 'day' | 'week' | 'month';
 
-interface TimeSlot {
-  id: string;
-  label: string;
-  day: string;
-  start: string;
-  end: string;
-  status: AvailStatus;
-  recurring: boolean;
+interface ScheduleItem {
+  id?: string;
+  scheduleid: string;
+  title: string;
+  description?: string;
+  starttime: string;
+  endtime: string;
+  type: AvailStatus;
 }
 
-interface ConfirmedMeeting {
+interface Meeting {
+  meetingid: string;
+  title: string;
+  starttime: string;
+  endtime: string;
+  organizer: string;
+  participants: string[];
+  status: 'upcoming' | 'ongoing' | 'ended';
+  workspace?: { name?: string };
+  participantDetails?: { username: string; fullname?: string; imageggid?: string }[];
+  organizerDetails?: { username: string; fullname?: string; imageggid?: string };
+  rsvpStatus?: Record<string, 'pending' | 'accepted' | 'declined'>;
+}
+
+interface CalendarEvent {
   id: string;
   title: string;
-  date: string;
-  time: string;
-  duration: string;
-  organizer: string;
-  status: 'confirmed' | 'pending' | 'declined';
-  group: string;
+  start: Date;
+  end: Date;
+  status: AvailStatus | 'meeting';
+  source: 'schedule' | 'meeting';
+  meta?: string;
 }
 
-interface Notification {
-  id: string;
-  from: string;
-  role: string;
-  message: string;
-  time: string;
-  type: 'new' | 'update' | 'cancel';
-  read: boolean;
+interface LaidOutEvent {
+  event: CalendarEvent;
+  lane: number;
+  laneCount: number;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DATES = [13, 14, 15, 16, 17, 18, 19];
-const HOURS = ['8 AM', '9 AM', '10 AM', '11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM'];
+interface ScheduleForm {
+  title: string;
+  description: string;
+  starttime: string;
+  endtime: string;
+  type: AvailStatus;
+}
 
-// [day index (0=Mon), start hour slot (0=8AM), span hours]
-const weekEvents: { day: number; start: number; span: number; label: string; status: AvailStatus }[] = [
-  { day: 0, start: 0, span: 2, label: 'Available', status: 'available' },
-  { day: 0, start: 4, span: 1, label: 'Team Lunch', status: 'busy' },
-  { day: 1, start: 2, span: 3, label: 'Deep Work', status: 'busy' },
-  { day: 2, start: 0, span: 4, label: 'Available', status: 'available' },
-  { day: 2, start: 6, span: 2, label: 'Sprint Review', status: 'busy' },
-  { day: 3, start: 1, span: 2, label: 'Available', status: 'available' },
-  { day: 3, start: 4, span: 1, label: 'Maybe free', status: 'tentative' },
-  { day: 4, start: 0, span: 2, label: 'Morning Standup', status: 'busy' },
-  { day: 4, start: 3, span: 3, label: 'Available', status: 'available' },
-  { day: 5, start: 1, span: 2, label: 'Available', status: 'available' },
-];
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DEFAULT_HOURS = Array.from({ length: 10 }, (_, i) => i + 8);
 
-const mockSlots: TimeSlot[] = [
-  { id: '1', label: 'Morning Block', day: 'Monday', start: '08:00', end: '10:00', status: 'available', recurring: true },
-  { id: '2', label: 'Deep Work', day: 'Tuesday', start: '10:00', end: '13:00', status: 'busy', recurring: false },
-  { id: '3', label: 'Open Hours', day: 'Wednesday', start: '08:00', end: '12:00', status: 'available', recurring: true },
-  { id: '4', label: 'Flex Time', day: 'Thursday', start: '14:00', end: '15:00', status: 'tentative', recurring: false },
-  { id: '5', label: 'Sprint Review', day: 'Wednesday', start: '14:00', end: '16:00', status: 'busy', recurring: false },
-];
-
-const mockMeetings: ConfirmedMeeting[] = [
-  { id: '1', title: 'Software Engineering Sprint Planning', date: 'Apr 13, Mon', time: '2:00 PM', duration: '60 min', organizer: 'Alex Chen', status: 'confirmed', group: 'Software Eng' },
-  { id: '2', title: 'Design Review – Mobile App', date: 'Apr 14, Tue', time: '4:30 PM', duration: '45 min', organizer: 'Jane Smith', status: 'confirmed', group: 'Design Capstone' },
-  { id: '3', title: 'Marketing Campaign Brainstorm', date: 'Apr 16, Thu', time: '10:00 AM', duration: '90 min', organizer: 'Alex Chen', status: 'pending', group: 'Marketing' },
-  { id: '4', title: 'Client Presentation Prep', date: 'Apr 18, Sat', time: '1:00 PM', duration: '60 min', organizer: 'Sarah Lee', status: 'declined', group: 'Design Capstone' },
-];
-
-const mockNotifications: Notification[] = [
-  { id: '1', from: 'Alex Chen', role: 'Team Leader', message: 'New meeting scheduled: Sprint Planning on Apr 13 at 2 PM. Please confirm attendance.', time: '2 hours ago', type: 'new', read: false },
-  { id: '2', from: 'Alex Chen', role: 'Team Leader', message: 'Reminder: Design Review tomorrow at 4:30 PM. Agenda has been updated.', time: '5 hours ago', type: 'update', read: false },
-  { id: '3', from: 'Sarah Lee', role: 'Team Leader', message: 'Client Presentation Prep on Apr 18 has been rescheduled. Check your calendar.', time: '1 day ago', type: 'update', read: true },
-  { id: '4', from: 'Alex Chen', role: 'Team Leader', message: 'Weekly sync on Apr 10 has been cancelled. Sorry for the late notice.', time: '2 days ago', type: 'cancel', read: true },
-];
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const statusStyle: Record<AvailStatus, { bg: string; text: string; dot: string; badge: string; badgeText: string }> = {
-  available: { bg: 'bg-green-100/80', text: 'text-green-700', dot: 'bg-green-400', badge: 'bg-green-50 text-green-600 border-green-100', badgeText: 'Available' },
-  busy:      { bg: 'bg-red-100/70',   text: 'text-red-700',   dot: 'bg-red-400',   badge: 'bg-red-50 text-red-600 border-red-100',     badgeText: 'Busy' },
-  tentative: { bg: 'bg-amber-100/80', text: 'text-amber-700', dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-600 border-amber-100', badgeText: 'Tentative' },
+const statusStyle: Record<AvailStatus | 'meeting', { bg: string; text: string; dot: string; badge: string; label: string }> = {
+  busy: { bg: 'bg-red-100/70', text: 'text-red-700', dot: 'bg-red-400', badge: 'bg-red-50 text-red-600 border-red-100', label: 'Busy' },
+  tentative: { bg: 'bg-amber-100/80', text: 'text-amber-700', dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-600 border-amber-100', label: 'Tentative' },
+  meeting: { bg: 'bg-purple-100/80', text: 'text-purple-700', dot: 'bg-purple-400', badge: 'bg-purple-50 text-purple-600 border-purple-100', label: 'Meeting' },
 };
 
-const notifStyle: Record<Notification['type'], { icon: React.ReactNode; color: string }> = {
-  new:    { icon: <Plus size={11} />,        color: 'bg-purple-50 text-purple-500' },
-  update: { icon: <Info size={11} />,        color: 'bg-blue-50 text-blue-500' },
-  cancel: { icon: <X size={11} />,           color: 'bg-red-50 text-red-500' },
+const getStatusStyle = (status: AvailStatus | 'meeting' | string) => (
+  statusStyle[status as AvailStatus | 'meeting'] || statusStyle.tentative
+);
+
+const getMeetingTimelineStatus = (meeting: Meeting, now = Date.now()): Meeting['status'] => {
+  const start = new Date(meeting.starttime).getTime();
+  const end = new Date(meeting.endtime).getTime();
+
+  if (Number.isNaN(start) || Number.isNaN(end)) return meeting.status || 'upcoming';
+  if (now >= end) return 'ended';
+  if (meeting.status === 'ended') return 'ended';
+  if (now >= start && now < end) return 'ongoing';
+  return 'upcoming';
 };
 
-const meetingStatusStyle: Record<ConfirmedMeeting['status'], { label: string; cls: string }> = {
-  confirmed: { label: 'Confirmed', cls: 'bg-green-50 text-green-600' },
-  pending:   { label: 'Pending',   cls: 'bg-amber-50 text-amber-600' },
-  declined:  { label: 'Declined',  cls: 'bg-red-50 text-red-500' },
+const emptyForm: ScheduleForm = {
+  title: '',
+  description: '',
+  starttime: '',
+  endtime: '',
+  type: 'busy',
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function Card({ title, icon, children, className = '', action }: {
-  title: string; icon: React.ReactNode; children: React.ReactNode; className?: string; action?: React.ReactNode;
+function startOfWeek(date: Date) {
+  const copy = new Date(date);
+  const day = copy.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  copy.setDate(copy.getDate() + diff);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function addDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function addMonths(date: Date, months: number) {
+  const copy = new Date(date);
+  copy.setMonth(copy.getMonth() + months);
+  return copy;
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatHourLabel(hour: number) {
+  if (hour === 0) return '12 AM';
+  if (hour < 12) return `${hour} AM`;
+  if (hour === 12) return '12 PM';
+  return `${hour - 12} PM`;
+}
+
+function parseHour(value: string) {
+  const [hour] = value.split(':').map(Number);
+  return Number.isFinite(hour) ? hour : null;
+}
+
+function formatDuration(start: Date, end: Date) {
+  const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function toLocalInputValue(value: string) {
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function Card({ title, icon, children, action, className = '' }: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden ${className}`}>
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl bg-purple-50 flex items-center justify-center text-purple-500 shrink-0">{icon}</div>
-          <h3 className="font-semibold text-gray-900 text-sm">{title}</h3>
+    <section className={`bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden ${className}`
+    }>
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50" >
+        <div className="flex items-center gap-2.5" >
+          <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500 shrink-0" > {icon} </div>
+          < h3 className="font-semibold text-gray-900 text-sm" > {title} </h3>
         </div>
         {action}
       </div>
-      <div className="p-5">{children}</div>
-    </div>
+      < div className="p-5" > {children} </div>
+    </section>
   );
 }
 
-function StatusBadge({ status }: { status: AvailStatus }) {
-  const s = statusStyle[status];
+function StatusBadge({ status }: { status: AvailStatus | 'meeting' }) {
+  const style = getStatusStyle(status);
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${s.badge}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-      {s.badgeText}
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${style.badge}`
+    }>
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+      {style.label}
     </span>
   );
 }
 
-// ─── Week Calendar ────────────────────────────────────────────────────────────
-function WeekCalendar() {
+function getEventsForDay(events: CalendarEvent[], day: Date) {
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+
+  const dayEnd = new Date(day);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  return events
+    .filter(event => event.start <= dayEnd && event.end >= dayStart)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+function layoutOverlappingEvents(events: CalendarEvent[]): LaidOutEvent[] {
+  const sorted = [...events].sort((a, b) => {
+    const startDiff = a.start.getTime() - b.start.getTime();
+    return startDiff || a.end.getTime() - b.end.getTime();
+  });
+  const groups: CalendarEvent[][] = [];
+  let activeGroup: CalendarEvent[] = [];
+  let activeEnd = 0;
+
+  sorted.forEach(event => {
+    const start = event.start.getTime();
+    const end = event.end.getTime();
+    if (activeGroup.length === 0 || start < activeEnd) {
+      activeGroup.push(event);
+      activeEnd = Math.max(activeEnd, end);
+      return;
+    }
+
+    groups.push(activeGroup);
+    activeGroup = [event];
+    activeEnd = end;
+  });
+
+  if (activeGroup.length > 0) groups.push(activeGroup);
+
+  return groups.flatMap(group => {
+    const laneEnds: number[] = [];
+    const assignments = group.map(event => {
+      const start = event.start.getTime();
+      let lane = laneEnds.findIndex(end => end <= start);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = event.end.getTime();
+      return { event, lane, laneCount: 1 };
+    });
+
+    const laneCount = Math.max(1, laneEnds.length);
+    return assignments.map(item => ({ ...item, laneCount }));
+  });
+}
+
+function WeekCalendar({ events, selectedDate, hours, onSelectDate, onSelectEvent }: {
+  events: CalendarEvent[];
+  selectedDate: Date;
+  hours: number[];
+  onSelectDate: (date: Date) => void;
+  onSelectEvent: (event: CalendarEvent) => void;
+}) {
+  const weekStart = startOfWeek(selectedDate);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const startHourBoundary = hours[0] ?? 8;
+  const gridHeight = hours.length * 48;
+  const weekLayouts = days.flatMap((day, dayIndex) =>
+    layoutOverlappingEvents(getEventsForDay(events, day)).map(layout => ({ ...layout, dayIndex }))
+  );
+
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[580px]">
-        {/* Day headers */}
-        <div className="grid grid-cols-[56px_repeat(7,1fr)] mb-1">
+    <div className="overflow-x-auto" >
+      <div className="min-w-[680px]" >
+        <div className="grid grid-cols-[56px_repeat(7,1fr)] mb-1" >
           <div />
-          {DAYS.map((d, i) => (
-            <div key={d} className="text-center pb-2">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{d}</p>
-              <div className={`mx-auto mt-0.5 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                DATES[i] === 13 ? 'bg-purple-500 text-white' : 'text-gray-600'
-              }`}>{DATES[i]}</div>
-            </div>
-          ))}
+          {
+            days.map((date, i) => (
+              <button key={date.toISOString()} onClick={() => onSelectDate(date)} className="text-center pb-2" >
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider" > {WEEK_DAYS[i]} </p>
+                < div className={`mx-auto mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isSameDay(date, selectedDate) ? 'bg-purple-500 text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`
+                }>
+                  {date.getDate()}
+                </div>
+              </button>
+            ))}
         </div>
 
-        {/* Time grid */}
-        <div className="relative">
-          {HOURS.map((h, hi) => (
-            <div key={h} className="grid grid-cols-[56px_repeat(7,1fr)] h-10 border-t border-gray-50 group">
-              <div className="flex items-start justify-end pr-3 pt-0 -mt-2">
-                <span className="text-[10px] text-gray-300 font-medium">{h}</span>
+        < div className="relative" >
+          {
+            hours.map(hour => (
+              <div key={hour} className="grid grid-cols-[56px_repeat(7,1fr)] h-12 border-t border-gray-50 group" >
+                <div className="flex items-start justify-end pr-3 pt-0 -mt-2" >
+                  <span className="text-[10px] text-gray-300 font-medium" > {formatHourLabel(hour)} </span>
+                </div>
+                {
+                  days.map(day => (
+                    <button
+                      key={day.toISOString()}
+                      onClick={() => onSelectDate(day)}
+                      className="border-l border-gray-50 group-hover:bg-gray-50/30 transition-colors relative"
+                    />
+                  ))
+                }
               </div>
-              {DAYS.map((_, di) => (
-                <div key={di} className="border-l border-gray-50 group-hover:bg-gray-50/30 transition-colors relative" />
-              ))}
-            </div>
-          ))}
+            ))}
 
-          {/* Events overlay */}
-          {weekEvents.map((ev, i) => {
-            const s = statusStyle[ev.status];
-            const left = `calc(56px + ${ev.day} * ((100% - 56px) / 7))`;
-            const width = `calc((100% - 56px) / 7 - 2px)`;
-            const top = `${ev.start * 40 + 1}px`;
-            const height = `${ev.span * 40 - 2}px`;
-            return (
-              <div
-                key={i}
-                className={`absolute rounded-lg px-2 py-1 ${s.bg} ${s.text} cursor-pointer hover:brightness-95 transition-all overflow-hidden`}
-                style={{ left, width, top, height }}
-              >
-                <p className="text-[10px] font-semibold truncate">{ev.label}</p>
-                {ev.span >= 2 && <p className="text-[9px] opacity-60 mt-0.5">{HOURS[ev.start]}</p>}
-              </div>
-            );
-          })}
+          {
+            weekLayouts.map(({ event, dayIndex, lane, laneCount }) => {
+              const currentDay = days[dayIndex];
+              const dayStart = new Date(currentDay);
+              dayStart.setHours(0, 0, 0, 0);
+              const dayEnd = new Date(currentDay);
+              dayEnd.setHours(23, 59, 59, 999);
+
+              let startHour = 0;
+              if (event.start > dayStart) {
+                startHour = event.start.getHours() + event.start.getMinutes() / 60;
+              }
+
+              let endHour = 24;
+              if (event.end < dayEnd) {
+                endHour = event.end.getHours() + event.end.getMinutes() / 60;
+              }
+
+              const top = Math.min(Math.max(0, (startHour - startHourBoundary) * 48 + 1), gridHeight - 28);
+              const height = Math.max(28, Math.min((endHour - startHour) * 48 - 2, gridHeight - top));
+              const style = getStatusStyle(event.status);
+
+              return (
+                <button
+                  type="button"
+                  key={`${event.source}-${event.id}`
+                  }
+                  onClick={() => onSelectEvent(event)}
+                  className={`absolute rounded-lg px-2 py-1 ${style.bg} ${style.text} overflow-hidden shadow-sm text-left hover:brightness-95 transition`}
+                  style={{
+                    left: `calc(56px + ${dayIndex} * ((100% - 56px) / 7) + ${lane} * (((100% - 56px) / 7 - 4px) / ${laneCount}))`,
+                    width: `calc((((100% - 56px) / 7 - 4px) / ${laneCount}) - 2px)`,
+                    top,
+                    height,
+                  }}
+                  title={`${event.title} - ${formatTime(event.start)}`}
+                >
+                  <p className="text-[10px] font-semibold truncate" > {event.title} </p>
+                  {height > 42 && <p className="text-[9px] opacity-70 mt-0.5" > {formatTime(event.start)} </p>}
+                </button>
+              );
+            })}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Month Mini Grid ──────────────────────────────────────────────────────────
-function MonthCalendar() {
-  const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-  const today = 13;
-  const busyDays = new Set([13, 14, 16, 17, 21, 22, 24]);
-  const availDays = new Set([13, 15, 18, 20, 23, 25]);
-  const cells = [...Array(5)].fill(null), offset = 2; // April 2026 starts on Wed
-  const dates = Array.from({ length: 30 }, (_, i) => i + 1);
-  const paddedDates = [...Array(offset).fill(null), ...dates];
+function DayCalendar({ events, selectedDate, hours, onSelectEvent }: {
+  events: CalendarEvent[];
+  selectedDate: Date;
+  hours: number[];
+  onSelectEvent: (event: CalendarEvent) => void;
+}) {
+  const dayEvents = getEventsForDay(events, selectedDate);
+  const dayLayouts = layoutOverlappingEvents(dayEvents);
+  const startHourBoundary = hours[0] ?? 8;
+  const gridHeight = hours.length * 48;
+
+  return (
+    <div className="overflow-y-auto max-h-[560px]" >
+      <div className="relative" style={{ minHeight: `${gridHeight}px` }
+      }>
+        {
+          hours.map(hour => (
+            <div key={hour} className="grid grid-cols-[56px_1fr] h-12 border-t border-gray-50" >
+              <div className="flex items-start pt-0 -mt-2 justify-end pr-3" >
+                <span className="text-[10px] text-gray-300 font-medium" > {formatHourLabel(hour)} </span>
+              </div>
+              < div className="border-l border-gray-50" />
+            </div>
+          ))
+        }
+        {
+          dayLayouts.map(({ event, lane, laneCount }) => {
+
+            const style = getStatusStyle(event.status);
+
+            const dayStart = new Date(selectedDate);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(selectedDate);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            let startHour = 0;
+            if (event.start > dayStart) {
+              startHour = event.start.getHours() + event.start.getMinutes() / 60;
+            }
+
+            let endHour = 24;
+            if (event.end < dayEnd) {
+              endHour = event.end.getHours() + event.end.getMinutes() / 60;
+            }
+
+            const top = Math.min(Math.max(0, (startHour - startHourBoundary) * 48 + 1), gridHeight - 34);
+            const height = Math.max(34, Math.min((endHour - startHour) * 48 - 2, gridHeight - top));
+
+            return (
+              <button
+                type="button"
+                key={`${event.source}-${event.id}`
+                }
+                onClick={() => onSelectEvent(event)}
+                className={`absolute rounded-xl px-3 py-1.5 ${style.bg} ${style.text} shadow-sm text-left hover:brightness-95 transition`}
+                style={{
+                  left: `calc(60px + ${lane} * ((100% - 60px) / ${laneCount}))`,
+                  width: `calc(((100% - 60px) / ${laneCount}) - 4px)`,
+                  top,
+                  height,
+                }}
+              >
+                <p className="text-xs font-semibold truncate" > {event.title} </p>
+                < p className="text-[10px] opacity-70" > {formatTime(event.start)} - {formatTime(event.end)} </p>
+              </button>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
+function MonthCalendar({ events, selectedDate, onSelectDate }: {
+  events: CalendarEvent[];
+  selectedDate: Date;
+  onSelectDate: (date: Date) => void;
+}) {
+  const monthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+  const gridStart = startOfWeek(monthStart);
+  const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
 
   return (
     <div>
-      <div className="grid grid-cols-7 mb-1">
-        {days.map(d => <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>)}
+      <div className="grid grid-cols-7 mb-1" >
+        {
+          ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => (
+            <div key={day} className="text-center text-[10px] font-semibold text-gray-400 py-1" > {day} </div>
+          ))
+        }
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
-        {paddedDates.slice(0, 35).map((d, i) => (
-          <div key={i} className={`aspect-square flex items-center justify-center rounded-lg text-xs relative ${
-            d === today ? 'bg-purple-500 text-white font-bold' :
-            d ? 'hover:bg-gray-50 cursor-pointer text-gray-600' : ''
-          }`}>
-            {d}
-            {d && busyDays.has(d) && d !== today && (
-              <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-red-300" />
-            )}
-            {d && availDays.has(d) && !busyDays.has(d) && (
-              <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-green-300" />
-            )}
-          </div>
-        ))}
+      < div className="grid grid-cols-7 gap-1" >
+        {
+          days.map(day => {
+            const dayEvents = getEventsForDay(events, day);
+            const isCurrentMonth = day.getMonth() === selectedDate.getMonth();
+
+            return (
+              <button
+                key={day.toISOString()}
+                onClick={() => onSelectDate(day)
+                }
+                className={`aspect-square rounded-lg text-xs relative flex flex-col items-center justify-center gap-1 transition-colors ${isSameDay(day, selectedDate)
+                  ? 'bg-purple-500 text-white font-bold'
+                  : isCurrentMonth
+                    ? 'hover:bg-gray-50 text-gray-600'
+                    : 'text-gray-300'
+                  }`}
+              >
+                <span>{day.getDate()} </span>
+                {
+                  dayEvents.length > 0 && (
+                    <span className="flex gap-0.5" >
+                      {
+                        dayEvents.slice(0, 3).map(event => (
+                          <span key={`${event.source}-${event.id}`} className={`w-1.5 h-1.5 rounded-full ${getStatusStyle(event.status).dot}`
+                          } />
+                        ))
+                      }
+                    </span>
+                  )}
+              </button>
+            );
+          })}
       </div>
     </div>
   );
 }
 
-// ─── Day View ─────────────────────────────────────────────────────────────────
-function DayCalendar() {
-  const dayEvents = weekEvents.filter(e => e.day === 0);
-  return (
-    <div className="overflow-y-auto max-h-64">
-      <div className="relative">
-        {HOURS.map((h, hi) => (
-          <div key={h} className="grid grid-cols-[56px_1fr] h-12 border-t border-gray-50">
-            <div className="flex items-start pt-0 -mt-2 justify-end pr-3">
-              <span className="text-[10px] text-gray-300 font-medium">{h}</span>
-            </div>
-            <div className="border-l border-gray-50" />
-          </div>
-        ))}
-        {dayEvents.map((ev, i) => {
-          const s = statusStyle[ev.status];
-          return (
-            <div
-              key={i}
-              className={`absolute rounded-xl px-3 py-1.5 ${s.bg} ${s.text} cursor-pointer`}
-              style={{ left: '60px', right: '0', top: `${ev.start * 48 + 1}px`, height: `${ev.span * 48 - 2}px` }}
-            >
-              <p className="text-xs font-semibold">{ev.label}</p>
-              <p className="text-[10px] opacity-60">{HOURS[ev.start]} – {HOURS[Math.min(ev.start + ev.span, HOURS.length - 1)]}</p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export function PersonalSchedule() {
+  const navigate = useNavigate();
   const [calView, setCalView] = useState<CalView>('week');
-  const [slots, setSlots] = useState<TimeSlot[]>(mockSlots);
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-  const [showAddSlot, setShowAddSlot] = useState(false);
-  const [newSlot, setNewSlot] = useState<Partial<TimeSlot>>({ status: 'available', recurring: false });
-  const [timezone, setTimezone] = useState('Asia/Singapore (GMT+8)');
-  const [workStart, setWorkStart] = useState('08:00');
-  const [workEnd, setWorkEnd] = useState('18:00');
-  const [notifEmail, setNotifEmail] = useState(true);
-  const [notifPush, setNotifPush] = useState(true);
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ScheduleForm>(emptyForm);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
+  const [timezone, setTimezone] = useState(() => localStorage.getItem('uniplatform_schedule_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Ho_Chi_Minh');
+  const [workStart, setWorkStart] = useState(() => localStorage.getItem('uniplatform_schedule_work_start') || '08:00');
+  const [workEnd, setWorkEnd] = useState(() => localStorage.getItem('uniplatform_schedule_work_end') || '18:00');
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const token = localStorage.getItem('uniplatform_user_token') || '';
+  const currentUser = useMemo(() => {
+    let username = localStorage.getItem('uniplatform_username') || '';
+    if (!username && token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        username = payload.username || payload.id || payload.sub || '';
+      } catch {
+        username = '';
+      }
+    }
+    return username;
+  }, [token]);
+  const initials = (localStorage.getItem('uniplatform_fullname') || 'User')
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
-  const handleMarkRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  const handleDismiss = (id: string) => setNotifications(prev => prev.filter(n => n.id !== id));
-  const handleDeleteSlot = (id: string) => setSlots(prev => prev.filter(s => s.id !== id));
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [scheduleRes, meetingRes] = await Promise.all([
+        fetch(`${apiUrl}/api/schedules`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiUrl}/api/meetings`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
 
-  const handleAddSlot = () => {
-    if (!newSlot.day || !newSlot.start || !newSlot.end) return;
-    setSlots(prev => [...prev, {
-      id: Date.now().toString(),
-      label: newSlot.label || `${newSlot.day} block`,
-      day: newSlot.day!,
-      start: newSlot.start!,
-      end: newSlot.end!,
-      status: newSlot.status as AvailStatus,
-      recurring: newSlot.recurring || false,
-    }]);
-    setShowAddSlot(false);
-    setNewSlot({ status: 'available', recurring: false });
+      if (!scheduleRes.ok) {
+        const error = await scheduleRes.json().catch(() => null);
+        throw new Error(error?.message || 'Failed to load schedules');
+      }
+
+      if (!meetingRes.ok) {
+        const error = await meetingRes.json().catch(() => null);
+        throw new Error(error?.message || 'Failed to load meetings');
+      }
+
+      const scheduleData = await scheduleRes.json();
+      const meetingData = await meetingRes.json();
+
+      setSchedules(scheduleData.data || []);
+      setMeetings(Array.isArray(meetingData) ? meetingData : (meetingData.data || []));
+    } catch (error) {
+      console.error('Schedule fetch error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to load schedule data');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="flex-1 overflow-y-auto bg-gray-50/40 min-h-full">
-      <div className="max-w-6xl mx-auto px-6 py-8 pb-20 space-y-6">
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-        {/* ── Header ───────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+  useEffect(() => {
+    const timer = window.setInterval(() => setStatusNow(Date.now()), 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const events = useMemo<CalendarEvent[]>(() => {
+    const scheduleEvents = schedules.map(item => ({
+      id: item.scheduleid || item.id || '',
+      title: item.title,
+      start: new Date(item.starttime),
+      end: new Date(item.endtime),
+      status: item.type,
+      source: 'schedule' as const,
+      meta: item.description,
+    }));
+
+    const meetingEvents = meetings
+      .filter(meeting => {
+        const isOrganizer = meeting.organizer === currentUser || meeting.organizerDetails?.username === currentUser;
+        const myRsvp = currentUser ? meeting.rsvpStatus?.[currentUser] : undefined;
+        if (!isOrganizer && myRsvp === 'declined') return false;
+        return true;
+      })
+      .map(meeting => ({
+        id: meeting.meetingid,
+        title: meeting.title,
+        start: new Date(meeting.starttime),
+        end: new Date(meeting.endtime),
+        status: 'meeting' as const,
+        source: 'meeting' as const,
+        meta: meeting.workspace?.name,
+      }));
+
+    return [...scheduleEvents, ...meetingEvents].sort((a, b) => a.start.getTime() - b.start.getTime());
+  }, [schedules, meetings, currentUser]);
+
+  const upcomingEvents = useMemo(() => {
+    const now = new Date(statusNow);
+    return events
+      .filter(event => {
+        if (event.end < now) return false;
+        if (event.source === 'meeting') {
+          const m = meetings.find(m => m.meetingid === event.id);
+          return m && getMeetingTimelineStatus(m, statusNow) !== 'ended';
+        }
+        return event.status === 'busy' || event.status === 'tentative';
+      })
+      .slice(0, 6);
+  }, [events, meetings, statusNow]);
+
+  const selectedSchedule = selectedEvent?.source === 'schedule'
+    ? schedules.find(item => (item.scheduleid || item.id) === selectedEvent.id)
+    : null;
+  const selectedMeeting = selectedEvent?.source === 'meeting'
+    ? meetings.find(meeting => meeting.meetingid === selectedEvent.id)
+    : null;
+
+  const calendarHours = useMemo(() => {
+    const start = parseHour(workStart);
+    const end = parseHour(workEnd);
+    const baseStart = start === null ? 8 : start;
+    const baseEnd = end === null || end <= baseStart ? 18 : end;
+    let minHour = baseStart;
+    let maxHour = baseEnd;
+
+    const visibleStart = calView === 'week' ? startOfWeek(selectedDate) : new Date(selectedDate);
+    visibleStart.setHours(0, 0, 0, 0);
+    const visibleEnd = calView === 'week' ? addDays(visibleStart, 7) : addDays(visibleStart, 1);
+    const visibleEvents = calView === 'month'
+      ? []
+      : events.filter(event => event.start < visibleEnd && event.end > visibleStart);
+
+    visibleEvents.forEach(event => {
+      minHour = Math.min(minHour, Math.floor(event.start.getHours() + event.start.getMinutes() / 60));
+      maxHour = Math.max(maxHour, Math.ceil(event.end.getHours() + event.end.getMinutes() / 60));
+    });
+
+    minHour = Math.max(0, minHour);
+    maxHour = Math.min(24, Math.max(minHour + 1, maxHour));
+    return Array.from({ length: Math.max(1, maxHour - minHour) }, (_, i) => minHour + i);
+  }, [workStart, workEnd, calView, selectedDate, events]);
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const getDefaultForm = (date = selectedDate): ScheduleForm => {
+    const [startHour, startMinute] = workStart.split(':').map(Number);
+    const start = new Date(date);
+    start.setHours(Number.isFinite(startHour) ? startHour : 8, Number.isFinite(startMinute) ? startMinute : 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(start.getHours() + 1);
+
+    return {
+      ...emptyForm,
+      starttime: toLocalInputValue(start.toISOString()),
+      endtime: toLocalInputValue(end.toISOString()),
+    };
+  };
+
+  const openCreateForm = (date = selectedDate) => {
+    setSelectedDate(date);
+    setEditingId(null);
+    setForm(getDefaultForm(date));
+    setShowForm(true);
+    setSelectedEvent(null);
+  };
+
+  const handleEdit = (item: ScheduleItem) => {
+    setEditingId(item.scheduleid || item.id || null);
+    setForm({
+      title: item.title,
+      description: item.description || '',
+      starttime: toLocalInputValue(item.starttime),
+      endtime: toLocalInputValue(item.endtime),
+      type: item.type,
+    });
+    setShowForm(true);
+    setSelectedEvent(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.starttime || !form.endtime) {
+      toast.error('Please fill in title, start time, and end time');
+      return;
+    }
+
+    const start = new Date(form.starttime);
+    const end = new Date(form.endtime);
+    if (end <= start) {
+      toast.error('End time must be after start time');
+      return;
+    }
+    const isConflict = schedules.some(s => {
+      const sStart = new Date(s.starttime);
+      const sEnd = new Date(s.endtime);
+      if (editingId && (s.scheduleid === editingId || s.id === editingId)) return false;
+      return start < sEnd && end > sStart;
+    });
+
+    if (isConflict) {
+      toast.error('Schedule conflict: this time already has another event.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${apiUrl}/api/schedules${editingId ? `/${editingId}` : ''}`, {
+        method: editingId ? 'PATCH' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description: form.description.trim() || undefined,
+          starttime: start.toISOString(),
+          endtime: end.toISOString(),
+          type: form.type,
+        }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        const err = Object.assign(new Error(errBody?.message || 'Failed to save schedule'), {
+          status: res.status,
+          details: errBody?.details,
+        });
+        throw err;
+      }
+
+      const data = await res.json();
+      setSchedules(prev => {
+        if (editingId) {
+          return prev.map(item => (item.scheduleid === editingId || item.id === editingId) ? data.data : item);
+        }
+        return [...prev, data.data].sort((a, b) => new Date(a.starttime).getTime() - new Date(b.starttime).getTime());
+      });
+      toast.success(editingId ? 'Schedule updated' : 'Schedule created');
+      resetForm();
+    } catch (error) {
+      console.error('Schedule save error', error);
+      const apiErr = error as Error & { status?: number; details?: { conflicts?: Array<{ title: string; starttime: string; endtime: string }> } };
+      if (apiErr.status === 409 && apiErr.details?.conflicts?.length) {
+        const first = apiErr.details.conflicts[0];
+        const startStr = new Date(first.starttime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const endStr = new Date(first.endtime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        toast.error(`Schedule conflict: "${first.title}" (${startStr} - ${endStr})`);
+      } else {
+        toast.error(apiErr.message || 'Failed to save schedule');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateMeetingRSVP = async (meetingId: string, status: 'accepted' | 'declined') => {
+    try {
+      const res = await fetch(`${apiUrl}/api/meetings/${meetingId}/rsvp`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.message || 'Failed to update RSVP');
+      }
+
+      toast.success(status === 'accepted' ? 'Meeting accepted' : 'Meeting declined and hidden from your calendar');
+      setSelectedEvent(null);
+      fetchData();
+    } catch (error) {
+      console.error('Meeting RSVP error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update meeting RSVP');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this schedule entry?')) return;
+
+    try {
+      const res = await fetch(`${apiUrl}/api/schedules/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        throw new Error(error?.message || 'Failed to delete schedule');
+      }
+
+      setSchedules(prev => prev.filter(item => item.scheduleid !== id && item.id !== id));
+      setSelectedEvent(null);
+      toast.success('Schedule deleted');
+    } catch (error) {
+      console.error('Schedule delete error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete schedule');
+    }
+  };
+
+  const moveCalendar = (direction: -1 | 1) => {
+    if (calView === 'day') setSelectedDate(prev => addDays(prev, direction));
+    if (calView === 'week') setSelectedDate(prev => addDays(prev, direction * 7));
+    if (calView === 'month') setSelectedDate(prev => addMonths(prev, direction));
+  };
+
+  const openMeeting = (meeting: Meeting) => {
+    if (getMeetingTimelineStatus(meeting, statusNow) === 'ended') {
+      navigate(`/meetings/${meeting.meetingid}/review`);
+      return;
+    }
+    if (!canJoinMeeting(meeting, statusNow)) {
+      toast.error(`This meeting opens ${JOIN_WINDOW_MINUTES} minutes before it starts`);
+      return;
+    }
+    navigate(`/meetings/${meeting.meetingid}`);
+  };
+
+  const savePreferences = () => {
+    const start = parseHour(workStart);
+    const end = parseHour(workEnd);
+    if (start !== null && end !== null && end <= start) {
+      toast.error('Working end time must be after start time');
+      return;
+    }
+
+    localStorage.setItem('uniplatform_schedule_timezone', timezone);
+    localStorage.setItem('uniplatform_schedule_work_start', workStart);
+    localStorage.setItem('uniplatform_schedule_work_end', workEnd);
+    toast.success('Preferences saved');
+  };
+
+  const title = calView === 'day'
+    ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+    : calView === 'week'
+      ? `${formatShortDate(startOfWeek(selectedDate))} - ${formatShortDate(addDays(startOfWeek(selectedDate), 6))}, ${selectedDate.getFullYear()}`
+      : selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-gray-50/40 min-h-full" >
+      <div className="max-w-6xl mx-auto px-6 py-8 pb-20 space-y-6" >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4" >
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Personal Schedule</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Manage your availability and upcoming meetings</p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight" > Personal Schedule </h1>
+            < p className="text-sm text-gray-400 mt-0.5" > Manage your availability and upcoming meetings </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Bell size={18} className="text-gray-400" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-purple-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{unreadCount}</span>
-              )}
-            </div>
-            <div className="w-8 h-8 rounded-full bg-purple-200 flex items-center justify-center text-purple-700 font-bold text-xs border-2 border-white shadow-sm">JS</div>
-            <button
-              onClick={() => setShowAddSlot(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm"
-            >
-              <Zap size={14} />
-              Update Availability
-            </button>
-          </div>
+
         </div>
 
-        {/* ── Legend ───────────────────────────────────────────── */}
-        <div className="flex items-center gap-4 flex-wrap">
-          {(['available', 'busy', 'tentative'] as AvailStatus[]).map(s => (
-            <div key={s} className="flex items-center gap-1.5">
-              <span className={`w-3 h-3 rounded-sm ${statusStyle[s].bg} border ${statusStyle[s].badge.split(' ')[2] || ''}`} />
-              <span className="text-xs text-gray-500 capitalize font-medium">{s}</span>
+        < div className="flex items-center gap-4 flex-wrap" >
+          {(['busy', 'tentative'] as AvailStatus[]).map(status => (
+            <div key={status} className="flex items-center gap-1.5" >
+              <span className={`w-3 h-3 rounded-sm ${getStatusStyle(status).dot}`} />
+              < span className="text-xs text-gray-500 capitalize font-medium" > {status} </span>
             </div>
           ))}
+          <div className="flex items-center gap-1.5" >
+            <span className={`w-3 h-3 rounded-sm ${statusStyle.meeting.dot}`} />
+            < span className="text-xs text-gray-500 font-medium" > Meeting </span>
+          </div>
         </div>
 
-        {/* ── Two-column grid ───────────────────────────────────── */}
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6">
-
-          {/* LEFT COLUMN */}
-          <div className="space-y-6">
-
-            {/* Calendar Overview */}
+        < div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6" >
+          <div className="space-y-6" >
             <Card
               title="Calendar Overview"
-              icon={<Calendar size={14} />}
+              icon={< Calendar size={14} />}
               action={
-                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
-                  {(['day', 'week', 'month'] as CalView[]).map(v => (
+                < div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg" >
+                  {(['day', 'week', 'month'] as CalView[]).map(view => (
                     <button
-                      key={v}
-                      onClick={() => setCalView(v)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all ${
-                        calView === v ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >{v}</button>
+                      key={view}
+                      onClick={() => setCalView(view)}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold capitalize transition-all ${calView === view ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                      {view}
+                    </button>
                   ))}
                 </div>
               }
             >
-              {/* Week nav */}
-              {calView === 'week' && (
-                <div className="flex items-center justify-between mb-4">
-                  <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronLeft size={15} /></button>
-                  <span className="text-sm font-semibold text-gray-700">Apr 13 – Apr 19, 2026</span>
-                  <button onClick={() => setWeekOffset(w => w + 1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronRight size={15} /></button>
-                </div>
-              )}
-              {calView === 'month' && (
-                <div className="flex items-center justify-between mb-4">
-                  <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronLeft size={15} /></button>
-                  <span className="text-sm font-semibold text-gray-700">April 2026</span>
-                  <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronRight size={15} /></button>
-                </div>
-              )}
-              {calView === 'day' && (
-                <div className="flex items-center justify-between mb-4">
-                  <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronLeft size={15} /></button>
-                  <span className="text-sm font-semibold text-gray-700">Monday, Apr 13, 2026</span>
-                  <button className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><ChevronRight size={15} /></button>
-                </div>
-              )}
+              <div className="flex items-center justify-between mb-4" >
+                <button onClick={() => moveCalendar(-1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors" > <ChevronLeft size={15} /></button >
+                <span className="text-sm font-semibold text-gray-700" > {title} </span>
+                < button onClick={() => moveCalendar(1)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors" > <ChevronRight size={15} /></button >
+              </div>
 
-              {calView === 'week' && <WeekCalendar />}
-              {calView === 'month' && <MonthCalendar />}
-              {calView === 'day' && <DayCalendar />}
+              {
+                loading ? (
+                  <div className="h-64 flex flex-col items-center justify-center text-gray-400" >
+                    <Loader2 size={24} className="animate-spin mb-3" />
+                    <p className="text-sm" > Loading schedule...</p>
+                  </div>
+                ) : (
+                  <>
+                    {calView === 'week' && (
+                      <WeekCalendar
+                        events={events}
+                        selectedDate={selectedDate}
+                        hours={calendarHours}
+                        onSelectDate={setSelectedDate}
+                        onSelectEvent={setSelectedEvent}
+                      />
+                    )
+                    }
+                    {
+                      calView === 'month' && (
+                        <MonthCalendar
+                          events={events}
+                          selectedDate={selectedDate}
+                          onSelectDate={(date) => {
+                            setSelectedDate(date);
+                            setCalView('day');
+                          }
+                          }
+                        />
+                      )}
+                    {
+                      calView === 'day' && (
+                        <DayCalendar
+                          events={events}
+                          selectedDate={selectedDate}
+                          hours={calendarHours}
+                          onSelectEvent={setSelectedEvent}
+                        />
+                      )
+                    }
+                  </>
+                )}
             </Card>
 
-            {/* Availability Management */}
-            <Card
+            < Card
               title="Availability Management"
-              icon={<Clock size={14} />}
+              icon={< Clock size={14} />}
               action={
-                <button
-                  onClick={() => setShowAddSlot(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 text-purple-600 text-xs font-semibold hover:bg-purple-100 transition-colors"
+                < button
+                  onClick={() => openCreateForm()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-600 text-xs font-semibold hover:bg-purple-100 transition-colors"
                 >
                   <Plus size={12} />
                   Add Slot
                 </button>
               }
             >
-              {/* Add Slot Form */}
-              {showAddSlot && (
-                <div className="mb-4 p-4 rounded-xl bg-purple-50/60 border border-purple-100 space-y-3">
-                  <p className="text-xs font-bold text-purple-700 uppercase tracking-wider">New Time Slot</p>
-                  <div className="grid grid-cols-2 gap-3">
+              {showForm && (
+                <div className="mb-4 p-4 rounded-xl bg-purple-50/60 border border-purple-100 space-y-3" >
+                  <div className="flex items-center justify-between" >
+                    <p className="text-xs font-bold text-purple-700 uppercase tracking-wider" > {editingId ? 'Edit Schedule' : 'New Time Slot'} </p>
+                    < button onClick={resetForm} className="p-1 rounded-lg text-purple-300 hover:text-purple-600 hover:bg-white" > <X size={14} /></button >
+                  </div>
+                  < div className="grid grid-cols-1 sm:grid-cols-2 gap-3" >
                     <div>
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase">Label</label>
-                      <input
-                        value={newSlot.label || ''}
-                        onChange={e => setNewSlot(p => ({ ...p, label: e.target.value }))}
-                        placeholder="e.g. Morning Block"
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase" > Title </label>
+                      < input
+                        value={form.title}
+                        onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="e.g. Deep work"
                         className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase">Day</label>
-                      <select
-                        value={newSlot.day || ''}
-                        onChange={e => setNewSlot(p => ({ ...p, day: e.target.value }))}
+                    < div >
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase" > Status </label>
+                      < select
+                        value={form.type}
+                        onChange={e => setForm(prev => ({ ...prev, type: e.target.value as AvailStatus }))}
                         className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
                       >
-                        <option value="">Select day</option>
-                        {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => <option key={d}>{d}</option>)}
+                        <option value="busy" > Busy </option>
+                        < option value="tentative" > Tentative </option>
                       </select>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase">Start</label>
-                      <input type="time" value={newSlot.start || ''} onChange={e => setNewSlot(p => ({ ...p, start: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase">End</label>
-                      <input type="time" value={newSlot.end || ''} onChange={e => setNewSlot(p => ({ ...p, end: e.target.value }))}
-                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-semibold text-gray-500 uppercase">Status</label>
-                      <select
-                        value={newSlot.status}
-                        onChange={e => setNewSlot(p => ({ ...p, status: e.target.value as AvailStatus }))}
+                    < div >
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase" > Start </label>
+                      < input
+                        type="datetime-local"
+                        value={form.starttime}
+                        onChange={e => setForm(prev => ({ ...prev, starttime: e.target.value }))}
                         className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
-                      >
-                        <option value="available">Available</option>
-                        <option value="busy">Busy</option>
-                        <option value="tentative">Tentative</option>
-                      </select>
+                      />
                     </div>
-                    <div className="flex items-center gap-2 self-end pb-1">
-                      <input type="checkbox" id="recurring" checked={newSlot.recurring} onChange={e => setNewSlot(p => ({ ...p, recurring: e.target.checked }))} className="accent-purple-500" />
-                      <label htmlFor="recurring" className="text-xs text-gray-600">Recurring weekly</label>
+                    < div >
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase" > End </label>
+                      < input
+                        type="datetime-local"
+                        value={form.endtime}
+                        onChange={e => setForm(prev => ({ ...prev, endtime: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300"
+                      />
+                    </div>
+                    < div className="sm:col-span-2" >
+                      <label className="text-[10px] font-semibold text-gray-500 uppercase" > Description </label>
+                      < textarea
+                        value={form.description}
+                        onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+                        rows={2}
+                        placeholder="Optional notes"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
+                      />
                     </div>
                   </div>
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={handleAddSlot} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors">
-                      <Check size={12} /> Save Slot
+                  < div className="flex gap-2 pt-1" >
+                    <button
+                      onClick={handleSubmit}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors disabled:opacity-60"
+                    >
+                      {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      {editingId ? 'Save Changes' : 'Save Slot'}
                     </button>
-                    <button onClick={() => setShowAddSlot(false)} className="px-4 py-2 rounded-xl bg-gray-100 text-gray-600 text-xs font-semibold hover:bg-gray-200 transition-colors">Cancel</button>
+                    < button onClick={resetForm} className="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-semibold hover:bg-gray-200 transition-colors" > Cancel </button>
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                {slots.map(slot => (
-                  <div key={slot.id} className={`flex items-center gap-3 p-3 rounded-xl border ${statusStyle[slot.status].badge} group hover:shadow-sm transition-all`}>
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${statusStyle[slot.status].dot}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-800 truncate">{slot.label}</p>
-                      <p className="text-[10px] text-gray-400">{slot.day} · {slot.start} – {slot.end}{slot.recurring ? ' · Recurring' : ''}</p>
-                    </div>
-                    <StatusBadge status={slot.status} />
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-1 rounded-lg hover:bg-white transition-colors text-gray-400 hover:text-purple-500"><Edit3 size={11} /></button>
-                      <button onClick={() => handleDeleteSlot(slot.id)} className="p-1 rounded-lg hover:bg-white transition-colors text-gray-300 hover:text-red-400"><Trash2 size={11} /></button>
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-2" >
+                {
+                  schedules.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-gray-400" > No personal availability entries yet</ div >
+                  ) : (
+                    schedules.map(slot => {
+                      const id = slot.scheduleid || slot.id || '';
+                      const start = new Date(slot.starttime);
+                      const end = new Date(slot.endtime);
+                      return (
+                        <div key={id} className={`flex items-center gap-3 p-3 rounded-xl border ${getStatusStyle(slot.type).badge} group hover:shadow-sm transition-all`
+                        }>
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${getStatusStyle(slot.type).dot}`} />
+                          < div className="flex-1 min-w-0" >
+                            <p className="text-xs font-semibold text-gray-800 truncate" > {slot.title} </p>
+                            < p className="text-[10px] text-gray-400" >
+                              {formatShortDate(start)} - {formatTime(start)} to {formatTime(end)} - {formatDuration(start, end)}
+                            </p>
+                          </div>
+                          < StatusBadge status={slot.type} />
+                          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" >
+                            <button onClick={() => handleEdit(slot)} className="p-1 rounded-lg hover:bg-white transition-colors text-gray-400 hover:text-purple-500" > <Edit3 size={12} /> </button>
+                            < button onClick={() => handleDelete(id)} className="p-1 rounded-lg hover:bg-white transition-colors text-gray-300 hover:text-red-400" > <Trash2 size={12} /> </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
               </div>
             </Card>
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div className="space-y-5">
+          < div className="space-y-5" >
+            <Card title="Upcoming Events" icon={< CheckCircle size={14} />}>
+              <div className="space-y-3" >
+                {
+                  upcomingEvents.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-8" > No upcoming events</ p >
+                  ) : (
+                    upcomingEvents.map(event => {
+                      const isMeeting = event.source === 'meeting';
+                      const meetingData = isMeeting ? meetings.find(m => m.meetingid === event.id) : null;
+                      const style = getStatusStyle(event.status);
 
-            {/* Confirmed Meetings */}
-            <Card title="Confirmed Meetings" icon={<CheckCircle size={14} />}>
-              <div className="space-y-3">
-                {mockMeetings.map(m => {
-                  const ms = meetingStatusStyle[m.status];
-                  return (
-                    <div key={m.id} className="p-3 rounded-xl border border-gray-100 hover:border-purple-100 hover:bg-purple-50/20 transition-all">
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <p className="text-xs font-semibold text-gray-800 leading-snug">{m.title}</p>
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${ms.cls}`}>{ms.label}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-400">
-                        <span className="flex items-center gap-1"><Calendar size={9} />{m.date}</span>
-                        <span className="flex items-center gap-1"><Clock size={9} />{m.time} · {m.duration}</span>
-                        <span className="flex items-center gap-1"><Users size={9} />{m.organizer}</span>
-                      </div>
-                      <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 text-[9px] font-semibold">{m.group}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            {/* Notifications */}
-            <Card
-              title={`Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
-              icon={<Bell size={14} />}
-              action={
-                <button onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))} className="text-[10px] text-purple-500 font-semibold hover:text-purple-700">
-                  Mark all read
-                </button>
-              }
-            >
-              <div className="space-y-3">
-                {notifications.map(n => {
-                  const ns = notifStyle[n.type];
-                  return (
-                    <div key={n.id} className={`flex gap-3 p-3 rounded-xl border transition-all ${n.read ? 'border-gray-50 bg-white' : 'border-purple-100 bg-purple-50/30'}`}>
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ns.color}`}>{ns.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className="text-[10px] font-bold text-gray-700">{n.from}</span>
-                          <span className="text-[9px] text-purple-500 font-semibold bg-purple-50 px-1.5 py-0.5 rounded-full">{n.role}</span>
-                          {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-purple-400 ml-auto" />}
+                      return (
+                        <div
+                          key={`${event.source}-${event.id}`
+                          }
+                          className="p-3 rounded-xl border border-gray-100 hover:border-purple-100 hover:bg-purple-50/20 transition-all cursor-pointer"
+                          onClick={() => setSelectedEvent(event)}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1.5" >
+                            <p className="text-xs font-semibold text-gray-800 leading-snug" > {event.title} </p>
+                            < span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${style.badge}`}>
+                              {style.label}
+                            </span>
+                          </div>
+                          < div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-gray-400" >
+                            <span className="flex items-center gap-1" > <Calendar size={9} /> {formatShortDate(event.start)}</span>
+                            < span className="flex items-center gap-1" > <Clock size={9} />{formatTime(event.start)} - {formatDuration(event.start, event.end)}</span >
+                            {isMeeting && meetingData && (
+                              <span className="flex items-center gap-1" > <Users size={9} />{meetingData.participants.length}</span >
+                            )}
+                          </div>
+                          < div className="mt-2 flex items-center justify-between gap-2" >
+                            <span className="inline-block px-2 py-0.5 rounded-full bg-gray-50 text-gray-500 text-[9px] font-semibold truncate" >
+                              {isMeeting && meetingData ? (meetingData.workspace?.name || meetingData.organizer) : 'Personal Schedule'}
+                            </span>
+                            {
+                              isMeeting && meetingData && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openMeeting(meetingData); }}
+                                  className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-600 text-[10px] font-semibold hover:bg-purple-100 transition-colors"
+                                >
+                                  {meetingData.status === 'ended' ? 'Review' : 'Join'}
+                                </button>
+                              )
+                            }
+                          </div>
                         </div>
-                        <p className="text-[10px] text-gray-500 leading-relaxed">{n.message}</p>
-                        <p className="text-[9px] text-gray-300 mt-1">{n.time}</p>
-                      </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        {!n.read && <button onClick={() => handleMarkRead(n.id)} className="p-1 rounded-lg hover:bg-white text-gray-300 hover:text-green-400 transition-colors"><Check size={10} /></button>}
-                        <button onClick={() => handleDismiss(n.id)} className="p-1 rounded-lg hover:bg-white text-gray-200 hover:text-red-400 transition-colors"><X size={10} /></button>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })
+                  )}
               </div>
             </Card>
 
-            {/* Preferences */}
-            <Card title="Preferences" icon={<Settings size={14} />}>
-              <div className="space-y-4">
+            < Card title="Preferences" icon={< Settings size={14} />}>
+              <div className="space-y-4" >
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-1.5"><Globe size={10} />Timezone</label>
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-1.5" > <Globe size={10} />Timezone</label >
                   <select
                     value={timezone}
                     onChange={e => setTimezone(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-gray-200 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-300"
                   >
-                    <option>Asia/Singapore (GMT+8)</option>
-                    <option>Asia/Kuala_Lumpur (GMT+8)</option>
-                    <option>America/New_York (GMT-4)</option>
-                    <option>Europe/London (GMT+1)</option>
-                    <option>Asia/Tokyo (GMT+9)</option>
+                    <option>Asia / Ho_Chi_Minh </option>
+                    < option > Asia / Singapore </option>
+                    < option > America / New_York </option>
+                    < option > Europe / London </option>
+                    < option > Asia / Tokyo </option>
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-1.5"><Clock size={10} />Working Hours</label>
-                  <div className="flex items-center gap-2">
+                < div >
+                  <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1 mb-1.5" > <Clock size={10} />Working Hours</label >
+                  <div className="flex items-center gap-2" >
                     <input type="time" value={workStart} onChange={e => setWorkStart(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
-                    <span className="text-xs text-gray-300">to</span>
-                    <input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
+                      className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
+                    <span className="text-xs text-gray-300" > to </span>
+                    < input type="time" value={workEnd} onChange={e => setWorkEnd(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-purple-300" />
                   </div>
                 </div>
 
-                <div className="h-px bg-gray-50" />
-
-                <div className="space-y-2">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1"><Bell size={10} />Notifications</p>
-                  {[
-                    { label: 'Email notifications', val: notifEmail, set: setNotifEmail },
-                    { label: 'Push notifications', val: notifPush, set: setNotifPush },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50">
-                      <span className="text-xs text-gray-600">{item.label}</span>
-                      <button
-                        onClick={() => item.set(!item.val)}
-                        className={`relative inline-flex h-4.5 w-8 items-center rounded-full transition-colors ${item.val ? 'bg-purple-400' : 'bg-gray-200'}`}
-                        style={{ height: '18px', width: '32px' }}
-                      >
-                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition-transform ${item.val ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                <button className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors">
+                < button onClick={savePreferences} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-500 text-white text-xs font-semibold hover:bg-purple-600 transition-colors" >
                   <Check size={12} />
                   Save Preferences
                 </button>
               </div>
             </Card>
-
           </div>
         </div>
       </div>
+
+      {
+        selectedEvent && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4"
+            onClick={() => setSelectedEvent(null)
+            }
+          >
+            <div
+              className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 max-w-sm w-full"
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 mb-4" >
+                <div className="min-w-0" >
+                  <h3 className="font-bold text-gray-900 truncate" > {selectedEvent.title} </h3>
+                  < p className="text-xs text-gray-400 mt-1" >
+                    {formatShortDate(selectedEvent.start)} · {formatTime(selectedEvent.start)} - {formatTime(selectedEvent.end)}
+                  </p>
+                </div>
+                < button onClick={() => setSelectedEvent(null)} className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-50" >
+                  <X size={16} />
+                </button>
+              </div>
+
+              < div className="space-y-3 mb-5" >
+                <StatusBadge status={selectedEvent.status} />
+                {
+                  selectedEvent.meta && (
+                    <p className="text-sm text-gray-500 leading-relaxed" > {selectedEvent.meta} </p>
+                  )
+                }
+                {
+                  selectedMeeting && (
+                    <div className="text-xs text-gray-500 space-y-1" >
+                      <p>Organizer: <span className="font-semibold text-gray-700" > {selectedMeeting.organizerDetails?.fullname || selectedMeeting.organizer} </span></p >
+                      <p>Participants: <span className="font-semibold text-gray-700" > {selectedMeeting.participants.length} </span></p >
+                    </div>
+                  )
+                }
+              </div>
+
+              < div className="flex gap-2" >
+                {selectedSchedule && (
+                  <>
+                    <button
+                      onClick={() => handleEdit(selectedSchedule)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors"
+                    >
+                      <Edit3 size={14} />
+                      Edit
+                    </button>
+                    < button
+                      onClick={() => handleDelete(selectedSchedule.scheduleid || selectedSchedule.id || '')}
+                      className="px-4 py-2.5 rounded-lg bg-red-50 text-red-500 text-sm font-semibold hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </>
+                )}
+                {
+                  selectedMeeting && (
+                    <div className="flex flex-col gap-2 w-full" >
+                      {
+                        (() => {
+                          const isOrganizer = selectedMeeting.organizer === currentUser || selectedMeeting.organizerDetails?.username === currentUser;
+                          const myRsvp = (currentUser ? selectedMeeting.rsvpStatus?.[currentUser] : undefined) || (isOrganizer ? 'accepted' : 'pending');
+                          const isPastMeeting = getMeetingTimelineStatus(selectedMeeting, statusNow) === 'ended';
+
+                          if (isPastMeeting) {
+                            return (
+                              <p className="w-full py-2 text-center text-xs font-semibold text-gray-400 bg-gray-50 rounded-lg">
+                                This meeting has ended.
+                              </p>
+                            );
+                          }
+
+                          if (!isOrganizer && myRsvp === 'pending') {
+                            return (
+                              <div className="flex gap-2 w-full" >
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateMeetingRSVP(selectedMeeting.meetingid, 'accepted')
+                                  }
+                                  className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  Accept
+                                </button>
+                                < button
+                                  type="button"
+                                  onClick={() => handleUpdateMeetingRSVP(selectedMeeting.meetingid, 'declined')
+                                  }
+                                  className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-col gap-2 w-full" >
+                              <button
+                                type="button"
+                                onClick={() => openMeeting(selectedMeeting)
+                                }
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-purple-500 text-white text-sm font-semibold hover:bg-purple-600 transition-colors shadow-sm"
+                              >
+                                <Video size={14} />
+                                {selectedMeeting.status === 'ended' ? 'Review Meeting' : 'Join Meeting'}
+                              </button>
+
+                              {
+                                !isOrganizer && myRsvp === 'accepted' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateMeetingRSVP(selectedMeeting.meetingid, 'declined')
+                                    }
+                                    className="w-full py-1.5 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  >
+                                    Leave Meeting
+                                  </button>
+                                )}
+                            </div>
+                          );
+                        })()}
+                    </div>
+                  )}
+
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

@@ -1,59 +1,82 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const dotenv = require('dotenv');
-
 dotenv.config();
 
-const getGenAI = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'your_gemini_api_key_placeholder') {
-    return null;
-  }
-  return new GoogleGenerativeAI(apiKey);
-};
+const { Agent } = require('undici');
 
-/**
- * Service to interact with Gemini API
- */
-const generateResponse = async (prompt, context = []) => {
-  const genAI = getGenAI();
+const keepAliveDispatcher = new Agent({
+  keepAliveTimeout: 60000, 
+  keepAliveMaxTimeout: 60000,
+  connections: 10,
+  headersTimeout: 300000,
+  bodyTimeout: 300000
+});
+
+const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434').replace(/\/$/, '');
+const getOllamaModel = () => process.env.OLLAMA_MODEL || 'qwen3:1.7b';
+
+// THÊM THAM SỐ systemInstruction
+const generateResponse = async (prompt, context = [], systemInstruction = null) => {
   try {
-    if (!genAI) {
-      console.log('🤖 Mock AI response (API Key missing):', prompt);
-      return `[MOCK] Phản hồi từ AI cho: "${prompt}". (Vui lòng thêm GEMINI_API_KEY vào .env để sử dụng AI thật).`;
+    const messages = context.map(c => ({
+      role: c.senderusername === 'user' ? 'user' : 'assistant',
+      content: c.content
+    }));
+
+    // Gắn System Prompt động được tiêm dữ liệu từ RAG
+    const defaultSystem = 'Bạn là trợ lý AI ảo của hệ thống UniPlatform. Hãy trả lời thật ngắn gọn, thân thiện bằng tiếng Việt.';
+    messages.unshift({
+      role: 'system',
+      content: systemInstruction || defaultSystem
+    });
+
+    messages.push({
+      role: 'user',
+      content: prompt
+    });
+
+    const response = await fetch(`${getOllamaBaseUrl()}/api/chat`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Connection': 'keep-alive'
+      },
+      dispatcher: keepAliveDispatcher,
+      body: JSON.stringify({
+        model: getOllamaModel(),
+        stream: false,
+        options: { temperature: 0.3 }, // Giảm temperature xuống 0.3 để AI trả lời chính xác dựa trên DB, bớt sáng tạo linh tinh
+        messages: messages
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.error || `Ollama API lỗi HTTP ${response.status}`);
     }
 
-    const model = genAI.getGenerativeModel({ model: "models/gemini-1.5-flash" });
-    
-    // Format context for better response
-    const formattedContext = context.map(c => `${c.senderusername}: ${c.content}`).join('\n');
-    const fullPrompt = `Ngữ cảnh các tin nhắn trước:\n${formattedContext}\n\nCâu hỏi: ${prompt}`;
+    const data = await response.json();
+    return data.message.content;
 
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    return response.text();
   } catch (error) {
-    console.error('❌ Gemini Response Error:', error.message);
+    console.error('❌ Ollama Chat Error:', error.message);
     throw error;
   }
 };
 
-/**
- * Generate vector embedding for text using Gemini's embedding model
- */
 const getEmbedding = async (text) => {
-  const genAI = getGenAI();
   try {
-    if (!genAI) {
-      // Return a mock 768-dimensional vector (typical for Gemini)
-      return Array.from({ length: 768 }, () => Math.random());
-    }
-
-    const model = genAI.getGenerativeModel({ model: "models/text-embedding-004" });
-    const result = await model.embedContent(text);
-    return result.embedding.values;
+    const response = await fetch(`${getOllamaBaseUrl()}/api/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: getOllamaModel(),
+        prompt: text
+      })
+    });
+    const data = await response.json();
+    return data.embedding || [];
   } catch (error) {
-    console.error('❌ Gemini Embedding Error:', error.message);
-    // Don't throw embedding errors to avoid breaking the chat flow
+    console.error('❌ Ollama Embedding Error:', error.message);
     return [];
   }
 };

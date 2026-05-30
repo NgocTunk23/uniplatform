@@ -1,166 +1,229 @@
-import React from 'react';
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  Users, 
-  FileText, 
+import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router';
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  FileText,
   Sparkles,
-  ChevronRight,
-  MoreHorizontal,
-  ShieldCheck // <-- Import icon này
+  ShieldCheck,
+  CheckCircle,
+  Video
 } from 'lucide-react';
+import { canJoinMeeting, JOIN_WINDOW_MINUTES } from '../utils/meeting';
 
-// Bổ sung interface để nhận Props từ DashboardLayout truyền xuống
-interface RightPanelProps {
-  groupName: string;
-  isCoordinationOpen: boolean;
-  onToggleCoordination: () => void;
+interface MeetingMinute {
+  summary?: string | null;
+  content?: string | null;
+  summary_draft?: string | null;
+  createdat?: string | Date | null;
+  updatedat?: string | Date | null;
 }
 
-const scheduleData = [
-  { time: '09:00 AM', status: 'busy', names: ['SJ', 'AC'] },
-  { time: '10:00 AM', status: 'busy', names: ['JS', 'SJ'] },
-  { time: '11:00 AM', status: 'free', names: ['JS', 'SJ', 'AC', 'MR'], best: true },
-  { time: '12:00 PM', status: 'busy', names: ['MR'] },
-  { time: '01:00 PM', status: 'free', names: ['JS', 'AC'], partial: true },
-];
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  status: 'busy' | 'tentative' | 'meeting';
+  source: 'schedule' | 'meeting';
+  meta?: string;
+  meetingMinute?: MeetingMinute | null;
+}
 
-export function RightPanel({ groupName, isCoordinationOpen, onToggleCoordination }: RightPanelProps) {
+interface RightPanelProps {
+  groupName?: string;
+  workspaceId?: string | null;
+  isCoordinationOpen?: boolean;
+  onToggleCoordination?: () => void;
+  allEvents?: CalendarEvent[];
+}
+
+const statusStyle: Record<string, { badge: string; label: string; dot: string }> = {
+  busy: { badge: 'bg-red-50 text-red-600 border-red-100', label: 'Busy', dot: 'bg-red-400' },
+  tentative: { badge: 'bg-amber-50 text-amber-600 border-amber-100', label: 'Tentative', dot: 'bg-amber-400' },
+  meeting: { badge: 'bg-purple-50 text-purple-600 border-purple-100', label: 'Meeting', dot: 'bg-purple-400' },
+};
+
+const getStatusStyle = (status: string) => statusStyle[status] || statusStyle.tentative;
+
+// Helper formats
+const formatTime = (date: Date) => date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+const formatShortDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const formatDuration = (start: Date, end: Date) => {
+  const mins = Math.round((end.getTime() - start.getTime()) / 60000);
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}`;
+};
+const toDate = (value?: string | Date | null) => value ? new Date(value) : null;
+const formatMinuteDate = (value: Date) => value.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+export function RightPanel({
+  groupName = "General",
+  workspaceId,
+  isCoordinationOpen = false,
+  onToggleCoordination = () => { },
+  allEvents = []
+}: RightPanelProps) {
+  const navigate = useNavigate();
+  const workspaceKey = (workspaceId || groupName || '').toString().trim().toLowerCase();
+
+  const belongsToCurrentWorkspace = (event: CalendarEvent) => {
+    const safeMeta = (event.meta || '').toString().trim().toLowerCase();
+    return !workspaceKey || workspaceKey === 'general' || safeMeta === workspaceKey;
+  };
+
+  const upcomingEvents = useMemo(() => {
+    const now = new Date();
+
+    return allEvents
+      .filter(event => {
+        const eventEnd = event.end instanceof Date ? event.end : new Date(event.end);
+        const isFuture = eventEnd > now;
+        const isMeeting = event.source === 'meeting';
+        return isFuture && isMeeting && belongsToCurrentWorkspace(event);
+      })
+      .sort((a, b) => {
+        const timeA = a.start instanceof Date ? a.start.getTime() : new Date(a.start).getTime();
+        const timeB = b.start instanceof Date ? b.start.getTime() : new Date(b.start).getTime();
+        return timeA - timeB;
+      })
+      .slice(0, 5);
+  }, [allEvents, workspaceKey]);
+
+  const latestMinutes = useMemo(() => {
+    return allEvents
+      .filter(event => (
+        event.source === 'meeting' &&
+        belongsToCurrentWorkspace(event) &&
+        event.meetingMinute &&
+        (event.meetingMinute.summary || event.meetingMinute.content || event.meetingMinute.summary_draft)
+      ))
+      .sort((a, b) => {
+        const aDate = toDate(a.meetingMinute?.updatedat) || toDate(a.meetingMinute?.createdat) || a.end;
+        const bDate = toDate(b.meetingMinute?.updatedat) || toDate(b.meetingMinute?.createdat) || b.end;
+        return bDate.getTime() - aDate.getTime();
+      })
+      .slice(0, 3);
+  }, [allEvents, workspaceKey]);
+
+  const openMeeting = (event: CalendarEvent) => {
+    navigate(`/meetings/${event.id}`);
+  };
+
+  const openMinutes = (event: CalendarEvent) => {
+    navigate(`/meetings/${event.id}/review`);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-white p-6 overflow-y-auto w-full">
-      
-      {/* HEADER NHÓM & NÚT TEAM COORDINATION */}
+    <div className="flex flex-col h-full bg-white p-6 overflow-y-auto w-full border-l border-gray-100">
+
       <div className="mb-8 pb-6 border-b border-gray-100">
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Current Workspace</h2>
         <p className="text-xl font-bold text-gray-900 truncate">{groupName}</p>
 
         <button
           onClick={onToggleCoordination}
-          className={`w-full mt-4 py-3 border text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 ${
-            isCoordinationOpen
-              ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100'
-              : 'bg-white border-purple-200 text-purple-600 hover:bg-purple-50'
-          }`}
+          className={`w-full mt-4 py-3 border text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 ${isCoordinationOpen ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-white border-purple-200 text-purple-600 hover:bg-purple-50'
+            }`}
         >
           <ShieldCheck size={18} />
           {isCoordinationOpen ? 'Back to Group Chat' : 'Open Team Coordination'}
         </button>
       </div>
 
-      {/* Intelligent Schedule Widget (Code cũ của bạn) */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <CalendarIcon size={16} className="text-purple-400" />
-            Intelligent Schedule
+            <CheckCircle size={16} className="text-purple-400" />
+            Upcoming Events
           </h3>
-          <button className="text-gray-400 hover:text-gray-600 transition-colors">
-            <MoreHorizontal size={16} />
-          </button>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-50">
-            <div className="flex flex-col">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Today, Oct 24</span>
-              <span className="text-sm font-medium text-gray-800 mt-0.5">Finding free slot...</span>
+        <div className="space-y-3">
+          {upcomingEvents.length === 0 ? (
+            <div className="py-8 text-center border-2 border-dashed border-gray-50 rounded-2xl">
+              <p className="text-xs text-gray-400">No upcoming meetings in this chat</p>
             </div>
-            <div className="flex -space-x-1">
-              <div className="w-6 h-6 rounded-full border border-white bg-gray-100 text-gray-700 flex items-center justify-center text-[8px] font-bold z-30 shadow-sm">AC</div>
-              <div className="w-6 h-6 rounded-full border border-white bg-gray-200 text-gray-800 flex items-center justify-center text-[8px] font-bold z-20 shadow-sm">SJ</div>
-              <div className="w-6 h-6 rounded-full border border-white bg-purple-200 text-purple-700 flex items-center justify-center text-[8px] font-bold z-10 shadow-sm">JS</div>
-              <div className="w-6 h-6 rounded-full border border-white bg-gray-300 text-gray-900 flex items-center justify-center text-[8px] font-bold z-0 shadow-sm">MR</div>
-            </div>
-          </div>
+          ) : (
+            upcomingEvents.map(event => {
+              const style = getStatusStyle(event.status);
+              const joinable = canJoinMeeting({ starttime: event.start, endtime: event.end });
 
-          <div className="space-y-3">
-            {scheduleData.map((slot, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span className="text-[11px] font-medium text-gray-400 w-12 pt-1.5 shrink-0 text-right">
-                  {slot.time}
-                </span>
-                
-                <div className={`
-                  flex-1 rounded-xl p-2.5 border transition-all relative overflow-hidden group cursor-pointer
-                  ${slot.best 
-                    ? 'bg-purple-50 border-purple-200 shadow-sm shadow-purple-100' 
-                    : slot.status === 'free' 
-                      ? 'bg-white border-gray-100 hover:border-purple-200 hover:shadow-sm' 
-                      : 'bg-gray-50 border-transparent opacity-60'
-                  }
-                `}>
-                  {slot.best && (
-                    <div className="absolute top-0 left-0 w-1 h-full bg-purple-400" />
-                  )}
-                  
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-semibold ${slot.best ? 'text-purple-700' : 'text-gray-700'}`}>
-                      {slot.best ? 'Perfect Match' : slot.status === 'free' ? 'Available' : 'Busy'}
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => joinable && openMeeting(event)}
+                  disabled={!joinable}
+                  title={joinable ? undefined : `Join opens ${JOIN_WINDOW_MINUTES} minutes before the meeting starts`}
+                  className={`w-full text-left p-3 rounded-xl border border-gray-100 transition-all group focus:outline-none focus:ring-2 focus:ring-purple-200 ${joinable ? 'hover:border-purple-100 hover:bg-purple-50/20 cursor-pointer' : 'cursor-not-allowed'}`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="text-xs font-bold text-gray-800 leading-tight">{event.title}</p>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${style.badge}`}>
+                      {style.label}
                     </span>
-                    <div className="flex gap-1">
-                      {slot.names.map((name, idx) => (
-                        <div key={idx} className="w-4 h-4 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[8px] text-gray-500 font-bold shadow-sm">
-                          {name}
-                        </div>
-                      ))}
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-3 text-[10px] text-gray-400 font-medium">
+                      <span className="flex items-center gap-1"><CalendarIcon size={10} />{formatShortDate(event.start)}</span>
+                      <span className="flex items-center gap-1"><Clock size={10} />{formatTime(event.start)} ({formatDuration(event.start, event.end)})</span>
+                    </div>
+
+                    <div className="flex items-center justify-end mt-1">
+                      {joinable ? (
+                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500 text-white text-[9px] font-bold group-hover:bg-purple-600 transition-colors">
+                          <Video size={10} /> Join
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 text-gray-400 text-[9px] font-bold">
+                          <Video size={10} /> Join
+                        </span>
+                      )}
                     </div>
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          <button className="w-full mt-4 py-2.5 bg-white border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm">
-            Propose Meeting Time
-          </button>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* AI Meeting Minutes Preview (Code cũ của bạn) */}
+      {/* Latest Minutes Section */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
             <Sparkles size={16} className="text-purple-400" />
             Latest Minutes
           </h3>
-          <button className="text-[11px] font-semibold text-purple-500 hover:text-purple-600 flex items-center">
-            View all <ChevronRight size={14} />
-          </button>
         </div>
-
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 group cursor-pointer hover:border-purple-200 hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500 shrink-0">
-              <FileText size={16} />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-gray-900">Weekly Sync: UI Refinements</h4>
-              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5 font-medium">
-                <Clock size={12} /> Today, 09:30 AM
-              </div>
-            </div>
+        {latestMinutes.length === 0 ? (
+          <div className="py-8 text-center border-2 border-dashed border-gray-50 rounded-2xl">
+            <p className="text-xs text-gray-400">No meeting minutes yet</p>
           </div>
-          
-          <div className="space-y-2 mb-3">
-            <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
-              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Key Decisions</span>
-              <ul className="text-xs text-gray-700 space-y-1 list-disc list-inside">
-                <li>Adopt Pastel Purple as accent</li>
-                <li>Remove voice/video call icons</li>
-                <li>Implement left sidebar layout</li>
-              </ul>
-            </div>
+        ) : (
+          <div className="space-y-3">
+            {latestMinutes.map(event => {
+              const minuteDate = toDate(event.meetingMinute?.updatedat) || toDate(event.meetingMinute?.createdat) || event.end;
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => openMinutes(event)}
+                  className="w-full text-left bg-white rounded-2xl border border-gray-100 p-4 hover:border-purple-200 hover:bg-purple-50/20 transition-all cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500"><FileText size={16} /></div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-gray-900 truncate">{event.title}</h4>
+                      <p className="text-[10px] text-gray-400">{formatMinuteDate(minuteDate)}, {formatTime(minuteDate)}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-          
-          <div className="flex items-center justify-between pt-3 border-t border-gray-50">
-            <div className="flex items-center gap-1 text-[11px] text-gray-500 font-medium">
-              <Users size={12} /> 4 Attendees
-            </div>
-            <button className="text-xs font-semibold text-purple-500 bg-purple-50 px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
-              Open
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

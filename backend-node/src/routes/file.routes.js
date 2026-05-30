@@ -51,4 +51,7 @@ router.post('/upload', auth.protect, uploadMiddleware.single('file'), fileContro
  */
 router.delete('/:id', auth.protect, fileController.deleteFile);
 
+router.get('/quota', auth.protect, fileController.getFilesQuota);
+router.get('/', auth.protect, fileController.getFiles);
+
 module.exports = router;

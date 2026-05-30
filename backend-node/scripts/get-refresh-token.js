@@ -6,10 +6,11 @@ dotenv.config();
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+// Use the Google Drive specific callback endpoint (not the user login endpoint)
+const REDIRECT_URI = 'http://localhost:5000/api/auth/google-drive/callback';
 
-if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
-  console.error('❌ Error: Missing Google OAuth2 credentials in .env');
+if (!CLIENT_ID || !CLIENT_SECRET) {
+  console.error('❌ Error: Missing Google OAuth2 credentials in .env (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)');
   process.exit(1);
 }
 

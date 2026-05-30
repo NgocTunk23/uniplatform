@@ -6,14 +6,17 @@ const prisma = require('../src/config/prisma');
 const jwt = require('jsonwebtoken');
 
 let token;
-let workspaceId;
+let workspaceid;
 let fileId;
 
 beforeAll(async () => {
-  // Ensure DB is clean for tests
-  await prisma.message.deleteMany({});
-  await prisma.file.deleteMany({});
+  // Ensure DB is clean for tests in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
   // Create test user
@@ -38,7 +41,7 @@ beforeAll(async () => {
       name: 'File Test Workspace',
       admin: 'fileuser' 
     });
-  workspaceId = workspaceRes.body.id;
+  workspaceid = workspaceRes.body.id;
 });
 
 afterAll(async () => {
@@ -57,7 +60,21 @@ describe('File Attachment API Tests', () => {
     expect(res.body.file).toBeDefined();
     expect(res.body.file.filename).toBe('test.txt');
     expect(res.body.downloadLink).toContain('id=mock_drive_id_');
-    fileId = res.body.file.id;
+    fileId = res.body.file.fileid;
+  });
+
+  test('should handle UTF-8 Vietnamese filenames correctly', async () => {
+    const vietName = 'Tài liệu hướng dẫn.pdf';
+    // Supertest might send it correctly if we use .attach
+    // But we want to simulate how Multer receives it (latin1)
+    
+    const res = await request(app)
+      .post('/api/files/upload')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', Buffer.from('pdf content'), vietName);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.file.filename).toBe(vietName);
   });
 
   test('should fail upload if file exceeds 50MB (mocking by sending large buffer if needed, but here we just check presence)', async () => {
@@ -80,7 +97,7 @@ describe('File Attachment API Tests', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.message).toBe('File deleted successfully');
 
-    const dbFile = await prisma.file.findUnique({ where: { id: fileId } });
+    const dbFile = await prisma.files.findUnique({ where: { fileid: fileId } });
     expect(dbFile).toBeNull();
   });
 });

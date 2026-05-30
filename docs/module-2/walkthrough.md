@@ -13,7 +13,23 @@ Tài liệu này ghi chép lại hành trình phát triển Module 2, từ việ
 - **Auth:** Hoàn thiện luồng Register/Login/Profile với JWT.
 - **Workspace:** Triển khai quản lý nhóm và phân quyền Leader/Member/Viewer.
 - **Real-time Chat:** Xây dựng hệ thống Chat qua Socket.io, hỗ trợ Threaded Replies và Mentions.
+- **Unread Message Tracking (Mới):**
+    - Triển khai lưu trữ `lastReadAt` cho từng thành viên trong DB.
+    - Hệ thống đếm tin nhắn chưa đọc thời gian thực qua Socket.io.
+    - Tự động đánh dấu đã đọc khi người dùng truy cập vào Workspace.
 - **Cloud Storage:** Tích hợp Google Drive API cho việc lưu trữ tệp tin đính kèm.
+- **Workspace UI/UX Refinement:** 
+    - Tái cấu trúc toàn bộ giao diện quản lý Workspace với phong cách **Premium Glassmorphism**.
+    - Triển khai Role-based logic mới: Chỉ Leader/Admin mới được gán quyền Leader; tự động disable chat input cho Viewer.
+    - **Infinite Scroll (Mới):** Tự động tải lịch sử chat khi cuộn lên trên, sử dụng `useLayoutEffect` và tính toán `scrollTop` để triệt tiêu hiện tượng giật màn hình (scroll jump).
+    - **Meeting Permission & Visibility (Mới):** 
+        - Mở rộng quyền tạo cuộc họp cho cả **Member**, không chỉ giới hạn ở Leader.
+        - **Granular Visibility:** Triển khai cơ chế lọc cuộc họp theo vai trò: Trưởng nhóm xem tất cả, Thành viên chỉ xem cuộc họp được mời tham gia. Admin xem toàn bộ hệ thống.
+        - **Participant Enrichment:** Tự động hóa việc lấy Tên đầy đủ và Ảnh đại diện cho mọi thành viên tham gia cuộc họp để hiển thị trên UI chuyên nghiệp.
+    - **Server-side Search (Mới):** Chuyển đổi cơ chế tìm kiếm tin nhắn từ Client-side filter sang **Server-side Search** với Debounce, giúp tìm kiếm được cả các tin nhắn cũ chưa được tải lên máy khách.
+    - **Avatar Standardization (Mới):** Tách logic hiển thị ảnh đại diện thành Component `AvatarWithFallback` dùng chung. Chuẩn hóa thiết kế hình tròn (`rounded-full`), viền trắng và hệ màu Premium cho toàn bộ ứng dụng (Chat, Profile, Sidebar, Meetings).
+    - **In-line Role Management (Mới):** Cho phép Leader cập nhật quyền hạn thành viên trực tiếp qua Dropdown menu trong danh sách Workspace Members với hiệu ứng Glassmorphism.
+    - Cải thiện trải nghiệm người dùng với việc hiển thị Full Name và cập nhật trạng thái thành viên thời gian thực.
 
 ### 🛡️ Admin (`/api/admin`)
 - `GET /stats`: Xem chỉ số sức khỏe hệ thống (CPU, RAM, DB, **Google Drive Quota**).

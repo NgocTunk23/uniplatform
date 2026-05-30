@@ -9,12 +9,12 @@ __pycache__/
 *$py.class
 venv/
 env/
-
+/ollama/
 # Build files
 frontend/build/
 frontend/dist/
 
 # Môi trường và Bảo mật
-.env
-.env.local
-.DS_Store
+# .env
+# .env.local
+.DS_Storedocker-compose.override.yml

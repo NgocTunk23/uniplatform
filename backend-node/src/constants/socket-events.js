@@ -18,6 +18,13 @@ const SOCKET_EVENTS = {
   // AI events
   ASK_AI: 'ask_ai',
   AI_STATUS: 'ai_status',
+  
+  // Meeting events
+  JOIN_MEETING: 'join_meeting',
+  LEAVE_MEETING: 'leave_meeting',
+  MEETING_PARTICIPANTS_UPDATE: 'meeting_participants_update',
+  WEBRTC_SIGNAL: 'webrtc_signal',
+  
   ERROR: 'app_error'
 };
 

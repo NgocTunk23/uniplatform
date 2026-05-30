@@ -11,7 +11,7 @@ const prisma = require('../config/prisma');
 const logChange = async (actorusername, targetresource, targetid, oldData, newData) => {
   try {
     const changes = [];
-    const ignoreFields = ['password', 'updatedAt', 'tokenVersion'];
+    const ignoreFields = ['password', 'tokenVersion'];
 
     // Collect all unique keys from both objects
     const keys = new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]);
@@ -43,9 +43,7 @@ const logChange = async (actorusername, targetresource, targetid, oldData, newDa
           actorusername,
           targetresource,
           targetid,
-          changes: {
-            set: changes
-          }
+          changes: changes
         }
       });
     }

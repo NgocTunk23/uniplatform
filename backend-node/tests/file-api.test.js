@@ -8,10 +8,13 @@ let token;
 let validMessageId;
 
 beforeAll(async () => {
-  // Clean up database
-  await prisma.file.deleteMany({});
-  await prisma.message.deleteMany({});
+  // Clean up database in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
   // 1. Create and login user
@@ -34,16 +37,16 @@ beforeAll(async () => {
     .set('Authorization', `Bearer ${token}`)
     .send({ name: 'System Workspace', admin: 'testadmin' });
   
-  const workspaceId = workspaceRes.body.id;
+  const workspaceid = workspaceRes.body.id;
 
-  const messageRes = await prisma.message.create({
+  const messageRes = await prisma.messages.create({
     data: {
-      workspaceId,
+      workspaceid: workspaceid,
       senderusername: 'testadmin',
       content: 'Sample message'
     }
   });
-  validMessageId = messageRes.id;
+  validMessageId = messageRes.messageid;
 });
 
 afterAll(async () => {
@@ -62,11 +65,11 @@ describe('COMPREHENSIVE FILE API TESTS', () => {
       .attach('file', Buffer.from('content 1'), 'empty_id_test.txt');
 
     expect(res.statusCode).toBe(201);
-    expect(res.body.file.messageId).toBeNull(); // Prisma stores it as null if undefined
+    expect(res.body.file.messageid).toBeNull(); // Prisma stores it as null if undefined
     expect(res.body.file.filename).toBe('empty_id_test.txt');
   });
 
-  test('CASE 2: Upload SUCCESS with VALID messageId', async () => {
+  test('CASE 2: Upload SUCCESS with VALID messageid', async () => {
     const res = await request(app)
       .post('/api/files/upload')
       .set('Authorization', `Bearer ${token}`)
@@ -74,10 +77,10 @@ describe('COMPREHENSIVE FILE API TESTS', () => {
       .attach('file', Buffer.from('content 2'), 'valid_id_test.txt');
 
     expect(res.statusCode).toBe(201);
-    expect(res.body.file.messageId).toBe(validMessageId);
+    expect(res.body.file.messageid).toBe(validMessageId);
   });
 
-  test('CASE 3: Upload SUCCESS with INVALID (not 24-char) messageId (Should be sanitized to undefined)', async () => {
+  test('CASE 3: Upload SUCCESS with INVALID (not 24-char) messageid (Should be sanitized to undefined)', async () => {
     const res = await request(app)
       .post('/api/files/upload')
       .set('Authorization', `Bearer ${token}`)
@@ -85,7 +88,7 @@ describe('COMPREHENSIVE FILE API TESTS', () => {
       .attach('file', Buffer.from('content 3'), 'invalid_id_test.txt');
 
     expect(res.statusCode).toBe(201);
-    expect(res.body.file.messageId).toBeNull();
+    expect(res.body.file.messageid).toBeNull();
   });
 
   test('CASE 4: Upload FAIL - Unauthorized (No Token)', async () => {
@@ -113,7 +116,7 @@ describe('COMPREHENSIVE FILE API TESTS', () => {
       .set('Authorization', `Bearer ${token}`)
       .attach('file', Buffer.from('content to delete'), 'delete_me.txt');
     
-    const fileId = uploadRes.body.file.id;
+    console.log("DEBUG FILE BODY:", JSON.stringify(uploadRes.body, null, 2)); const fileId = uploadRes.body.file.fileid;
 
     const res = await request(app)
       .delete(`/api/files/${fileId}`)
@@ -123,7 +126,7 @@ describe('COMPREHENSIVE FILE API TESTS', () => {
     expect(res.body.message).toBe('File deleted successfully');
 
     // Confirm deleted from DB
-    const dbFile = await prisma.file.findUnique({ where: { id: fileId } });
+    const dbFile = await prisma.files.findUnique({ where: { fileid: fileId } });
     expect(dbFile).toBeNull();
   });
 

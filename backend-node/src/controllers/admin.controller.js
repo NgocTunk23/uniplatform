@@ -20,7 +20,7 @@ const getDashboardStats = async (req, res, next) => {
   try {
     const userCount = await prisma.user.count();
     const workspaceCount = await prisma.workspace.count();
-    const messageCount = await prisma.message.count();
+    const messageCount = await prisma.messages.count();
     
     const freeMem = os.freemem() / 1024 / 1024 / 1024;
     const totalMem = os.totalmem() / 1024 / 1024 / 1024;
@@ -46,7 +46,8 @@ const getDashboardStats = async (req, res, next) => {
           limit: (quota.limit / 1024 / 1024 / 1024).toFixed(2) + ' GB',
           usage: (quota.usage / 1024 / 1024 / 1024).toFixed(2) + ' GB',
           remaining: (quota.remaining / 1024 / 1024 / 1024).toFixed(2) + ' GB',
-          usagePercent: ((quota.usage / quota.limit) * 100).toFixed(2) + '%'
+          usagePercent: ((quota.usage / quota.limit) * 100).toFixed(2) + '%',
+          driveQuotaWarning: quota.usage / quota.limit > 0.9,
         } : 'Quota info unavailable'
       }
     });
@@ -71,13 +72,12 @@ const getAllUsers = async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       select: {
-        id: true,
         username: true,
         email: true,
         fullname: true,
         role: true,
         status: true,
-        createdAt: true,
+        createdat: true,
       }
     });
     res.json(users);
@@ -114,16 +114,16 @@ const getAllUsers = async (req, res, next) => {
 const updateUserStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const oldUser = await prisma.user.findUnique({ where: { username: req.params.id } });
     if (!oldUser) throw new ApiError(404, 'User not found');
 
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { username: req.params.id },
       data: { status },
     });
 
     // Log the change
-    await logChange(req.user.username, 'User', user.id, oldUser, user);
+    await logChange(req.user.username, 'User', user.username, oldUser, user);
 
     res.json(user);
   } catch (error) {
@@ -147,7 +147,7 @@ const getSystemLogs = async (req, res, next) => {
   try {
     const logs = await prisma.systemLog.findMany({
       take: 100,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdat: 'desc' },
     });
     res.json(logs);
   } catch (error) {
@@ -155,21 +155,22 @@ const getSystemLogs = async (req, res, next) => {
   }
 };
 
+
 /**
  * Force logout a user by incrementing their tokenVersion
  */
 const forceLogoutUser = async (req, res, next) => {
   try {
-    const oldUser = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const oldUser = await prisma.user.findUnique({ where: { username: req.params.id } });
     if (!oldUser) throw new ApiError(404, 'User not found');
 
     const user = await prisma.user.update({
-      where: { id: req.params.id },
+      where: { username: req.params.id },
       data: { tokenVersion: { increment: 1 } },
     });
 
     // Log the change
-    await logChange(req.user.username, 'User', user.id, oldUser, user);
+    await logChange(req.user.username, 'User', user.username, oldUser, user);
 
     res.json({ message: 'User force logged out successfully', tokenVersion: user.tokenVersion });
   } catch (error) {

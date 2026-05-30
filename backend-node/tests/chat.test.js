@@ -1,21 +1,17 @@
 // 1. Force environment for testing
-const dotenv = require('dotenv');
-dotenv.config();
+// Environment set via shell or .env.test
+
 
 process.env.JWT_SECRET = 'testsecret';
 process.env.NODE_ENV = 'test';
 
-// Dynamically override MONGO_URI for testing
-if (process.env.MONGO_URI) {
-  const baseUri = process.env.MONGO_URI.split('?')[0].replace('/uniplatform', '/uniplatform_test');
-  const params = process.env.MONGO_URI.split('?')[1] || '';
-  process.env.MONGO_URI = `${baseUri}?${params}&directConnection=true`;
-}
+// Rely on DATABASE_URL from shell environment
+
 
 const { Server } = require('socket.io');
 const ioc = require('socket.io-client');
 const http = require('http');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../src/config/prisma');
 const { execSync } = require('child_process');
 const jwt = require('jsonwebtoken');
 const SOCKET_EVENTS = require('../src/constants/socket-events');
@@ -25,28 +21,33 @@ jest.mock('../src/services/ai.service', () => ({
   getEmbedding: jest.fn().mockResolvedValue(Array(768).fill(0.1)),
   generateResponse: jest.fn().mockResolvedValue('Hello, I am UniBot! How can I help you?')
 }));
+jest.mock('../src/services/rag.service', () => ({
+  getAnswerFromKnowledge: jest.fn().mockResolvedValue('Hello, I am UniBot with RAG knowledge!')
+}));
 
 const ROLES = require('../src/constants/roles');
 const { server, io } = require('../index');
 
-let prisma;
 let clientSocket;
-const port = 5002; // Use a different port for socket tests to be safe
-const workspaceId = '654321654321654321654321'; // Valid MongoDB ObjectId format
+const port = 0; // Use random port for socket tests to avoid EADDRINUSE
+let workspaceid; 
 
 jest.setTimeout(15000);
 
 beforeAll(async () => {
   // Setup Workspace & Database
-  prisma = new PrismaClient({
-    datasources: { db: { url: process.env.MONGO_URI } }
-  });
 
   // Ensure fresh DB and create a dummy workspace for the hardcoded ID
-  await prisma.file.deleteMany({});
-  await prisma.message.deleteMany({});
+  // Ensure fresh DB in correct order for relations
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
+
+  require('fs').writeFileSync('db_debug.log', `🧹 Cleanup finished successfully\n`, { flag: 'a' });
 
   const user = await prisma.user.create({
     data: {
@@ -57,22 +58,23 @@ beforeAll(async () => {
     }
   });
 
-  const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+  const token = jwt.sign({ id: user.username }, process.env.JWT_SECRET);
 
-  await prisma.workspace.create({
+  const ws = await prisma.workspace.create({
     data: {
-      id: workspaceId,
       name: 'Test Workspace',
       admin: 'testadmin',
-      members: {
+      member: {
         set: [{ username: 'testadmin', workspacerole: ROLES.WORKSPACE.LEADER }]
       }
     }
   });
+  workspaceid = ws.workspaceid;
 
   return new Promise((resolve) => {
     server.listen(port, () => {
-      clientSocket = ioc(`http://localhost:${port}`, {
+      const actualPort = server.address().port;
+      clientSocket = ioc(`http://localhost:${actualPort}`, {
         auth: { token }
       });
       clientSocket.on('connect', resolve);
@@ -84,18 +86,18 @@ afterAll(async () => {
   if (prisma) await prisma.$disconnect();
   io.close();
   server.close();
-  clientSocket.disconnect();
+  if (clientSocket) clientSocket.disconnect();
 });
 
 describe('Real-time Chat Socket Tests', () => {
   
   beforeEach(async () => {
     // Clean up messages between tests
-    await prisma.message.deleteMany({});
+    await prisma.messages.deleteMany({});
   });
 
   test('User should join a workspace room', (done) => {
-    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
     // Success is implicit if no error, but we can't easily verify room membership from client
     // So we just ensure the event can be sent
     setTimeout(done, 100);
@@ -103,7 +105,7 @@ describe('Real-time Chat Socket Tests', () => {
 
   test('should broadcast and save a message when send_message is emitted', (done) => {
     const testMessage = {
-      workspaceId,
+      workspaceid,
       senderusername: 'testadmin',
       content: 'Hello everyone!',
       mentions: []
@@ -117,11 +119,11 @@ describe('Real-time Chat Socket Tests', () => {
         
         // 2. Wait a bit for background save to finish, then check DB
         setTimeout(async () => {
-          const savedMessage = await prisma.message.findFirst({
+          const savedMessage = await prisma.messages.findFirst({
             where: { content: testMessage.content }
           });
           expect(savedMessage).toBeDefined();
-          expect(savedMessage.workspaceId).toBe(workspaceId);
+          expect(savedMessage.workspaceid).toBe(workspaceid);
           done();
         }, 500);
       } catch (err) {
@@ -130,21 +132,21 @@ describe('Real-time Chat Socket Tests', () => {
     });
 
     // 2. Emit the message
-    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
     clientSocket.emit(SOCKET_EVENTS.SEND_MESSAGE, {
-      workspaceId: testMessage.workspaceId,
+      workspaceid: testMessage.workspaceid,
       content: testMessage.content
     });
   });
 
   test('should handle AI interaction via ask_ai', (done) => {
     const aiPrompt = {
-      workspaceId,
+      workspaceid,
       prompt: 'What is our project status?',
       senderusername: 'testadmin'
     };
 
-    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+    clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
 
     // 1. Listen for status changes
     let statusReceived = false;
@@ -160,7 +162,7 @@ describe('Real-time Chat Socket Tests', () => {
           expect(receivedData.content).toContain('UniBot');
           
           // Verify it was saved
-          const savedAiMsg = await prisma.message.findFirst({
+          const savedAiMsg = await prisma.messages.findFirst({
             where: { senderusername: 'UniBot' }
           });
           expect(savedAiMsg).toBeDefined();
@@ -179,7 +181,7 @@ describe('Real-time Chat Socket Tests', () => {
 
   test('should save message with file attachments', async () => {
     // 1. Create a dummy file in DB
-    const dummyFile = await prisma.file.create({
+    const dummyFile = await prisma.files.create({
       data: {
         uploader: 'testadmin',
         filename: 'attachment.pdf',
@@ -190,10 +192,10 @@ describe('Real-time Chat Socket Tests', () => {
     });
 
     const messageWithFiles = {
-      workspaceId,
+      workspaceid,
       senderusername: 'testadmin',
       content: 'See this file!',
-      fileIds: [dummyFile.id]
+      fileIds: [dummyFile.fileid]
     };
 
     return new Promise((resolve, reject) => {
@@ -204,19 +206,19 @@ describe('Real-time Chat Socket Tests', () => {
           expect(newMessage.files[0].filename).toBe('attachment.pdf');
 
           // Verify in DB with relation
-          const dbMsg = await prisma.message.findUnique({
-            where: { id: newMessage.id },
+          const dbMsg = await prisma.messages.findUnique({
+            where: { messageid: newMessage.messageid || newMessage.id },
             include: { files: true }
           });
           expect(dbMsg.files).toHaveLength(1);
-          expect(dbMsg.files[0].id).toBe(dummyFile.id);
+          expect(dbMsg.files[0].fileid).toBe(dummyFile.fileid);
           resolve();
         } catch (err) {
           reject(err);
         }
       });
 
-      clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
+      clientSocket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid);
       clientSocket.emit(SOCKET_EVENTS.SEND_MESSAGE, messageWithFiles);
     });
   });

@@ -17,17 +17,21 @@ const permissionUtil = {
       return { username: user.username, workspacerole: ROLES.WORKSPACE.LEADER, isSystemAdmin: true };
     }
 
-    // 2. Query workspace with members
+    if (!workspaceId) {
+      throw new ApiError(400, 'Missing workspace identifier', ERROR_CODES.VALIDATION.VALIDATION_ERROR);
+    }
+
+    // 2. Query workspace with member list
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { members: true }
+      where: { workspaceid: workspaceId },
+      select: { member: true }
     });
 
     if (!workspace) {
       throw new ApiError(404, 'Workspace not found', ERROR_CODES.WORKSPACE.WKS_NOT_FOUND);
     }
 
-    const membership = workspace.members.find(m => m.username === user.username);
+    const membership = workspace.member.find(m => m.username === user.username);
     if (!membership) {
       throw new ApiError(403, 'Access denied. You are not a member of this workspace.', ERROR_CODES.AUTH.AUTH_ERROR);
     }

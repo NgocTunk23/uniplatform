@@ -7,16 +7,11 @@ process.env.NODE_ENV = 'test';
 
 const ERROR_CODES = require('../src/constants/error-codes');
 
-// Dynamically override MONGO_URI for the whole process before application modules are loaded
-if (process.env.MONGO_URI) {
-  const baseUri = process.env.MONGO_URI.split('?')[0].replace('/uniplatform', '/uniplatform_test');
-  const params = process.env.MONGO_URI.split('?')[1] || '';
-  process.env.MONGO_URI = `${baseUri}?${params}&directConnection=true`;
-}
+// Dynamically override DATABASE_URL for the whole process before application modules are loaded
 
 const request = require('supertest');
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../src/config/prisma');
 const { execSync } = require('child_process');
 
 // Load routes and middleware AFTER environment setup
@@ -25,7 +20,7 @@ const errorMiddleware = require('../src/middlewares/error.middleware');
 
 jest.setTimeout(60000);
 
-let prisma;
+
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRoutes);
@@ -46,34 +41,29 @@ app.use((err, req, res, next) => {
 app.use(errorMiddleware);
 
 beforeAll(async () => {
-  console.log(`🧪 Testing against: ${process.env.MONGO_URI}`);
-
-  // Sync schema to the test DB
-  try {
-    execSync('npx prisma db push --skip-generate', {
-      env: { ...process.env, DATABASE_URL: process.env.MONGO_URI },
-      stdio: 'ignore'
-    });
-  } catch (e) {
-    console.error('❌ Prisma Sync Failed:', e.message);
-    throw e;
-  }
-
-  prisma = new PrismaClient({
-    datasources: { db: { url: process.env.MONGO_URI } }
-  });
-
+  // Ensure fresh DB in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
+  await prisma.workspace.deleteMany({});
+  await prisma.schedules.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 });
 
 afterAll(async () => {
   if (prisma) {
-    await prisma.user.deleteMany({}); // Optional cleanup
+    await prisma.systemLog.deleteMany({});
+    await prisma.schedules.deleteMany({});
+    await prisma.user.deleteMany({});
     await prisma.$disconnect();
   }
 });
 
 beforeEach(async () => {
+  await prisma.systemLog.deleteMany({});
+  await prisma.schedules.deleteMany({});
   await prisma.user.deleteMany({});
 });
 
@@ -144,6 +134,56 @@ describe('Auth System Unit Tests', () => {
 
       expect(res.statusCode).toEqual(401);
       expect(res.body.errorCode).toEqual(ERROR_CODES.AUTH.AUTH_INVALID);
+    });
+  });
+
+  describe('POST /api/auth/reset-password', () => {
+    it('should increment tokenVersion and invalidate old tokens after password reset', async () => {
+      const bcrypt = require('bcryptjs');
+      const crypto = require('crypto');
+      const hashedPassword = await bcrypt.hash(testUser.password, 10);
+      await prisma.user.create({
+        data: { ...testUser, password: hashedPassword }
+      });
+
+      const loginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ identifier: testUser.email, password: testUser.password });
+
+      expect(loginRes.statusCode).toEqual(200);
+      const oldToken = loginRes.body.token;
+      expect(oldToken).toBeDefined();
+
+      const resetTokenRaw = crypto.randomBytes(32).toString('hex');
+      const resetTokenHash = crypto.createHash('sha256').update(resetTokenRaw).digest('hex');
+      const expireAt = new Date(Date.now() + 15 * 60 * 1000);
+
+      await prisma.user.update({
+        where: { username: testUser.username },
+        data: { resetToken: resetTokenHash, resetTokenExpiry: expireAt }
+      });
+
+      const resetRes = await request(app)
+        .post('/api/auth/reset-password')
+        .send({ token: resetTokenRaw, newPassword: 'newPassword123' });
+
+      expect(resetRes.statusCode).toEqual(200);
+      expect(resetRes.body.message).toContain('Mật khẩu đã được cập nhật');
+      expect(resetRes.body.tokenVersion).toBeGreaterThanOrEqual(1);
+
+      const logoutRes = await request(app)
+        .post('/api/auth/logout')
+        .set('Authorization', `Bearer ${oldToken}`);
+
+      expect(logoutRes.statusCode).toEqual(401);
+      expect(logoutRes.body.message).toContain('Session expired');
+
+      const newLoginRes = await request(app)
+        .post('/api/auth/login')
+        .send({ identifier: testUser.email, password: 'newPassword123' });
+
+      expect(newLoginRes.statusCode).toEqual(200);
+      expect(newLoginRes.body.token).toBeDefined();
     });
   });
 

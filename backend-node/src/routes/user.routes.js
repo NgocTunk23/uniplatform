@@ -1,7 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { updateProfile, changePassword } = require('../controllers/user.controller');
+const { getProfile, updateProfile, changePassword } = require('../controllers/user.controller');
 const { protect } = require('../middlewares/auth.middleware');
+
+/**
+ * @swagger
+ * /api/users/profile:
+ *   get:
+ *     summary: Lấy thông tin cá nhân
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Trả về thông tin user
+ */
+router.get('/profile', protect, getProfile);
 
 /**
  * @swagger
@@ -18,10 +32,15 @@ const { protect } = require('../middlewares/auth.middleware');
  *           schema:
  *             type: object
  *             properties:
- *               fullname: { type: string }
- *               dateofbirth: { type: string, format: date }
- *               address: { type: string }
- *               phone: { type: string }
+ *               fullname:
+ *                 type: string
+ *               dateofbirth:
+ *                 type: string
+ *                 format: date
+ *               address:
+ *                 type: string
+ *               phone:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -35,7 +54,7 @@ router.put('/profile', protect, updateProfile);
 /**
  * @swagger
  * /api/users/change-password:
- *   patch:
+ *   post:
  *     summary: Thay đổi mật khẩu
  *     tags: [Users]
  *     security:
@@ -46,14 +65,18 @@ router.put('/profile', protect, updateProfile);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [oldPassword, newPassword]
+ *             required:
+ *               - currentPassword
+ *               - newPassword
  *             properties:
- *               oldPassword: { type: string }
- *               newPassword: { type: string }
+ *               currentPassword:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Đổi mật khẩu thành công
  */
-router.patch('/change-password', protect, changePassword);
+router.post('/change-password', protect, changePassword);
 
 module.exports = router;

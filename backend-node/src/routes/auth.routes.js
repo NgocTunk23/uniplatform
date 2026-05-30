@@ -1,9 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { registerUser, loginUser, getMe, logoutUser } = require('../controllers/auth.controller');
+const passport = require('passport');
+const {
+  registerUser,
+  loginUser,
+  getMe,
+  logoutUser,
+  forgotPassword,
+  resetPassword,
+  oauthCallback,
+  googleDriveTokenCallback,
+  getGoogleDriveStatus,
+  startGoogleDriveConnect,
+  googleDriveConnectCallback,
+  disconnectGoogleDrive,
+} = require('../controllers/auth.controller');
 const { protect } = require('../middlewares/auth.middleware');
 const validate = require('../middlewares/validate.middleware');
-const { registerSchema, loginSchema } = require('../validations/auth.schema');
+const { registerSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } = require('../validations/auth.schema');
 
 /**
  * @swagger
@@ -97,5 +111,71 @@ router.post('/logout', protect, logoutUser);
  *               $ref: '#/components/schemas/User'
  */
 router.get('/me', protect, getMe);
+
+// ==========================================
+// CÁC ROUTE MỚI THÊM VÀO
+// ==========================================
+
+// 1. Quên mật khẩu
+router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Đặt lại mật khẩu bằng token gửi qua email
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token: { type: string }
+ *               newPassword: { type: string }
+ *     responses:
+ *       200:
+ *         description: Đặt lại mật khẩu thành công
+ *       400:
+ *         description: Token không hợp lệ hoặc đã hết hạn
+ */
+router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+
+// 2. Google OAuth Routes
+router.get('/google', 
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+router.get('/google/callback', 
+  passport.authenticate('google', { session: false, failureRedirect: '/api/auth/oauth-fail' }),
+  oauthCallback
+);
+
+// 3. GitHub OAuth Routes
+router.get('/github', 
+  passport.authenticate('github', { scope: ['user:email'] })
+);
+
+router.get('/github/callback', 
+  passport.authenticate('github', { session: false, failureRedirect: '/api/auth/oauth-fail' }),
+  oauthCallback
+);
+
+// 4. Bắt lỗi chung khi OAuth thất bại
+router.get('/oauth-fail', (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  res.redirect(`${frontendUrl}/login?error=AuthenticationFailed`);
+});
+
+// 5. Per-user Google Drive connection
+router.get('/google-drive/status', protect, getGoogleDriveStatus);
+router.post('/google-drive/connect/start', protect, startGoogleDriveConnect);
+router.get('/google-drive/connect/callback', googleDriveConnectCallback);
+router.delete('/google-drive/disconnect', protect, disconnectGoogleDrive);
+
+// 6. Google Drive Token Callback (legacy setup helper for gdrive.util.js)
+router.get('/google-drive/callback', googleDriveTokenCallback);
 
 module.exports = router;

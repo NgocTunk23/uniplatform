@@ -11,25 +11,29 @@ const SOCKET_EVENTS = require('../src/constants/socket-events');
 // ensure your .env has valid GOOGLE_* and GEMINI_API_KEY credentials.
 
 let users = [];
-let workspaceId;
+let workspaceid;
 let sockets = [];
 let driveFileIds = []; // Track real Drive IDs for cleanup
 const TEST_PORT = 5005; 
 const serverUrl = `http://localhost:${TEST_PORT}`;
 
-jest.setTimeout(60000); // 1 minute for real network calls
+jest.setTimeout(120000); // 2 minutes for real network calls
 
 beforeAll(async () => {
-  // 1. Clean up OLD test data from DB
-  await prisma.file.deleteMany({});
-  await prisma.message.deleteMany({});
+  // 1. Clean up OLD test data from DB in correct order
+  await prisma.files.deleteMany({});
+  await prisma.messages.deleteMany({});
+  await prisma.meetingMinutes.deleteMany({});
+  await prisma.meeting.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.systemLog.deleteMany({});
   await prisma.user.deleteMany({});
 
-  // 2. Start Server
+  // 2. Start Server on random port
   await new Promise((resolve) => {
-    server.listen(TEST_PORT, () => {
-      console.log(`📡 REAL Production-Grade Test Server listening on port ${TEST_PORT}`);
+    server.listen(0, () => {
+      const port = server.address().port;
+      console.log(`📡 REAL Production-Grade Test Server listening on port ${port}`);
       resolve();
     });
   });
@@ -56,12 +60,13 @@ afterAll(async () => {
 });
 
 function createSocket(token) {
-  return io(serverUrl, {
+  const port = server.address().port;
+  return io(`http://localhost:${port}`, {
     auth: { token },
     transports: ['websocket'],
-    forceNew: true
   });
 }
+
 
 describe('UniPlatform Production-Grade Case Study', () => {
 
@@ -93,26 +98,26 @@ describe('UniPlatform Production-Grade Case Study', () => {
       
       if (res.statusCode !== 201) console.error('❌ Create Workspace Failed:', res.body);
       expect(res.statusCode).toBe(201);
-      workspaceId = res.body.id;
+      workspaceid = res.body.id;
     });
 
     test('1.3: Assign roles to Bob (Member) and Charlie (Viewer)', async () => {
       // Add Bob as Member
       const resBob = await request(app)
-        .post(`/api/workspaces/${workspaceId}/members`)
+        .post(`/api/workspaces/${workspaceid}/members`)
         .set('Authorization', `Bearer ${users[0].token}`)
         .send({ username: 'bob_member', workspacerole: 'Member' });
       if (resBob.statusCode !== 200) console.error('❌ Add Bob Failed:', resBob.body);
 
       // Add Charlie as Viewer
       const resCharlie = await request(app)
-        .post(`/api/workspaces/${workspaceId}/members`)
+        .post(`/api/workspaces/${workspaceid}/members`)
         .set('Authorization', `Bearer ${users[0].token}`)
         .send({ username: 'charlie_viewer', workspacerole: 'Viewer' });
       if (resCharlie.statusCode !== 200) console.error('❌ Add Charlie Failed:', resCharlie.body);
 
       const workspace = await request(app)
-        .get(`/api/workspaces/${workspaceId}`)
+        .get(`/api/workspaces/${workspaceid}`)
         .set('Authorization', `Bearer ${users[0].token}`);
       
       expect(workspace.body.members).toHaveLength(3);
@@ -126,7 +131,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
         const socket = createSocket(user.token);
         sockets[index] = socket;
 
-        socket.on('connect', () => socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId));
+        socket.on('connect', () => socket.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceid));
         socket.on(SOCKET_EVENTS.WORKSPACE_JOINED, () => {
           joined++;
           if (joined === 3) done();
@@ -156,10 +161,10 @@ describe('UniPlatform Production-Grade Case Study', () => {
     });
 
     test('2.2: Viewer Charlie tries to DELETE the plan (Should be REJECTED)', async () => {
-      const file = await prisma.file.findFirst({ where: { filename: 'Project_Plan.pdf' } });
+      const file = await prisma.files.findFirst({ where: { filename: 'Project_Plan.pdf' } });
       if (!file) throw new Error('File "Project_Plan.pdf" not found. Upload likely failed.');
       
-      const fileId = file.id;
+      const fileId = file.fileid;
       const res = await request(app)
         .delete(`/api/files/${fileId}`)
         .set('Authorization', `Bearer ${users[2].token}`); // Charlie
@@ -189,7 +194,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
       if (res2.statusCode !== 201) console.error('❌ Upload 2 Failed:', res2.body);
       expect(res2.statusCode).toBe(201);
 
-      const fileIds = [res1.body.file.id, res2.body.file.id];
+      const fileIds = [res1.body.file.fileid, res2.body.file.fileid];
       driveFileIds.push(res1.body.file.ggid, res2.body.file.ggid);
 
       // Send message with 2 files
@@ -207,7 +212,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
       });
 
       sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-        workspaceId,
+        workspaceid,
         content: 'Check these 2 logs',
         fileIds
       });
@@ -234,17 +239,17 @@ describe('UniPlatform Production-Grade Case Study', () => {
       sockets[1].on(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onMessage);
 
       sockets[0].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-        workspaceId,
+        workspaceid,
         content: announceText,
       });
-    }, 15000);
+    });
 
     test('3.2: Bob replies specifically to the plan message', (done) => {
       const replyContent = 'Got it Alice! Checking Budget now.';
       
       const onReply = (msg) => {
         if (msg.content === replyContent) {
-          expect(msg.replyToId).toBe(planMessageId);
+          expect(msg.reply).toBe(planMessageId);
           sockets[0].off(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onReply);
           done();
         }
@@ -253,11 +258,11 @@ describe('UniPlatform Production-Grade Case Study', () => {
       sockets[0].on(SOCKET_EVENTS.RECEIVE_MESSAGE_CONFIRMED, onReply);
 
       sockets[1].emit(SOCKET_EVENTS.SEND_MESSAGE, {
-        workspaceId,
+        workspaceid,
         content: replyContent,
         reply: planMessageId,
       });
-    }, 15000);
+    });
   });
 
   describe('Phase 4: AI & RAG Interaction (Gemini Real Call)', () => {
@@ -282,7 +287,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
       });
 
       sockets[1].emit(SOCKET_EVENTS.ASK_AI, {
-        workspaceId,
+        workspaceid,
         prompt,
         senderusername: 'bob_member'
       });
@@ -294,9 +299,9 @@ describe('UniPlatform Production-Grade Case Study', () => {
     test('5.1: Verify History Pagination (Skip/Limit)', async () => {
       // Fill with 10 messages
       for (let i = 0; i < 5; i++) {
-        await prisma.message.create({
+        await prisma.messages.create({
           data: {
-            workspaceId,
+            workspaceid,
             senderusername: 'alice_admin',
             content: `Spam ${i}`
           }
@@ -304,7 +309,7 @@ describe('UniPlatform Production-Grade Case Study', () => {
       }
 
       const res = await request(app)
-        .get(`/api/messages/${workspaceId}?limit=3&skip=0`)
+        .get(`/api/messages/${workspaceid}?limit=3&skip=0`)
         .set('Authorization', `Bearer ${users[0].token}`);
       
       expect(res.body).toHaveLength(3);
@@ -315,16 +320,16 @@ describe('UniPlatform Production-Grade Case Study', () => {
     
     test('6.1: Alice removes Bob from Project Alpha', async () => {
       const res = await request(app)
-        .delete(`/api/workspaces/${workspaceId}/members/bob_member`)
+        .delete(`/api/workspaces/${workspaceid}/members/bob_member`)
         .set('Authorization', `Bearer ${users[0].token}`);
       
       expect(res.statusCode).toBe(200);
       
       const workspace = await prisma.workspace.findUnique({
-        where: { id: workspaceId },
-        include: { members: true }
+        where: { workspaceid: workspaceid },
+        include: { member: true }
       });
-      expect(workspace.members).toHaveLength(2); // Alice & Charlie left
+      expect(workspace.member).toHaveLength(2); // Alice & Charlie left
     });
 
     test('6.2: Final database cleanup verification', async () => {
