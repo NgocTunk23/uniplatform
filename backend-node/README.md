@@ -1,258 +1,139 @@
 # UniPlatform Backend (Node.js)
 
-Hệ thống Backend trung tâm của UniPlatform, được xây dựng trên nền tảng Node.js với kiến trúc hiện đại, tập trung vào tính bảo mật, hiệu suất và khả năng mở rộng.
+Hệ thống backend chính của UniPlatform chịu trách nhiệm cung cấp API, xác thực, quản lý workspace, chat thời gian thực, upload file và các chức năng AI.
 
-## 🚀 Công nghệ sử dụng (Tech Stack)
+## 🚀 Công nghệ chính
 
-- **Runtime:** Node.js (v18+)
+- **Runtime:** Node.js 18+
 - **Framework:** Express.js
-- **ORM:** Prisma 6.19.3 (Optimized for MongoDB)
-- **Database:** MongoDB (Single-node Replica Set for Transactions)
-- **Validation:** Zod (Request body, params, query validation)
-- **Documentation:** Swagger (OpenAPI 3.0)
-- **Real-time:** Socket.io (Hệ thống Chat)
-- **Testing:** Jest & Supertest
+- **ORM:** Prisma 6.19.3
+- **Database:** MongoDB (Replica Set)
+- **Validation:** Zod
+- **Realtime:** Socket.io
+- **Docs:** Swagger (OpenAPI)
+- **Testing:** Jest + Supertest
 
-## 🛠️ Cài đặt & Khởi chạy
+## 🛠️ Cài đặt
 
-### 1. Cấu hình môi trường
-
-Tạo file `.env` dựa trên các thông tin sau (Lưu ý cổng 5001 được sử dụng để tránh xung đột với macOS AirPlay):
-
-```env
-PORT=5001
-MONGO_URI="mongodb://root:password@localhost:27017/uniplatform?authSource=admin&replicaSet=rs0"
-JWT_SECRET=your_jwt_secret_here
-
-# Google Drive Configuration
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:5001/api/auth/google/callback
-GOOGLE_DRIVE_REFRESH_TOKEN=...
-GOOGLE_DRIVE_FOLDER_ID=...
-```
-
-### 2. Cấu hình Google Drive (Bắt buộc cho Module File)
-
-Hệ thống sử dụng OAuth2 để tương tác với Google Drive. Hãy thực hiện chính xác các bước sau:
-
-1. **Google Cloud Console:**
-   - Truy cập [Google Cloud Console](https://console.cloud.google.com/).
-   - Tạo Project mới và Enable **Google Drive API**.
-   - Tại mục **OAuth consent screen**: Chọn User Type là **External**, thêm email cá nhân vào danh sách **Test users**.
-   - Tại mục **Credentials**: Tạo **OAuth 2.0 Client ID** loại **Web application**.
-   - Thêm `http://localhost:5001/api/auth/google/callback` vào mục **Authorized redirect URIs**.
-2. **Lấy Refresh Token:**
-   - Điền `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET` vào file `.env`.
-   - Chạy lệnh: `node scripts/get-refresh-token.js`.
-   - Làm theo hướng dẫn trên terminal để lấy mã `refresh_token` và dán vào `.env`.
-3. **Cấu hình Thư mục lưu trữ:**
-   - Tạo 1 Folder trên Drive của bạn.
-   - Copy ID của Folder (chuỗi ký tự cuối trên URL) dán vào `GOOGLE_DRIVE_FOLDER_ID`.
-4. **Kiểm tra kết nối Real-upload:**
-   - Chạy: `node scripts/test-real-upload.js` để đảm bảo file có thể tải lên thành công.
-
-### 2. Khởi tạo Database
-
-Dự án yêu cầu MongoDB chạy ở chế độ **Replica Set** để Prisma có thể thực hiện các giao dịch (Transactions).
+### 1. Cài đặt phụ thuộc
 
 ```bash
-# Khởi chạy docker (đã cấu hình Replica Set tự động)
-docker-compose up -d
+cd backend-node
+npm install
+```
 
-# Đẩy schema Prisma vào DB
+### 2. Chuẩn bị môi trường
+
+Sao chép tệp môi trường từ root:
+
+```bash
+cp ../.env.example .env
+```
+
+Chỉnh sửa `.env` hoặc sử dụng file `.env` ở thư mục root để cấu hình:
+
+- `PORT`
+- `MONGO_URI`
+- `JWT_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `GOOGLE_DRIVE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_FOLDER_ID`
+
+### 3. Khởi tạo database
+
+```bash
+cd backend-node
+npx prisma generate
 npx prisma db push
-
-# Khởi tạo dữ liệu mẫu (3 tài khoản Admin)
 npx prisma db seed
 ```
 
-### 3. Chạy ứng dụng
+> Lưu ý: MongoDB cần chạy dưới chế độ Replica Set để Prisma hỗ trợ transaction.
+
+### 4. Chạy ứng dụng
 
 ```bash
-# Chế độ phát triển
 npm run dev
+```
 
-# Chế độ Production
+Hoặc chạy production:
+
+```bash
 npm start
+```
+
+### 5. Kiểm tra cấu hình ghi âm
+
+```bash
+npm run check:recording-env
 ```
 
 ## 📖 Tài liệu API
 
-Tài liệu API đầy đủ có tại: `http://localhost:5001/api-docs` (Swagger UI).
-Tất cả các endpoint đều được mô tả chi tiết với payload yêu cầu và các mã lỗi trả về.
+Sau khi backend Node khởi động, mở:
 
-## 🏗️ Cấu trúc thư mục
-
-```text
-src/
-├── config/             # Cấu hình Prisma, Swagger, Socket.io
-├── constants/          # Hằng số tập trung (Error Codes, Roles)
-├── controllers/        # Xử lý Logic nghiệp vụ API
-├── middlewares/        # Auth, Validation, Error Handling
-├── routes/             # Định nghĩa các endpoint API
-├── services/           # Tầng giao tiếp với Prisma & Business Logic
-├── utils/              # Tiện ích bổ trợ (JWT, Cloud Storage)
-└── validations/        # Định nghĩa Zod Schemas
+```
+http://localhost:5001/api-docs
 ```
 
-## 🧪 Kiểm thử (Testing)
-
-Dự án sử dụng Jest để kiểm thử tích hợp. Bộ test bao gồm các kịch bản thực tế (Real GDrive/AI).
-
-**Lưu ý quan trọng:** Do sử dụng các thư viện Node.js hiện đại (ESM), bạn cần chạy test với cờ thực nghiệm:
+## 🧪 Kiểm thử
 
 ```bash
-# Chạy toàn bộ test suite
 npm test
+```
 
-# Chạy riêng bộ test Case-Study thực tế (Production-grade)
+Chạy test cụ thể:
+
+```bash
 NODE_OPTIONS='--experimental-vm-modules' npx jest tests/production-case-study.test.js --runInBand
 ```
 
-## 📡 Danh sách API Endpoints
+## 🗂️ Cấu trúc thư mục
 
-Hỗ trợ đầy đủ các tính năng thông qua các module sau:
-
-### 🔑 Authentication (`/api/auth`)
-
-- `POST /register`: Đăng ký tài khoản mới (Validate bằng Zod).
-- `POST /login`: Đăng nhập hệ thống & nhận JWT Token.
-- `POST /logout`: Đăng xuất (Yêu cầu Token).
-- `GET /me`: Lấy thông tin tài khoản đang đăng nhập.
-
-### 🏢 Workspace (`/api/workspaces`)
-
-- `POST /`: Tạo Workspace mới (Leader).
-- `GET /`: Liệt kê tất cả nội dung không gian làm việc.
-- `GET /:id`: Xem chi tiết 1 Workspace.
-- `POST /:id/members`: Thêm thành viên vào Workspace.
-- `DELETE /:id/members/:username`: Xóa thành viên khỏi nhóm.
-- `PATCH /:id/members/:username`: Cập nhật quyền thành viên (Leader/Member).
-
-### 💬 Messages (`/api/messages`)
-
-- `GET /:workspaceId`: Lấy lịch sử tin nhắn của một Workspace (Hỗ trợ phân trang).
-
-### 📁 Files (`/api/files`)
-
-- `POST /upload`: Tải tệp tin lên Google Drive.
-- `DELETE /:id`: Xóa tệp tin khỏi hệ thống.
-
-### 👤 User Profile (`/api/users`)
-
-- `PUT /profile`: Cập nhật thông tin cá nhân (Hov tên, ngày sinh, địa chỉ...).
-- `PATCH /change-password`: Thay đổi mật khẩu định kỳ.
-
-### 🛡️ Admin (`/api/admin`)
-
-- `GET /stats`: Xem chỉ số sức khỏe hệ thống (CPU, RAM, DB, **Google Drive Quota**).
-- `GET /users`: Quản lý danh sách toàn bộ người dùng.
-- `PATCH /users/:id/status`: Khóa hoặc mở khóa tài khoản người dùng (Ghi Audit Log).
-- `POST /users/:id/force-logout`: Cưỡng chế đăng xuất người dùng ngay lập tức.
-- `GET /logs`: Xem nhật ký thao tác chi tiết (**Audit Logs với Old/New values**).
-
-## 🛡️ Bảo mật & Phân quyền (RBAC)
-
-Hệ thống UniPlatform áp dụng mô hình phân quyền đa tầng và kiểm soát truy cập không gian làm việc (Workspaces) nghiêm ngặt:
-
-### 1. Vai trò Hệ thống (System Roles)
-
-- **Admin**: Quản trị viên tối cao (**Superuser**). Có quyền bypass mọi kiểm tra tư cách thành viên để truy cập bất kỳ Workspace nào và xóa mọi tệp tin nhằm quản lý hệ thống.
-- **Member**: Người dùng thông thường. Có thể tạo Workspace riêng.
-
-### 2. Vai trò Workspace (Workspace Roles)
-
-- **Leader**: Chủ sở hữu hoặc Quản lý Workspace. Có quyền thêm/xóa thành viên và quản lý toàn bộ nội dung trong Workspace đó.
-- **Member**: Thành viên chính thức. Có quyền Chat, Tải tệp lên và xóa tệp của chính mình.
-- **Viewer**: Người xem. Chế độ **Read-only** (Chỉ đọc). Chỉ có thể xem lịch sử tin nhắn và tải xuống tệp tin, bị chặn hoàn toàn quyền Chat, Upload hoặc gọi AI.
-
-### 3. Quy tắc an ninh cốt lõi
-
-- **Workspace Guard**: Người dùng không thể truy cập (API hoặc Socket) vào Workspace mà mình không phải là thành viên (Ngoại trừ System Admin).
-- **File Ownership**: Chỉ có người tải lên (**uploader**) hoặc **Leader** của Workspace (nếu file gắn với tin nhắn) hoặc **System Admin** mới có quyền xóa tệp tin.
-
----
-
-## ⚡ Tính năng Quản trị & Độ tin cậy (Advanced Features)
-
-Hệ thống cung cấp bộ công cụ mạnh mẽ dành cho Quản trị viên tại `/api/admin`:
-
-- **Audit Logs**: Ghi nhật ký chi tiết mợi thao tác nhạy cảm (Khóa user, thay đổi thành viên Workspace). Lưu vết so sánh giá trị cũ (**Old**) và giá trị mới (**New**).
-- **Session Revocation (Force Logout)**: Admin có khả năng vô hiệu hóa phiên làm việc của bất kỳ người dùng nào ngay lập tức thông qua cơ chế `tokenVersion`.
-- **System Monitoring**: Theo dõi trực quan hạn mức lưu trữ **Google Drive API Quota** (dưới dạng % và dung lượng GB) để chủ động mở rộng.
-- **Negative Validation**: Toàn bộ dữ liệu đầu vào được kiểm soát chặt chẽ bởi **Zod**, đảm bảo hệ thống không gặp lỗi trước dữ liệu malformed.
-
----
-
-## 📡 Hướng dẫn Tích hợp Chat (Socket.io)
-
-Hệ thống sử dụng Socket.io cho giao tiếp thời gian thực. Dưới đây là cách tích hợp chính xác:
-
-### 1. Kết nối & Xác thực
-
-Phải truyền JWT Token trong phần `auth` khi khởi tạo kết nối.
-
-```javascript
-import { io } from "socket.io-client";
-
-const socket = io("http://localhost:5001", {
-  auth: {
-    token: "YOUR_JWT_TOKEN_HERE",
-  },
-});
+```text
+backend-node/
+├── config/        # Cấu hình Prisma, Swagger, Socket.io
+├── constants/     # Hằng số, mã lỗi, vai trò
+├── controllers/   # Xử lý yêu cầu API
+├── middlewares/   # Xác thực, validate, xử lý lỗi
+├── routes/        # Định nghĩa endpoint
+├── services/      # Logic nghiệp vụ chính
+├── utils/         # Tiện ích chung
+└── validations/   # Schema Zod
 ```
 
-### 2. Các Sự kiện chính (Events)
+## 🔒 Cấu hình Google Drive
 
-| Sự kiện (Event)             | Loại   | Dữ liệu (Payload)                          | Mô tả                                           |
-| :-------------------------- | :----- | :----------------------------------------- | :---------------------------------------------- |
-| `join_workspace`            | Emit   | `workspaceId` (string)                     | Tham gia vào phòng chat của nhóm                |
-| `send_message`              | Emit   | `{ workspaceId, content, reply, fileIds }` | Gửi tin nhắn mới                                |
-| `receive_message`           | Listen | `MessageObject`                            | Nhận tin nhắn tức thì (Snappy UI)               |
-| `receive_message_confirmed` | Listen | `FullMessageObject`                        | Tin nhắn đã lưu DB (có ID và metadata tệp)      |
-| `ask_ai`                    | Emit   | `{ workspaceId, prompt }`                  | Gửi câu hỏi cho UniBot (AI)                     |
-| `ai_status`                 | Listen | `{ status: 'typing'\|'done'\|'error' }`    | Trạng thái xử lý của AI                         |
-| `app_error`                 | Listen | `{ message: string }`                      | Lỗi nghiệp vụ (e.g. Viewer cố tình chat/upload) |
+Nếu cần bật tính năng upload file lên Google Drive:
 
-### 3. Ví dụ tích hợp với React
+1. Tạo OAuth Client trên Google Cloud Console.
+2. Thêm `http://localhost:5001/api/auth/google/callback` vào Authorized redirect URIs.
+3. Điền `GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET` vào `.env`.
+4. Chạy:
 
-```jsx
-import { useEffect, useState } from "react";
-import { io } from "socket.io-client";
-// Tại Frontend, bạn cũng nên định nghĩa hoặc dùng chung file constants
-const SOCKET_EVENTS = {
-  JOIN_WORKSPACE: "join_workspace",
-  SEND_MESSAGE: "send_message",
-  RECEIVE_MESSAGE: "receive_message",
-};
-
-function ChatRoom({ workspaceId, token }) {
-  const [messages, setMessages] = useState([]);
-  const [socket, setSocket] = useState(null);
-
-  useEffect(() => {
-    const s = io("http://localhost:5001", { auth: { token } });
-
-    s.on("connect", () => {
-      s.emit(SOCKET_EVENTS.JOIN_WORKSPACE, workspaceId);
-    });
-
-    s.on(SOCKET_EVENTS.RECEIVE_MESSAGE, (msg) => {
-      setMessages((prev) => [...prev, msg]);
-    });
-
-    setSocket(s);
-    return () => s.disconnect();
-  }, [workspaceId, token]);
-
-  const sendMessage = (text) => {
-    socket.emit(SOCKET_EVENTS.SEND_MESSAGE, { workspaceId, content: text });
-  };
-  return <div>{/* Render UI Chat */}</div>;
-}
+```bash
+node scripts/get-refresh-token.js
 ```
 
-## 🛡️ Hệ thống mã lỗi tập trung
+5. Dán `refresh_token` vào `GOOGLE_DRIVE_REFRESH_TOKEN`.
+6. Gán `GOOGLE_DRIVE_FOLDER_ID` bằng ID thư mục Drive.
 
-Hệ thống sử dụng các mã lỗi chuẩn (e.g., `AUTH_INVALID`, `USER_EXISTS`) giúp Frontend dễ dàng bắt lỗi và hiển thị thông báo chính xác cho người dùng. Toàn bộ định nghĩa có tại `src/constants/error-codes.js`.
+## 🤝 Các endpoint chính
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `GET /api/workspaces`
+- `POST /api/workspaces`
+- `GET /api/messages/:workspaceId`
+- `POST /api/files/upload`
+- `PUT /api/users/profile`
+- `POST /api/admin/users/:id/force-logout`
+
+## 📌 Ghi chú
+
+- Nếu dùng Docker Desktop trên macOS, cấu hình `OLLAMA_BASE_URL` phù hợp để backend truy cập Ollama.
+- `INSTALLATION.md` trong root chứa hướng dẫn cài đặt đầy đủ và chi tiết.
