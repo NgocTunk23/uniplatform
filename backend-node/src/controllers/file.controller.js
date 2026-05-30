@@ -215,6 +215,15 @@ const uploadFile = async (req, res, next) => {
       return next(error);
     }
 
+    // Handle invalid refresh token from Google Drive client
+    if (error && error.code === 'GOOGLE_REFRESH_TOKEN_INVALID') {
+      return next(new ApiError(
+        409,
+        'Google Drive connection invalid or revoked for your account. Please reconnect Drive in Drive Files.',
+        ERROR_CODES.FILE.GOOGLE_DRIVE_NOT_CONNECTED
+      ));
+    }
+
     const driveStatus = error?.response?.status || error?.code;
     if (driveStatus === 403 || driveStatus === 429) {
       return next(new ApiError(
