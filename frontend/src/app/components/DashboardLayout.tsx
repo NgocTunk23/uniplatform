@@ -75,7 +75,7 @@ export function DashboardLayout() {
       {/* Main Sidebar */}
       <div
         className={`
-          fixed md:relative md:flex z-10 w-72 h-full flex-col bg-white border-r border-gray-100 transition-transform duration-300 ease-in-out
+          fixed md:relative md:flex z-10 w-72 h-screen md:h-full flex-col bg-white border-r border-gray-100 transition-transform duration-300 ease-in-out overflow-y-auto
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
@@ -94,7 +94,7 @@ export function DashboardLayout() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col md:flex-row h-full overflow-hidden mt-[73px] md:mt-0 relative">
+      <div className="flex flex-1 flex-col md:flex-row h-full overflow-y-auto md:overflow-hidden mt-[73px] md:mt-0 relative">
         {activeGroup && !isMeetingSubRoute ? (
           <div className="flex flex-1 w-full h-full">
 
