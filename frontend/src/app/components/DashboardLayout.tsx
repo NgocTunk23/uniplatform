@@ -6,7 +6,7 @@ import { ChatInterface } from './ChatInterface';
 import { RightPanel } from './RightPanel';
 import { TeamCoordination } from './TeamCoordination';
 
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
 export function DashboardLayout() {
   const location = useLocation();
@@ -52,8 +52,8 @@ export function DashboardLayout() {
       title: meeting.title,
       start: new Date(meeting.starttime),
       end: new Date(meeting.endtime),
-      status: 'meeting',
-      source: 'meeting',
+      status: 'meeting' as const,
+      source: 'meeting' as const,
       meta: meeting.workspaceid || meeting.workspace?.id || meeting.workspace?.name || '',
       meetingMinute: meeting.meetingMinute,
     }));
