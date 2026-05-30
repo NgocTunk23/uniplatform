@@ -15,6 +15,6 @@ frontend/build/
 frontend/dist/
 
 # Môi trường và Bảo mật
-.env
-.env.local
+# .env
+# .env.local
 .DS_Storedocker-compose.override.yml
