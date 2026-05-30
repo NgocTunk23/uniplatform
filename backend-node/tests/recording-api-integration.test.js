@@ -29,6 +29,14 @@ const mockPrisma = {
     update: jest.fn(),
     upsert: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+  },
+};
+
+const mockSecret = {
+  decryptSecret: jest.fn(),
+  encryptSecret: jest.fn(),
 };
 
 const mockPermissionUtil = {
@@ -44,6 +52,7 @@ const mockRecordingManager = {
 const mockRecordingProcessor = {
   processMeetingRecording: jest.fn(),
   reprocessMeetingRecording: jest.fn(),
+  uploadLocalRecordingToDrive: jest.fn(),
 };
 
 const mockOllama = {
@@ -57,6 +66,7 @@ const mockSummaryEvaluation = {
 
 jest.mock('../src/config/prisma', () => mockPrisma);
 jest.mock('../src/utils/permission.util', () => mockPermissionUtil);
+jest.mock('../src/utils/secret.util', () => mockSecret);
 jest.mock('../src/services/recording-manager.service', () => mockRecordingManager);
 jest.mock('../src/services/recording-processing.service', () => mockRecordingProcessor);
 jest.mock('../src/services/ollama.service', () => mockOllama);
@@ -73,11 +83,17 @@ jest.mock('../src/middlewares/auth.middleware', () => ({
 
 const meetingRoutes = require('../src/routes/meeting.routes');
 const errorMiddleware = require('../src/middlewares/error.middleware');
+const meetingService = require('../src/services/meeting.service');
 
 const app = express();
 app.use(express.json());
 app.use('/api/meetings', meetingRoutes);
 app.use(errorMiddleware);
+
+const flushSummaryJob = async () => {
+  const job = meetingService._private.activeSummaryJobs.get(meetingId);
+  if (job) await job;
+};
 
 const buildMeeting = (overrides = {}) => ({
   ...baseMeeting,
@@ -115,12 +131,19 @@ describe('recording/transcription API integration', () => {
     });
     mockRecordingManager.hasActiveSession.mockReturnValue(false);
     mockRecordingProcessor.processMeetingRecording.mockResolvedValue({ ok: true });
+    mockRecordingProcessor.uploadLocalRecordingToDrive.mockResolvedValue({
+      meeting: buildMeeting({ recording_file: 'drive_recording_1' }),
+      recordingFileId: 'drive_recording_1',
+    });
+    mockPrisma.user.findFirst.mockResolvedValue({ googleDriveRefreshToken: 'enc-token' });
+    mockSecret.decryptSecret.mockReturnValue('user-refresh-token');
     mockOllama.summarizeMeetingTranscript.mockResolvedValue({
       summary: 'Nhóm thống nhất xử lý transcript đã duyệt.',
       decisions: ['Duyệt transcript trước khi summary'],
       tasks: ['Kiểm thử Ragas gate'],
       notes: 'Ghi chú tích hợp.',
     });
+    meetingService._private.activeSummaryJobs.clear();
   });
 
   test('start and stop recording through HTTP API', async () => {
@@ -155,7 +178,25 @@ describe('recording/transcription API integration', () => {
     }));
   });
 
-  test('review approved transcript and publish summary when Ragas passes', async () => {
+  test('uploads retained local recording to Drive through HTTP API', async () => {
+    mockPrisma.meeting.findUnique.mockResolvedValueOnce(buildMeeting({
+      bot_status: 'review_required',
+      recording_metadata: {
+        localRecording: { status: 'available', mixedPath: '/tmp/integration-meeting.wav' },
+      },
+    }));
+
+    const res = await request(app)
+      .post(`/api/meetings/${meetingId}/recording/upload-drive`)
+      .set('Authorization', 'Bearer test-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.recording_file).toBe('drive_recording_1');
+    expect(res.body.data.recordingDownloadLink).toContain('drive_recording_1');
+    expect(mockRecordingProcessor.uploadLocalRecordingToDrive).toHaveBeenCalledWith({ meetingId, refreshToken: 'user-refresh-token' });
+  });
+
+  test('review approved transcript and publish summary, Ragas score recorded advisory', async () => {
     mockPrisma.meeting.findUnique.mockResolvedValueOnce(buildMeeting({
       meetingMinute: {
         raw_transcript: 'raw transcript',
@@ -194,18 +235,28 @@ describe('recording/transcription API integration', () => {
     const summaryRes = await request(app)
       .post(`/api/meetings/${meetingId}/summary/generate`);
 
-    expect(summaryRes.status).toBe(200);
-    expect(summaryRes.body.data.published).toBe(true);
-    expect(mockPrisma.meetingMinutes.update).toHaveBeenLastCalledWith(expect.objectContaining({
+    expect(summaryRes.status).toBe(202);
+    expect(summaryRes.body.data.queued).toBe(true);
+    expect(summaryRes.body.data.status).toBe('pending');
+    await flushSummaryJob();
+    // Published immediately as completed.
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         summary: 'Nhóm thống nhất xử lý transcript đã duyệt.',
         summary_review_status: 'passed',
+        summary_eval_metadata: expect.objectContaining({ stage: 'scoring' }),
+      }),
+    }));
+    // Ragas score recorded advisory afterwards.
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
         summary_eval_score: 0.82,
+        summary_eval_metadata: expect.objectContaining({ advisory: true, stage: 'scored' }),
       }),
     }));
   });
 
-  test('Ragas failure stores draft and blocks final summary publish', async () => {
+  test('low advisory Ragas score does not block or demote the published summary', async () => {
     mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
       meetingMinute: {
         raw_transcript: 'raw transcript',
@@ -227,21 +278,28 @@ describe('recording/transcription API integration', () => {
     const res = await request(app)
       .post(`/api/meetings/${meetingId}/summary/generate`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.data.published).toBe(false);
+    expect(res.status).toBe(202);
+    expect(res.body.data.queued).toBe(true);
+    await flushSummaryJob();
+    // Summary stays published despite the low score.
     expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        summary: null,
-        content: null,
-        summary_draft: 'Nhóm thống nhất xử lý transcript đã duyệt.',
-        summary_review_status: 'failed',
-        summary_eval_score: 0.32,
-        decisions: [],
-        task: [],
+        summary: 'Nhóm thống nhất xử lý transcript đã duyệt.',
+        summary_review_status: 'passed',
       }),
     }));
     expect(mockPrisma.meeting.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ bot_status: 'completed' }),
+    }));
+    expect(mockPrisma.meeting.update).not.toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ bot_status: 'summary_review_required' }),
+    }));
+    // Low score still captured as advisory.
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        summary_eval_score: 0.32,
+        summary_eval_metadata: expect.objectContaining({ advisory: true }),
+      }),
     }));
   });
 });

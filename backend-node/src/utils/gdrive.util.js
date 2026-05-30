@@ -285,6 +285,39 @@ const uploadFileFromPath = async (filePath, fileObject) => {
   }
 };
 
+// Upload a file from disk into a specific user's Drive (per-user refresh token),
+// placing it in the user's own app folder. Mirrors uploadFileFromPath but never
+// touches the global service account / GOOGLE_DRIVE_FOLDER_ID.
+const uploadFileFromPathForUser = async (filePath, fileObject, { refreshToken, appFolderName } = {}) => {
+  const drive = getDriveClientForRefreshToken(refreshToken);
+  if (!drive) {
+    throw new Error('Google Drive is not connected');
+  }
+
+  const originalname = fileObject.originalname;
+  const mimetype = fileObject.mimetype || 'application/octet-stream';
+  const folder = await ensureAppFolder(drive, appFolderName || getDriveConfig().appFolderName);
+
+  const response = await drive.files.create({
+    requestBody: {
+      name: originalname,
+      mimeType: mimetype,
+      parents: folder?.id ? [folder.id] : [],
+    },
+    media: {
+      mimeType: mimetype,
+      body: fs.createReadStream(filePath),
+    },
+    fields: 'id, name, webViewLink',
+  }, {
+    timeout: 120000,
+    retry: true,
+  });
+
+  await makeFilePublic(drive, response.data.id);
+  return response.data;
+};
+
 const downloadFileToPath = async (fileId, destinationPath) => {
   const drive = getDriveClient();
 
@@ -403,6 +436,7 @@ module.exports = {
   uploadFile,
   uploadFileForUser,
   uploadFileFromPath,
+  uploadFileFromPathForUser,
   downloadFileToPath,
   deleteFile,
   deleteFileForUser,

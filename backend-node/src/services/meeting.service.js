@@ -5,6 +5,7 @@ const ERROR_CODES = require('../constants/error-codes');
 const permissionUtil = require('../utils/permission.util');
 const calendarConflictService = require('./calendar-conflict.service');
 const gdriveUtil = require('../utils/gdrive.util');
+const { sanitizeRecordingMetadata } = require('../utils/recording-metadata.util');
 const ollamaService = require('./ollama.service');
 const summaryEvaluationClient = require('./summary-evaluation-client.service');
 
@@ -182,6 +183,71 @@ const buildSummaryEvalMetadata = ({ evaluation, source, correctedTranscript, sum
   evaluatedAt: new Date().toISOString(),
   ...(evaluation.metadata ? { evaluatorMetadata: evaluation.metadata } : {}),
 });
+
+const activeSummaryJobs = new Map();
+
+const clampSummaryError = (error) => String(error?.message || error || 'Summary job failed').slice(0, 500);
+
+const getSummaryStage = (minutes) => (
+  minutes?.summary_eval_metadata && typeof minutes.summary_eval_metadata === 'object'
+    ? minutes.summary_eval_metadata.stage
+    : null
+);
+
+const buildQueuedSummaryResponse = (minutes, stage = 'generating') => ({
+  queued: true,
+  status: 'pending',
+  stage,
+  minutes: serializeMeetingMinutes(minutes),
+  published: false,
+});
+
+const logSummaryTiming = (label, meetingId, startedAt) => {
+  console.info(`${label} meetingId=${meetingId} durationMs=${Date.now() - startedAt}`);
+};
+
+const setSummaryJobFailed = async ({ meetingId, source, correctedTranscript, summary = '', error }) => {
+  const message = clampSummaryError(error);
+  const evaluation = {
+    score: 0,
+    passed: false,
+    threshold: getSummaryScoreThreshold(),
+    metric: 'ragas_summary_score',
+    model: process.env.SUMMARY_SCORE_MODEL || process.env.OLLAMA_MODEL || 'qwen3:1.7b',
+    error: message,
+  };
+
+  await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      summary: null,
+      content: null,
+      summary_draft: summary || null,
+      summary_review_status: 'failed',
+      summary_eval_score: 0,
+      summary_eval_metadata: {
+        ...buildSummaryEvalMetadata({
+          evaluation,
+          source,
+          correctedTranscript,
+          summary,
+        }),
+        stage: 'failed',
+      },
+      decisions: [],
+      task: [],
+      isbotgenerated: true,
+    },
+  }).catch(() => undefined);
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'summary_review_required',
+      recording_error: message,
+    },
+  }).catch(() => undefined);
+};
 
 const getManageableMeetingWithMinutes = async (meetingId, currentUser) => {
   const meeting = await prisma.meeting.findUnique({
@@ -499,7 +565,11 @@ const getMeetingMinutes = async (meetingId, currentUser) => {
   });
 
   return {
-    meeting: { ...meeting, id: meeting.meetingid },
+    meeting: {
+      ...meeting,
+      id: meeting.meetingid,
+      recording_metadata: sanitizeRecordingMetadata(meeting.recording_metadata),
+    },
     minutes: serializeMeetingMinutes(minutes),
     recordingDownloadLink: meeting.recording_file ? gdriveUtil.getDownloadLink(meeting.recording_file) : null,
   };
@@ -623,7 +693,10 @@ const reviewMeetingTranscript = async (meetingId, reviewData, currentUser) => {
       summary: null,
       content: null,
       summary_draft: null,
-      summary_review_status: approved ? 'pending' : 'none',
+      // 'none' means "not generated yet" — the user must click Generate. Do NOT
+      // use 'pending' here: the UI treats 'pending' as "generation in progress"
+      // and would spin forever on the disabled Generate button.
+      summary_review_status: 'none',
       summary_eval_score: null,
       summary_eval_metadata: {
         stage: approved ? 'pending_generation' : 'not_evaluated',
@@ -648,98 +721,35 @@ const reviewMeetingTranscript = async (meetingId, reviewData, currentUser) => {
   return serializeMeetingMinutes(minutes);
 };
 
-const generateMeetingSummary = async (meetingId, currentUser) => {
-  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
-  if (!meeting) return null;
-  const minutes = meeting.meetingMinute;
-  if (!minutes) {
-    throw new ApiError(404, 'Meeting minutes not found.');
-  }
-  if (minutes.transcript_review_status !== 'approved') {
-    throw new ApiError(409, 'Approve the corrected transcript before generating a summary.');
-  }
-
-  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
-  if (!correctedTranscript) {
-    throw new ApiError(400, 'Corrected transcript is required before summary generation.');
-  }
-
-  let summaryPayload;
-  try {
-    summaryPayload = await ollamaService.summarizeMeetingTranscript(correctedTranscript, meeting.title);
-  } catch (error) {
-    throw new ApiError(500, `Summary generation failed: ${error.message}`);
-  }
-  const summaryText = String(summaryPayload.summary || '').trim();
-
-  const data = {
-    summary: summaryText,
-    content: summaryPayload.notes || summaryText,
-    summary_draft: null,
-    summary_review_status: 'passed',
-    summary_eval_score: null,
-    summary_eval_metadata: { stage: 'not_evaluated', source: 'generated' },
-    decisions: normalizeStringList(summaryPayload.decisions, 50),
-    task: normalizeStringList(summaryPayload.tasks, 100),
-    isbotgenerated: true,
-  };
-
-  const updatedMinutes = await prisma.meetingMinutes.update({
-    where: { meetingid: meetingId },
-    data,
-    include: { files: true },
-  });
-
-  await prisma.meeting.update({
-    where: { meetingid: meetingId },
-    data: { bot_status: 'completed', recording_error: null },
-  });
-
-  return {
-    minutes: serializeMeetingMinutes(updatedMinutes),
-    published: true,
-  };
-};
-
-const evaluateMeetingSummary = async (meetingId, summaryData, currentUser) => {
-  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
-  if (!meeting) return null;
-  const minutes = meeting.meetingMinute;
-  if (!minutes) {
-    throw new ApiError(404, 'Meeting minutes not found.');
-  }
-  if (minutes.transcript_review_status !== 'approved') {
-    throw new ApiError(409, 'Approve the corrected transcript before evaluating a summary.');
-  }
-
-  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
-  const summaryText = String(summaryData.summary || '').trim();
-  if (!correctedTranscript || !summaryText) {
-    throw new ApiError(400, 'Corrected transcript and summary are required for evaluation.');
-  }
-
-  const evaluation = await evaluateSummaryDraft({
-    correctedTranscript,
-    summary: summaryText,
-  });
+const persistSummaryEvaluationResult = async ({
+  meetingId,
+  correctedTranscript,
+  summaryText,
+  source,
+  content,
+  decisions,
+  tasks,
+  evaluation,
+}) => {
   const evalMetadata = buildSummaryEvalMetadata({
     evaluation,
-    source: 'manual_review',
+    source,
     correctedTranscript,
     summary: summaryText,
   });
   const passed = Boolean(evaluation.passed);
-  const decisions = normalizeStringList(summaryData.decisions ?? minutes.decisions, 50);
-  const tasks = normalizeStringList(summaryData.task ?? minutes.task, 100);
 
   const data = passed
     ? {
       summary: summaryText,
-      content: summaryData.content ?? minutes.content ?? summaryText,
+      content: content ?? summaryText,
       summary_draft: null,
       summary_review_status: 'passed',
       summary_eval_score: evaluation.score,
-      summary_eval_metadata: evalMetadata,
+      summary_eval_metadata: {
+        ...evalMetadata,
+        stage: 'passed',
+      },
       decisions,
       task: tasks,
       isbotgenerated: true,
@@ -750,7 +760,10 @@ const evaluateMeetingSummary = async (meetingId, summaryData, currentUser) => {
       summary_draft: summaryText,
       summary_review_status: 'failed',
       summary_eval_score: evaluation.score,
-      summary_eval_metadata: evalMetadata,
+      summary_eval_metadata: {
+        ...evalMetadata,
+        stage: 'failed',
+      },
       decisions: [],
       task: [],
       isbotgenerated: true,
@@ -775,6 +788,323 @@ const evaluateMeetingSummary = async (meetingId, summaryData, currentUser) => {
     evaluation,
     published: passed,
   };
+};
+
+// Publish the generated summary as completed immediately, before RAGAS runs.
+// RAGAS scoring is advisory (see recordAdvisorySummaryScore) and must never
+// block or demote the published summary.
+const publishGeneratedSummary = async ({
+  meetingId,
+  summaryText,
+  content,
+  decisions,
+  tasks,
+}) => {
+  await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      summary: summaryText,
+      content: content ?? summaryText,
+      summary_draft: null,
+      decisions,
+      task: tasks,
+      summary_review_status: 'passed',
+      summary_eval_score: null,
+      summary_eval_metadata: {
+        stage: 'scoring',
+        generatedAt: new Date().toISOString(),
+      },
+      isbotgenerated: true,
+    },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'completed',
+      recording_error: null,
+    },
+  });
+};
+
+// Advisory-only: record the RAGAS score/metadata without touching the already
+// published summary, its content, or the meeting status. A failed/timed-out
+// evaluation just annotates metadata; the summary stays completed.
+const recordAdvisorySummaryScore = async ({
+  meetingId,
+  evaluation,
+  correctedTranscript,
+  summaryText,
+  failed = false,
+}) => {
+  const evalMetadata = buildSummaryEvalMetadata({
+    evaluation,
+    source: 'generated',
+    correctedTranscript,
+    summary: summaryText,
+  });
+
+  await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      summary_eval_score: evaluation.score,
+      summary_eval_metadata: {
+        ...evalMetadata,
+        advisory: true,
+        stage: failed ? 'score_failed' : 'scored',
+      },
+    },
+  });
+};
+
+const runGenerateSummaryJob = async ({ meetingId, meetingTitle, correctedTranscript }) => {
+  const totalStartedAt = Date.now();
+  let summaryText = '';
+  try {
+    const ollamaStartedAt = Date.now();
+    const summaryPayload = await ollamaService.summarizeMeetingTranscript(correctedTranscript, meetingTitle);
+    logSummaryTiming('summary.generate.ollama_ms', meetingId, ollamaStartedAt);
+
+    summaryText = String(summaryPayload.summary || '').trim();
+    const content = summaryPayload.notes || summaryText;
+    const decisions = normalizeStringList(summaryPayload.decisions, 50);
+    const tasks = normalizeStringList(summaryPayload.tasks, 100);
+
+    // Publish immediately — the summary is usable right after generation.
+    await publishGeneratedSummary({
+      meetingId,
+      summaryText,
+      content,
+      decisions,
+      tasks,
+    });
+
+    // RAGAS runs in the background as advisory scoring only; it never blocks or
+    // demotes the published summary, even on timeout/error.
+    try {
+      const evalStartedAt = Date.now();
+      const evaluation = await evaluateSummaryDraft({
+        correctedTranscript,
+        summary: summaryText,
+      });
+      logSummaryTiming('summary.evaluate.ragas_ms', meetingId, evalStartedAt);
+      await recordAdvisorySummaryScore({
+        meetingId,
+        evaluation,
+        correctedTranscript,
+        summaryText,
+        failed: Boolean(evaluation.error),
+      });
+    } catch (evalError) {
+      console.error(`summary.advisory.failed meetingId=${meetingId} error=${clampSummaryError(evalError)}`);
+      await recordAdvisorySummaryScore({
+        meetingId,
+        evaluation: {
+          score: null,
+          passed: false,
+          error: clampSummaryError(evalError),
+        },
+        correctedTranscript,
+        summaryText,
+        failed: true,
+      });
+    }
+  } catch (error) {
+    console.error(`summary.job.failed meetingId=${meetingId} error=${clampSummaryError(error)}`);
+    await setSummaryJobFailed({
+      meetingId,
+      source: 'generated',
+      correctedTranscript,
+      summary: summaryText,
+      error,
+    });
+  } finally {
+    logSummaryTiming('summary.job.total_ms', meetingId, totalStartedAt);
+  }
+};
+
+const runEvaluateSummaryJob = async ({
+  meetingId,
+  correctedTranscript,
+  summaryText,
+  content,
+  decisions,
+  tasks,
+}) => {
+  const totalStartedAt = Date.now();
+  try {
+    const evalStartedAt = Date.now();
+    const evaluation = await evaluateSummaryDraft({
+      correctedTranscript,
+      summary: summaryText,
+    });
+    logSummaryTiming('summary.evaluate.ragas_ms', meetingId, evalStartedAt);
+
+    await persistSummaryEvaluationResult({
+      meetingId,
+      correctedTranscript,
+      summaryText,
+      source: 'manual_review',
+      content,
+      decisions,
+      tasks,
+      evaluation,
+    });
+  } catch (error) {
+    console.error(`summary.job.failed meetingId=${meetingId} error=${clampSummaryError(error)}`);
+    await setSummaryJobFailed({
+      meetingId,
+      source: 'manual_review',
+      correctedTranscript,
+      summary: summaryText,
+      error,
+    });
+  } finally {
+    logSummaryTiming('summary.job.total_ms', meetingId, totalStartedAt);
+  }
+};
+
+const enqueueSummaryJob = ({ meetingId, stage, run }) => {
+  const existingJob = activeSummaryJobs.get(meetingId);
+  if (existingJob) return existingJob;
+
+  const job = Promise.resolve()
+    .then(run)
+    .catch((error) => {
+      console.error(`summary.job.unhandled meetingId=${meetingId} stage=${stage} error=${clampSummaryError(error)}`);
+    })
+    .finally(() => {
+      if (activeSummaryJobs.get(meetingId) === job) {
+        activeSummaryJobs.delete(meetingId);
+      }
+    });
+
+  activeSummaryJobs.set(meetingId, job);
+  return job;
+};
+
+const generateMeetingSummary = async (meetingId, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+  const minutes = meeting.meetingMinute;
+  if (!minutes) {
+    throw new ApiError(404, 'Meeting minutes not found.');
+  }
+  if (minutes.transcript_review_status !== 'approved') {
+    throw new ApiError(409, 'Approve the corrected transcript before generating a summary.');
+  }
+
+  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
+  if (!correctedTranscript) {
+    throw new ApiError(400, 'Corrected transcript is required before summary generation.');
+  }
+
+  if (activeSummaryJobs.has(meetingId)) {
+    return buildQueuedSummaryResponse(minutes, getSummaryStage(minutes) || 'generating');
+  }
+
+  const updatedMinutes = await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      summary_review_status: 'pending',
+      summary_eval_score: null,
+      summary_eval_metadata: {
+        stage: 'generating',
+        queuedAt: new Date().toISOString(),
+        queuedBy: currentUser.username,
+      },
+      isbotgenerated: true,
+    },
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'summary_generating',
+      recording_error: null,
+    },
+  });
+
+  enqueueSummaryJob({
+    meetingId,
+    stage: 'generating',
+    run: () => runGenerateSummaryJob({
+      meetingId,
+      meetingTitle: meeting.title,
+      correctedTranscript,
+    }),
+  });
+
+  return buildQueuedSummaryResponse(updatedMinutes, 'generating');
+};
+
+const evaluateMeetingSummary = async (meetingId, summaryData, currentUser) => {
+  const meeting = await getManageableMeetingWithMinutes(meetingId, currentUser);
+  if (!meeting) return null;
+  const minutes = meeting.meetingMinute;
+  if (!minutes) {
+    throw new ApiError(404, 'Meeting minutes not found.');
+  }
+  if (minutes.transcript_review_status !== 'approved') {
+    throw new ApiError(409, 'Approve the corrected transcript before evaluating a summary.');
+  }
+
+  const correctedTranscript = String(minutes.corrected_transcript || '').trim();
+  const summaryText = String(summaryData.summary || '').trim();
+  if (!correctedTranscript || !summaryText) {
+    throw new ApiError(400, 'Corrected transcript and summary are required for evaluation.');
+  }
+
+  if (activeSummaryJobs.has(meetingId)) {
+    return buildQueuedSummaryResponse(minutes, getSummaryStage(minutes) || 'evaluating');
+  }
+
+  const decisions = normalizeStringList(summaryData.decisions ?? minutes.decisions, 50);
+  const tasks = normalizeStringList(summaryData.task ?? minutes.task, 100);
+  const content = summaryData.content ?? minutes.content ?? summaryText;
+  const updatedMinutes = await prisma.meetingMinutes.update({
+    where: { meetingid: meetingId },
+    data: {
+      summary: null,
+      content: null,
+      summary_draft: summaryText,
+      summary_review_status: 'pending',
+      summary_eval_score: null,
+      summary_eval_metadata: {
+        stage: 'evaluating',
+        queuedAt: new Date().toISOString(),
+        queuedBy: currentUser.username,
+      },
+      decisions,
+      task: tasks,
+      isbotgenerated: true,
+    },
+    include: { files: true },
+  });
+
+  await prisma.meeting.update({
+    where: { meetingid: meetingId },
+    data: {
+      bot_status: 'summary_generating',
+      recording_error: null,
+    },
+  });
+
+  enqueueSummaryJob({
+    meetingId,
+    stage: 'evaluating',
+    run: () => runEvaluateSummaryJob({
+      meetingId,
+      correctedTranscript,
+      summaryText,
+      content,
+      decisions,
+      tasks,
+    }),
+  });
+
+  return buildQueuedSummaryResponse(updatedMinutes, 'evaluating');
 };
 
 const deleteMeeting = async (meetingId, currentUser) => {
@@ -877,5 +1207,8 @@ module.exports = {
   generateMeetingSummary,
   evaluateMeetingSummary,
   deleteMeeting,
-  updateRSVP
+  updateRSVP,
+  _private: {
+    activeSummaryJobs,
+  },
 };

@@ -20,6 +20,14 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+  },
+};
+
+const mockSecret = {
+  decryptSecret: jest.fn(),
+  encryptSecret: jest.fn(),
 };
 
 const mockPermissionUtil = {
@@ -35,10 +43,12 @@ const mockRecordingManager = {
 const mockRecordingProcessor = {
   processMeetingRecording: jest.fn(),
   reprocessMeetingRecording: jest.fn(),
+  uploadLocalRecordingToDrive: jest.fn(),
 };
 
 jest.mock('../src/config/prisma', () => mockPrisma);
 jest.mock('../src/utils/permission.util', () => mockPermissionUtil);
+jest.mock('../src/utils/secret.util', () => mockSecret);
 jest.mock('../src/services/recording-manager.service', () => mockRecordingManager);
 jest.mock('../src/services/recording-processing.service', () => mockRecordingProcessor);
 
@@ -64,6 +74,10 @@ describe('meeting-recording.service', () => {
     mockRecordingManager.hasActiveSession.mockReturnValue(false);
     mockRecordingProcessor.processMeetingRecording.mockResolvedValue({ ok: true });
     mockRecordingProcessor.reprocessMeetingRecording.mockResolvedValue({ ok: true });
+    mockRecordingProcessor.uploadLocalRecordingToDrive.mockResolvedValue({
+      meeting: { ...mockMeeting, recording_file: 'drive_recording_1' },
+      recordingFileId: 'drive_recording_1',
+    });
   });
 
   test('organizer can start recording', async () => {
@@ -133,6 +147,48 @@ describe('meeting-recording.service', () => {
       meetingId: mockMeeting.meetingid,
       createby: 'leader',
     });
+  });
+
+  test('organizer can upload retained local recording to their connected Drive', async () => {
+    mockPrisma.meeting.findUnique.mockResolvedValueOnce({
+      ...mockMeeting,
+      bot_status: 'review_required',
+      recording_metadata: {
+        localRecording: { status: 'available', mixedPath: '/tmp/meeting.wav' },
+      },
+    });
+    mockPrisma.user.findFirst.mockResolvedValueOnce({ googleDriveRefreshToken: 'enc-token' });
+    mockSecret.decryptSecret.mockReturnValueOnce('user-refresh-token');
+
+    const status = await recordingService.uploadRecordingToDrive(
+      mockMeeting.meetingid,
+      { username: 'leader', role: 'Member' }
+    );
+
+    expect(status.recording_file).toBe('drive_recording_1');
+    expect(mockRecordingProcessor.uploadLocalRecordingToDrive).toHaveBeenCalledWith({
+      meetingId: mockMeeting.meetingid,
+      refreshToken: 'user-refresh-token',
+    });
+  });
+
+  test('upload to Drive fails clearly when the user has not connected Drive', async () => {
+    mockPrisma.meeting.findUnique.mockResolvedValueOnce({
+      ...mockMeeting,
+      bot_status: 'review_required',
+      recording_metadata: {
+        localRecording: { status: 'available', mixedPath: '/tmp/meeting.wav' },
+      },
+    });
+    mockPrisma.user.findFirst.mockResolvedValueOnce({ googleDriveRefreshToken: null });
+    mockSecret.decryptSecret.mockReturnValueOnce(null);
+
+    await expect(recordingService.uploadRecordingToDrive(
+      mockMeeting.meetingid,
+      { username: 'leader', role: 'Member' }
+    )).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(mockRecordingProcessor.uploadLocalRecordingToDrive).not.toHaveBeenCalled();
   });
 
   test('startup cleanup marks stale recording meetings as failed', async () => {

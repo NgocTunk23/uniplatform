@@ -4,6 +4,8 @@ const ERROR_CODES = require('../constants/error-codes');
 const ROLES = require('../constants/roles');
 const permissionUtil = require('../utils/permission.util');
 const gdriveUtil = require('../utils/gdrive.util');
+const { decryptSecret } = require('../utils/secret.util');
+const { sanitizeRecordingMetadata } = require('../utils/recording-metadata.util');
 const recordingManager = require('./recording-manager.service');
 const recordingProcessor = require('./recording-processing.service');
 
@@ -46,7 +48,7 @@ const buildRecordingStatus = (meeting) => ({
   recording_startedat: meeting.recording_startedat || null,
   recording_endedat: meeting.recording_endedat || null,
   recording_error: meeting.recording_error || null,
-  recording_metadata: meeting.recording_metadata || null,
+  recording_metadata: sanitizeRecordingMetadata(meeting.recording_metadata),
   isActiveSession: recordingManager.hasActiveSession(meeting.meetingid),
 });
 
@@ -243,6 +245,43 @@ const reprocessRecording = async (meetingId, currentUser) => {
   return buildRecordingStatus(processing);
 };
 
+const uploadRecordingToDrive = async (meetingId, currentUser) => {
+  const meeting = await getAuthorizedMeeting(meetingId, currentUser);
+  if (recordingManager.hasActiveSession(meetingId) || meeting.bot_status === 'recording') {
+    throw new ApiError(409, 'Stop the active recording before uploading', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+  if (meeting.bot_status === 'processing') {
+    throw new ApiError(409, 'Recording is still being processed', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+
+  // Recording uploads use the uploader's own connected Google Drive (per-user
+  // token), consistent with file attachments.
+  const user = await prisma.user.findFirst({
+    where: { username: currentUser.username },
+    select: { googleDriveRefreshToken: true },
+  });
+  let refreshToken = null;
+  try {
+    refreshToken = decryptSecret(user?.googleDriveRefreshToken);
+  } catch (error) {
+    throw new ApiError(409, 'Google Drive connection is invalid. Please reconnect your Google Drive.', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+  if (!refreshToken) {
+    throw new ApiError(409, 'Connect your Google Drive before uploading the recording.', ERROR_CODES.SYSTEM.BAD_REQUEST);
+  }
+
+  try {
+    const result = await recordingProcessor.uploadLocalRecordingToDrive({ meetingId, refreshToken });
+    return buildRecordingStatus(result.meeting);
+  } catch (error) {
+    const message = sanitizeError(error);
+    if (/local recording file is not available/i.test(message)) {
+      throw new ApiError(409, message, ERROR_CODES.SYSTEM.BAD_REQUEST);
+    }
+    throw new ApiError(500, message, ERROR_CODES.SYSTEM.INTERNAL_SERVER_ERROR);
+  }
+};
+
 const getRecordingStatus = async (meetingId, currentUser) => {
   const meeting = await prisma.meeting.findUnique({ where: { meetingid: meetingId } });
   if (!meeting) throw new ApiError(404, 'Meeting not found');
@@ -287,6 +326,7 @@ module.exports = {
   startRecording,
   stopRecording,
   reprocessRecording,
+  uploadRecordingToDrive,
   getRecordingStatus,
   resetStaleRecordingMeetings,
 };

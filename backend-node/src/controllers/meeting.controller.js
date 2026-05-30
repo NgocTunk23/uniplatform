@@ -168,7 +168,7 @@ const generateSummary = async (req, res, next) => {
   try {
     const result = await meetingService.generateMeetingSummary(req.params.id, req.user);
     if (!result) throw new ApiError(404, 'Meeting not found');
-    res.json({ success: true, data: result });
+    res.status(result.queued ? 202 : 200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
@@ -178,7 +178,7 @@ const evaluateSummary = async (req, res, next) => {
   try {
     const result = await meetingService.evaluateMeetingSummary(req.params.id, req.body, req.user);
     if (!result) throw new ApiError(404, 'Meeting not found');
-    res.json({ success: true, data: result });
+    res.status(result.queued ? 202 : 200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
@@ -225,6 +225,15 @@ const reprocessRecording = async (req, res, next) => {
   }
 };
 
+const uploadRecordingToDrive = async (req, res, next) => {
+  try {
+    const status = await meetingRecordingService.uploadRecordingToDrive(req.params.id, req.user);
+    res.json({ success: true, data: status });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const deleteMeeting = async (req, res, next) => {
   try {
     await meetingService.deleteMeeting(req.params.id, req.user);
@@ -252,6 +261,7 @@ module.exports = {
   stopRecording,
   getRecordingStatus,
   reprocessRecording,
+  uploadRecordingToDrive,
   deleteMeeting,
   rsvpMeeting
 };

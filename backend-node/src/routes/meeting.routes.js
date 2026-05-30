@@ -81,6 +81,7 @@ router.post('/:id/summary/evaluate', validate(summaryEvaluateSchema), meetingCon
 router.post('/:id/recording/start', validate(meetingIdSchema), meetingController.startRecording);
 router.post('/:id/recording/stop', validate(meetingIdSchema), meetingController.stopRecording);
 router.post('/:id/recording/reprocess', validate(meetingIdSchema), meetingController.reprocessRecording);
+router.post('/:id/recording/upload-drive', validate(meetingIdSchema), meetingController.uploadRecordingToDrive);
 router.get('/:id/recording/status', validate(meetingIdSchema), meetingController.getRecordingStatus);
 router.patch('/:id/rsvp', validate(rsvpMeetingSchema), meetingController.rsvpMeeting);
 /**
