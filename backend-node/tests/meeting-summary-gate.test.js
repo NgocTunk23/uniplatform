@@ -39,6 +39,10 @@ jest.mock('../src/services/ollama.service', () => mockOllama);
 jest.mock('../src/services/summary-evaluation-client.service', () => mockSummaryEvaluation);
 
 const meetingService = require('../src/services/meeting.service');
+const flushSummaryJob = async () => {
+  const job = meetingService._private.activeSummaryJobs.get(meetingId);
+  if (job) await job;
+};
 
 const buildMeeting = (meetingMinute) => ({
   ...baseMeeting,
@@ -62,6 +66,7 @@ describe('meeting summary review gate', () => {
       files: [],
       ...(create || update),
     }));
+    meetingService._private.activeSummaryJobs.clear();
     mockOllama.summarizeMeetingTranscript.mockResolvedValue({
       summary: 'Nhóm thống nhất hoàn tất bản ghi âm.',
       decisions: ['Hoàn tất bản ghi âm'],
@@ -84,7 +89,7 @@ describe('meeting summary review gate', () => {
     expect(mockSummaryEvaluation.evaluateSummarizationScore).not.toHaveBeenCalled();
   });
 
-  test('publishes final summary when Ragas score passes', async () => {
+  test('publishes the generated summary as completed and records Ragas score as advisory', async () => {
     mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
       raw_transcript: 'raw',
       corrected_transcript: 'corrected transcript',
@@ -102,35 +107,46 @@ describe('meeting summary review gate', () => {
 
     const result = await meetingService.generateMeetingSummary(meetingId, currentUser);
 
-    expect(mockOllama.summarizeMeetingTranscript).toHaveBeenCalledWith('corrected transcript', baseMeeting.title);
-    expect(mockSummaryEvaluation.evaluateSummarizationScore).toHaveBeenCalledWith(expect.objectContaining({
-      referenceContexts: ['corrected transcript'],
-      response: 'Nhóm thống nhất hoàn tất bản ghi âm.',
+    expect(result).toEqual(expect.objectContaining({
+      queued: true,
+      status: 'pending',
+      stage: 'generating',
+      published: false,
     }));
+
+    await flushSummaryJob();
+
+    expect(mockOllama.summarizeMeetingTranscript).toHaveBeenCalledWith('corrected transcript', baseMeeting.title);
+    // Summary is published immediately (passed) regardless of Ragas.
     expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         summary: 'Nhóm thống nhất hoàn tất bản ghi âm.',
         summary_draft: null,
         summary_review_status: 'passed',
-        summary_eval_score: 0.82,
         decisions: ['Hoàn tất bản ghi âm'],
         task: ['Kiểm thử summary gate'],
+        summary_eval_metadata: expect.objectContaining({ stage: 'scoring' }),
       }),
     }));
     expect(mockPrisma.meeting.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ bot_status: 'completed' }),
     }));
-    expect(result.published).toBe(true);
+    // Ragas score recorded advisory afterwards, without touching summary/status.
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        summary_eval_score: 0.82,
+        summary_eval_metadata: expect.objectContaining({ advisory: true, stage: 'scored' }),
+      }),
+    }));
   });
 
-  test('stores draft and clears final summary when Ragas score fails', async () => {
+  test('keeps the summary completed even when the advisory Ragas score is low', async () => {
     mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
       raw_transcript: 'raw',
       corrected_transcript: 'corrected transcript',
       transcript_review_status: 'approved',
-      summary: 'Old final summary',
-      decisions: ['old'],
-      task: ['old'],
+      decisions: [],
+      task: [],
     }));
     mockSummaryEvaluation.evaluateSummarizationScore.mockResolvedValue({
       score: 0.31,
@@ -141,25 +157,118 @@ describe('meeting summary review gate', () => {
     });
 
     const result = await meetingService.generateMeetingSummary(meetingId, currentUser);
+    expect(result.queued).toBe(true);
+    await flushSummaryJob();
 
+    // Summary stays published; it is NOT demoted to a draft on a low score.
     expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        summary: null,
-        content: null,
-        summary_draft: 'Nhóm thống nhất hoàn tất bản ghi âm.',
-        summary_review_status: 'failed',
-        summary_eval_score: 0.31,
-        decisions: [],
-        task: [],
+        summary: 'Nhóm thống nhất hoàn tất bản ghi âm.',
+        summary_review_status: 'passed',
       }),
     }));
     expect(mockPrisma.meeting.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ bot_status: 'completed' }),
+    }));
+    expect(mockPrisma.meeting.update).not.toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ bot_status: 'summary_review_required' }),
     }));
-    expect(result.published).toBe(false);
+    // Low score is still recorded as advisory.
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        summary_eval_score: 0.31,
+        summary_eval_metadata: expect.objectContaining({ advisory: true }),
+      }),
+    }));
   });
 
-  test('re-evaluate publishes edited summary when score passes', async () => {
+  test('publishes summary as completed before Ragas resolves (advisory runs in background)', async () => {
+    mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
+      raw_transcript: 'raw',
+      corrected_transcript: 'corrected transcript',
+      transcript_review_status: 'approved',
+      decisions: [],
+      task: [],
+    }));
+
+    let resolveEval;
+    mockSummaryEvaluation.evaluateSummarizationScore.mockReturnValue(new Promise((resolve) => {
+      resolveEval = resolve;
+    }));
+
+    await meetingService.generateMeetingSummary(meetingId, currentUser);
+
+    // Let the background job run generation + publish, then block on eval.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Summary is already completed while Ragas is still pending.
+    expect(mockSummaryEvaluation.evaluateSummarizationScore).toHaveBeenCalled();
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        summary: 'Nhóm thống nhất hoàn tất bản ghi âm.',
+        summary_review_status: 'passed',
+        summary_eval_metadata: expect.objectContaining({ stage: 'scoring' }),
+      }),
+    }));
+    expect(mockPrisma.meeting.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ bot_status: 'completed' }),
+    }));
+
+    resolveEval({
+      score: 0.82,
+      passed: true,
+      threshold: 0.55,
+      metric: 'ragas_summary_score',
+      model: 'qwen3:1.7b',
+    });
+    await flushSummaryJob();
+
+    expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        summary_eval_score: 0.82,
+        summary_eval_metadata: expect.objectContaining({ advisory: true, stage: 'scored' }),
+      }),
+    }));
+  });
+
+  test('duplicate generate returns pending response without enqueueing another job', async () => {
+    let resolveSummary;
+    mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
+      raw_transcript: 'raw',
+      corrected_transcript: 'corrected transcript',
+      transcript_review_status: 'approved',
+      decisions: [],
+      task: [],
+    }));
+    mockOllama.summarizeMeetingTranscript.mockReturnValue(new Promise((resolve) => {
+      resolveSummary = resolve;
+    }));
+
+    const first = await meetingService.generateMeetingSummary(meetingId, currentUser);
+    const second = await meetingService.generateMeetingSummary(meetingId, currentUser);
+
+    expect(first.queued).toBe(true);
+    expect(second.queued).toBe(true);
+    expect(mockOllama.summarizeMeetingTranscript).not.toHaveBeenCalledTimes(2);
+
+    resolveSummary({
+      summary: 'Nhóm thống nhất hoàn tất bản ghi âm.',
+      decisions: [],
+      tasks: [],
+      notes: '',
+    });
+    mockSummaryEvaluation.evaluateSummarizationScore.mockResolvedValue({
+      score: 0.82,
+      passed: true,
+      threshold: 0.55,
+      metric: 'ragas_summary_score',
+      model: 'qwen3:1.7b',
+    });
+    await flushSummaryJob();
+    expect(mockOllama.summarizeMeetingTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  test('queued re-evaluate publishes edited summary when score passes', async () => {
     mockPrisma.meeting.findUnique.mockResolvedValue(buildMeeting({
       raw_transcript: 'raw',
       corrected_transcript: 'corrected transcript',
@@ -183,6 +292,13 @@ describe('meeting summary review gate', () => {
       task: ['Task A'],
     }, currentUser);
 
+    expect(result).toEqual(expect.objectContaining({
+      queued: true,
+      status: 'pending',
+      stage: 'evaluating',
+    }));
+    await flushSummaryJob();
+
     expect(mockPrisma.meetingMinutes.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         summary: 'Edited summary',
@@ -193,6 +309,5 @@ describe('meeting summary review gate', () => {
         task: ['Task A'],
       }),
     }));
-    expect(result.published).toBe(true);
   });
 });

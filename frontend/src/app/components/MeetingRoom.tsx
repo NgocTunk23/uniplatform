@@ -936,7 +936,7 @@ export function MeetingRoom() {
         <div className={`px-4 md:px-8 py-3 border-b z-10 ${isRecording ? 'bg-red-950/95 border-red-500/30 text-red-50' : 'bg-amber-950/95 border-amber-500/30 text-amber-50'}`}>
           <div className="max-w-[1600px] mx-auto flex items-center gap-3 text-sm font-semibold">
             {isProcessingRecording ? <Loader2 size={18} className="animate-spin shrink-0" /> : <Radio size={18} className="shrink-0" />}
-            <span>{isRecording ? 'Recording in progress. Everyone in this room is being recorded.' : 'Recording stopped. AI transcript and summary are being generated.'}</span>
+            <span>{isRecording ? 'Recording in progress. Everyone in this room is being recorded.' : 'Recording stopped. AI is transcribing this meeting.'}</span>
           </div>
         </div>
       )}

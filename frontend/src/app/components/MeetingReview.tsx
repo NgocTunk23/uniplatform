@@ -170,6 +170,7 @@ export function MeetingReview() {
   const [tasksText, setTasksText] = useState('');
   const [recordingDownloadLink, setRecordingDownloadLink] = useState<string | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [recordingUploadBusy, setRecordingUploadBusy] = useState(false);
   const [reviewAction, setReviewAction] = useState<string | null>(null);
 
   const fetchJson = async (url: string, init?: RequestInit) => {
@@ -189,7 +190,7 @@ export function MeetingReview() {
 
   const applyMinutes = (nextMinutes: MeetingMinutes | null) => {
     setMinutes(nextMinutes);
-    setSummary(nextMinutes?.summary || '');
+    setSummary(nextMinutes?.summary || nextMinutes?.summary_draft || '');
     setContent(nextMinutes?.content || '');
     setRawTranscript(nextMinutes?.raw_transcript || '');
     setCorrectedTranscript(nextMinutes?.corrected_transcript || '');
@@ -220,10 +221,13 @@ export function MeetingReview() {
   }, [meetingId]);
 
   useEffect(() => {
-    if (!meetingId || !['recording', 'processing'].includes(meeting?.bot_status || '')) return;
+    const stage = typeof minutes?.summary_eval_metadata?.stage === 'string' ? minutes.summary_eval_metadata.stage : '';
+    const summaryInProgress = ['generating', 'evaluating', 'scoring'].includes(stage);
+    const isSummaryPending = (minutes?.summary_review_status === 'pending' && summaryInProgress) || meeting?.bot_status === 'summary_generating';
+    if (!meetingId || (!['recording', 'processing'].includes(meeting?.bot_status || '') && !isSummaryPending)) return;
     const timer = window.setInterval(() => loadReview(false), 5000);
     return () => window.clearInterval(timer);
-  }, [meetingId, meeting?.bot_status]);
+  }, [meetingId, meeting?.bot_status, minutes?.summary_review_status, minutes?.summary_eval_metadata?.stage]);
 
   const saveMinutes = async (showToast = true) => {
     if (!meetingId) return null;
@@ -343,11 +347,39 @@ export function MeetingReview() {
         method: 'POST',
       });
       applyMinutes(data.data?.minutes || null);
-      toast.success('Summary generated successfully');
+      setMeeting(prev => prev ? { ...prev, bot_status: 'summary_generating', recording_error: null } : prev);
+      toast.success(data.data?.queued ? 'Summary generation started' : (data.data?.published ? 'Summary published successfully' : 'Summary needs review before publishing'));
       await loadReview(false);
     } catch (error) {
       console.error('Generate summary error', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate summary');
+    } finally {
+      setReviewAction(null);
+    }
+  };
+
+  const handleEvaluateSummary = async () => {
+    if (!meetingId || !canEdit) return;
+
+    setReviewAction('evaluate');
+    try {
+      const data = await fetchJson(`${apiUrl}/api/meetings/${meetingId}/summary/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: summary.trim(),
+          content: content.trim() || null,
+          decisions: splitLines(decisionsText),
+          task: splitLines(tasksText),
+        }),
+      });
+      applyMinutes(data.data?.minutes || null);
+      setMeeting(prev => prev ? { ...prev, bot_status: 'summary_generating', recording_error: null } : prev);
+      toast.success(data.data?.queued ? 'Summary evaluation started' : (data.data?.published ? 'Summary published successfully' : 'Summary still needs review'));
+      await loadReview(false);
+    } catch (error) {
+      console.error('Evaluate summary error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to evaluate summary');
     } finally {
       setReviewAction(null);
     }
@@ -403,6 +435,31 @@ export function MeetingReview() {
     }
   };
 
+  const handleUploadRecordingToDrive = async () => {
+    if (!meetingId || !canEdit) return;
+
+    setRecordingUploadBusy(true);
+    try {
+      const data = await fetchJson(`${apiUrl}/api/meetings/${meetingId}/recording/upload-drive`, { method: 'POST' });
+      setMeeting(prev => prev ? {
+        ...prev,
+        bot_status: data.data?.bot_status || prev.bot_status,
+        recording_file: data.data?.recording_file || prev.recording_file,
+        recording_error: data.data?.recording_error || null,
+        recording_metadata: data.data?.recording_metadata || prev.recording_metadata,
+      } : prev);
+      setRecordingDownloadLink(data.data?.recordingDownloadLink || null);
+      toast.success('Recording uploaded to Drive');
+      await loadReview(false);
+    } catch (error) {
+      console.error('Upload recording to Drive error', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to upload recording to Drive');
+      await loadReview(false);
+    } finally {
+      setRecordingUploadBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-gray-400 bg-white">
@@ -437,10 +494,31 @@ export function MeetingReview() {
   const transcriptSegments = Array.isArray(minutes?.transcript_segments) ? minutes.transcript_segments : [];
   const uncertainSegments = transcriptSegments.filter(segment => segment?.uncertain);
   const retriedSegments = transcriptSegments.filter(segment => segment?.retried);
+  const summaryReviewStatus = minutes?.summary_review_status || 'none';
+  const summaryEvalStage = typeof minutes?.summary_eval_metadata?.stage === 'string'
+    ? minutes.summary_eval_metadata.stage
+    : null;
+  // 'pending' is only "in progress" while a generate/evaluate/score stage is
+  // active. After transcript approval the status can be 'pending'/'pending_generation'
+  // (idle, awaiting the user to click Generate) — that must NOT show a spinner.
+  const summaryInProgress = ['generating', 'evaluating', 'scoring'].includes(summaryEvalStage || '');
+  const isSummaryPending = (summaryReviewStatus === 'pending' && summaryInProgress) || recordingStatus === 'summary_generating';
+  const summaryNeedsReview = summaryReviewStatus === 'failed' || recordingStatus === 'summary_review_required';
+  const summaryEvalError = typeof minutes?.summary_eval_metadata?.error === 'string'
+    ? minutes.summary_eval_metadata.error
+    : null;
+  const summaryEvalScore = typeof minutes?.summary_eval_score === 'number' ? minutes.summary_eval_score : null;
   const audioCapture = getNestedRecord(minutes?.transcription_metadata, 'audioCapture') ||
     getNestedRecord(meeting.recording_metadata, 'captureMetadata');
   const audioWarnings = getStringList(audioCapture?.qualityWarnings);
   const audioTracks = Array.isArray(audioCapture?.tracks) ? audioCapture.tracks as Record<string, unknown>[] : [];
+  const localRecording = getNestedRecord(meeting.recording_metadata, 'localRecording') ||
+    getNestedRecord(audioCapture, 'localRecording');
+  const localRecordingStatus = typeof localRecording?.status === 'string' ? localRecording.status : null;
+  const hasLocalRecording = Boolean(localRecording?.hasLocalFile) && !recordingDownloadLink;
+  const canUploadRecordingToDrive = canEdit && hasLocalRecording && !isRecordingProcessing;
+  const isRecordingUploading = localRecordingStatus === 'uploading' || recordingUploadBusy;
+  const recordingUploadError = typeof localRecording?.uploadError === 'string' ? localRecording.uploadError : null;
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -517,12 +595,23 @@ export function MeetingReview() {
                   <p className="text-sm text-gray-500">
                     {recordingStatus === 'recording' && 'Recording in progress'}
                     {recordingStatus === 'processing' && 'AI is transcribing this meeting'}
-                    {recordingStatus === 'review_required' && (isTranscriptApproved ? 'Transcript approved. Generate a summary when ready.' : 'Transcript is ready for review')}
-                    {recordingStatus === 'summary_review_required' && 'Summary needs review before publishing'}
-                    {recordingStatus === 'completed' && 'Recording processing complete'}
+                    {recordingStatus === 'review_required' && (isTranscriptApproved ? 'Transcript approved. Upload the recording to Drive when ready.' : 'Transcript is ready for review. Recording is stored locally.')}
+                    {recordingStatus === 'summary_generating' && (summaryEvalStage === 'evaluating' ? 'Evaluating summary...' : 'Generating summary...')}
+                    {recordingStatus === 'summary_review_required' && 'Summary draft needs review before publishing'}
+                    {recordingStatus === 'completed' && (recordingDownloadLink ? 'Recording uploaded to Drive' : 'Recording processing complete. Recording is stored locally.')}
                     {recordingStatus === 'failed' && (hasNoAudioError ? 'No audio captured. Check microphone access and join the meeting again before recording.' : (meeting.recording_error || 'Recording processing failed'))}
-                    {!['recording', 'processing', 'review_required', 'summary_review_required', 'completed', 'failed'].includes(recordingStatus) && (meeting.recording_file || 'No recording file linked yet')}
+                    {!['recording', 'processing', 'review_required', 'summary_generating', 'summary_review_required', 'completed', 'failed'].includes(recordingStatus) && (meeting.recording_file || 'No recording file linked yet')}
                   </p>
+                  {hasLocalRecording && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Local recording is available. Upload to Drive to enable download sharing.
+                    </p>
+                  )}
+                  {recordingUploadError && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Drive upload failed: {recordingUploadError}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -540,6 +629,16 @@ export function MeetingReview() {
                   >
                     <Download size={15} />
                     Recording
+                  </button>
+                )}
+                {canUploadRecordingToDrive && (
+                  <button
+                    onClick={handleUploadRecordingToDrive}
+                    disabled={isRecordingUploading}
+                    className="px-3 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white transition-colors flex items-center gap-2 text-sm font-semibold"
+                  >
+                    {isRecordingUploading ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                    Upload Drive
                   </button>
                 )}
                 {canEdit && ['failed', 'completed'].includes(recordingStatus) && (
@@ -702,16 +801,43 @@ export function MeetingReview() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Summary</h2>
                 {canEdit && (
-                  <button
-                    onClick={handleGenerateSummary}
-                    disabled={isReviewBusy || !isTranscriptApproved}
-                    className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white transition-colors flex items-center gap-1.5 text-sm font-semibold"
-                  >
-                    {reviewAction === 'generate' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    Generate
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {summaryNeedsReview && (
+                      <button
+                        onClick={handleEvaluateSummary}
+                        disabled={isReviewBusy || isSummaryPending || !isTranscriptApproved || !summary.trim()}
+                        className="px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-60 text-white transition-colors flex items-center gap-1.5 text-sm font-semibold"
+                      >
+                        {reviewAction === 'evaluate' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                        Evaluate
+                      </button>
+                    )}
+                    <button
+                      onClick={handleGenerateSummary}
+                      disabled={isReviewBusy || isSummaryPending || !isTranscriptApproved}
+                      className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-60 text-white transition-colors flex items-center gap-1.5 text-sm font-semibold"
+                    >
+                      {(reviewAction === 'generate' || isSummaryPending) ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                      {isSummaryPending ? 'Generating' : 'Generate'}
+                    </button>
+                  </div>
                 )}
               </div>
+              {isSummaryPending && (
+                <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 flex items-start gap-2">
+                  <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin" />
+                  <span>{summaryEvalStage === 'evaluating' ? 'Evaluating summary...' : 'Generating summary...'}</span>
+                </div>
+              )}
+              {summaryNeedsReview && (
+                <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 flex items-start gap-2">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                  <span>
+                    Summary evaluation did not pass{summaryEvalScore !== null ? ` (${formatPercent(summaryEvalScore)})` : ''}.
+                    {summaryEvalError ? ` ${summaryEvalError}` : ' Edit the draft and evaluate again.'}
+                  </span>
+                </div>
+              )}
               <textarea
                 value={summary}
                 onChange={event => setSummary(event.target.value)}

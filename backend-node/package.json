@@ -8,6 +8,11 @@
     "test:recording": "NODE_TLS_REJECT_UNAUTHORIZED=0 NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --forceExit tests/meeting-recording.test.js tests/recording-processing.test.js tests/ollama.test.js tests/meeting-recording-routes.test.js tests/meeting-summary-gate.test.js tests/recording-api-integration.test.js",
     "check:recording-env": "node scripts/check-recording-env.js"
   },
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/tests/jest.setup.js"
+    ]
+  },
   "prisma": {
     "seed": "node prisma/seed.js"
   },

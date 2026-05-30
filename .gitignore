@@ -18,3 +18,4 @@ frontend/dist/
 # .env
 # .env.local
 .DS_Storedocker-compose.override.yml
+db-backups/

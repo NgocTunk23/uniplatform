@@ -3,6 +3,7 @@ const mockRecordingService = {
   stopRecording: jest.fn(),
   getRecordingStatus: jest.fn(),
   reprocessRecording: jest.fn(),
+  uploadRecordingToDrive: jest.fn(),
 };
 
 jest.mock('../src/services/meeting-recording.service', () => mockRecordingService);
@@ -32,6 +33,7 @@ describe('meeting recording route/controller wiring', () => {
     mockRecordingService.stopRecording.mockResolvedValue({ bot_status: 'processing' });
     mockRecordingService.getRecordingStatus.mockResolvedValue({ bot_status: 'completed' });
     mockRecordingService.reprocessRecording.mockResolvedValue({ bot_status: 'processing' });
+    mockRecordingService.uploadRecordingToDrive.mockResolvedValue({ recording_file: 'drive_recording_1' });
   });
 
   test('registers recording routes', () => {
@@ -39,6 +41,7 @@ describe('meeting recording route/controller wiring', () => {
     expect(hasRoute('post', '/:id/recording/stop')).toBe(true);
     expect(hasRoute('get', '/:id/recording/status')).toBe(true);
     expect(hasRoute('post', '/:id/recording/reprocess')).toBe(true);
+    expect(hasRoute('post', '/:id/recording/upload-drive')).toBe(true);
   });
 
   test('registers transcript review and summary gate routes', () => {
@@ -65,7 +68,7 @@ describe('meeting recording route/controller wiring', () => {
     expect(mockRecordingService.startRecording).toHaveBeenCalledWith(meetingId, user, 'token-123');
   });
 
-  test('stop/status/reprocess controllers call recording service', async () => {
+  test('stop/status/reprocess/upload controllers call recording service', async () => {
     const baseReq = { params: { id: meetingId }, user, headers: {} };
     const next = jest.fn();
 
@@ -83,5 +86,10 @@ describe('meeting recording route/controller wiring', () => {
     await meetingController.reprocessRecording(baseReq, reprocessRes, next);
     expect(reprocessRes.status).toHaveBeenCalledWith(202);
     expect(mockRecordingService.reprocessRecording).toHaveBeenCalledWith(meetingId, user);
+
+    const uploadRes = createResponse();
+    await meetingController.uploadRecordingToDrive(baseReq, uploadRes, next);
+    expect(uploadRes.json).toHaveBeenCalledWith({ success: true, data: { recording_file: 'drive_recording_1' } });
+    expect(mockRecordingService.uploadRecordingToDrive).toHaveBeenCalledWith(meetingId, user);
   });
 });

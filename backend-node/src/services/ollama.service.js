@@ -4,6 +4,19 @@ const getOllamaBaseUrl = () => (process.env.OLLAMA_BASE_URL || 'http://localhost
 const getOllamaModel = () => process.env.OLLAMA_MODEL || 'qwen3:1.7b';
 const getJsonRetries = () => Math.max(0, Number(process.env.OLLAMA_JSON_RETRIES || 2));
 const getOllamaTimeoutMs = () => Math.max(0, Number(process.env.OLLAMA_TIMEOUT_MS || 5 * 60 * 1000));
+const getOllamaKeepAlive = () => process.env.OLLAMA_KEEP_ALIVE || '30m';
+const getOllamaNumPredict = () => {
+  const value = Number(process.env.OLLAMA_NUM_PREDICT || 1024);
+  return Number.isFinite(value) && value > 0 ? value : 1024;
+};
+// num_ctx defaults to Ollama's own default (2048) unless explicitly set. A
+// 6000-char (MEETING_SUMMARY_CHUNK_CHARS) Vietnamese chunk can exceed 2048
+// tokens and get silently truncated, so raising this can improve quality at the
+// cost of slower/heavier calls. Left opt-in via env until benchmarked.
+const getOllamaNumCtx = () => {
+  const value = Number(process.env.OLLAMA_NUM_CTX || 0);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
 
 const stripThinking = (content) => content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
@@ -92,8 +105,11 @@ const fetchOllamaContent = async (messages) => {
         stream: false,
         think: false,
         format: 'json',
+        keep_alive: getOllamaKeepAlive(),
         options: {
           temperature: 0.2,
+          num_predict: getOllamaNumPredict(),
+          ...(getOllamaNumCtx() ? { num_ctx: getOllamaNumCtx() } : {}),
         },
         messages,
       }),

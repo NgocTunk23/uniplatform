@@ -71,15 +71,22 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:1.7b}
       - OLLAMA_JSON_RETRIES=${OLLAMA_JSON_RETRIES:-2}
       - OLLAMA_TIMEOUT_MS=${OLLAMA_TIMEOUT_MS:-300000}
-      - MEETING_SUMMARY_CHUNK_CHARS=${MEETING_SUMMARY_CHUNK_CHARS:-6000}
+      # Giữ model nóng giữa các call + cap output + canh ctx khớp chunk để bớt số lần gọi và tránh truncation ngầm (mặc định Ollama là 2048)
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-768}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-4096}
+      - MEETING_SUMMARY_CHUNK_CHARS=${MEETING_SUMMARY_CHUNK_CHARS:-3500}
       - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
       - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
       - SUMMARY_SCORE_CONCISENESS_COEFF=${SUMMARY_SCORE_CONCISENESS_COEFF:-0.5}
       - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
-      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-300000}
+      # RAGAS giờ chỉ advisory (chạy nền) — timeout ngắn để không ôm Ollama lâu khi treo
+      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-120000}
     depends_on:
       - backend-python
       - mongodb
+    volumes:
+      - recordings_data:/tmp/uniplatform-recordings
 
   backend-python:
     build: ./backend-python
@@ -104,7 +111,7 @@ services:
       - SUMMARY_SCORE_MODEL=${SUMMARY_SCORE_MODEL:-qwen3:1.7b}
       - SUMMARY_SCORE_ENABLED=${SUMMARY_SCORE_ENABLED:-true}
       - SUMMARY_SCORE_THRESHOLD=${SUMMARY_SCORE_THRESHOLD:-0.55}
-      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-300000}
+      - SUMMARY_SCORE_TIMEOUT_MS=${SUMMARY_SCORE_TIMEOUT_MS:-120000}
     
   ollama:
     image: ollama/ollama:latest
@@ -116,3 +123,4 @@ services:
 
 volumes:
   mongo_data:
+  recordings_data:
