@@ -116,7 +116,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     setIsAddingMember(true);
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
       const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}/members`, {
         method: 'POST',
@@ -156,7 +156,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     setIsRemovingMember(username);
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
       const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}/members/${username}`, {
         method: 'DELETE',
@@ -184,7 +184,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     if (!workspaceId) return;
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
       const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}/members/${username}`, {
         method: 'PATCH',
@@ -214,7 +214,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     setIsDeletingWorkspace(true);
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
       const response = await fetch(`${apiUrl}/api/workspaces/${workspaceId}`, {
         method: 'DELETE',
@@ -249,7 +249,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
   const fetchHistory = async (skip = 0, append = false, search = '') => {
     if (!workspaceId) return;
     const token = localStorage.getItem('uniplatform_user_token');
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+    const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
     
     if (skip > 0 || search) setIsLoadingMore(true);
 
@@ -331,7 +331,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     if (!workspaceId) return;
 
     const token = localStorage.getItem('uniplatform_user_token');
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+    const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
     // 1. Fetch Workspace Details
     const fetchWorkspace = async () => {
@@ -452,7 +452,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
     try {
       let fileIds: string[] = [];
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
 
       if (selectedFile) {
         const formData = new FormData();
@@ -523,7 +523,8 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
   }
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    // <div className="flex flex-col h-full min-h-0 bg-white relative">
+    <div className="flex flex-col h-full max-h-full min-h-0 overflow-hidden bg-white relative">
       {/* Chat Header */}
       {!hideHeader && (
         <div className="h-[73px] px-6 border-b border-gray-100 flex items-center justify-between bg-white/95 backdrop-blur-sm sticky top-0 z-10 shrink-0">
@@ -586,7 +587,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}
+        className={`flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 md:space-y-5 pb-32 ${hideHeader ? 'bg-white' : 'bg-gray-50/30'}`}
       >
         {isLoadingMore && (
           <div className="flex justify-center py-2">
@@ -679,7 +680,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
       </div>
 
       {/* Input Area */}
-      <div className="p-2.5 bg-white border-t border-gray-50 shrink-0">
+      <div className="z-20 p-2.5 bg-white border-t border-gray-50 shrink-0">
         <div className="flex flex-col bg-gray-50 p-1.5 rounded-2xl border border-gray-200 shadow-sm focus-within:ring-2 focus-within:ring-purple-100 focus-within:border-purple-300 transition-all">
 
           {selectedFile && (
@@ -713,7 +714,7 @@ export function ChatInterface({ workspaceId = "", hideHeader = false, onDeleteSu
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={currentUserRole === 'Viewer' ? "You have read-only access to this workspace" : "Type your message here... (use /ai to ask UniBot)"}
+              placeholder={currentUserRole === 'Viewer' ? "You have read-only access to this workspace" : "Type your message here..."}
               className="flex-1 max-h-32 min-h-[44px] py-3 px-1 bg-transparent border-none outline-none resize-none text-sm text-gray-800 placeholder:text-gray-400 disabled:cursor-not-allowed"
               rows={1}
               disabled={isUploading || currentUserRole === 'Viewer'}

@@ -60,9 +60,11 @@ export function DashboardLayout() {
   }, [meetings]);
 
   return (
-    <div className="flex min-h-screen w-full bg-white text-gray-900 font-sans">
+    // <div className="flex min-h-screen w-full bg-white text-gray-900 font-sans">
+    // <div className="flex h-screen w-full overflow-hidden bg-white text-gray-900 font-sans">
+    <div className="flex flex-col md:flex-row h-screen w-full bg-white text-gray-900 font-sans">
       {/* Mobile Header */}
-      <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-100 bg-white absolute top-0 w-full z-20">
+      <div className="md:hidden flex-none flex items-center justify-between p-4 border-b border-gray-100 bg-white w-full z-20 shrink-0 h-[73px]">
         <h1 className="text-xl font-bold tracking-tight text-gray-900">UniPlatform</h1>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -94,7 +96,7 @@ export function DashboardLayout() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col md:flex-row h-full min-h-0 overflow-y-auto md:overflow-hidden mt-[73px] md:mt-0 relative">
+      <div className="flex flex-1 flex-col md:flex-row min-h-0 overflow-hidden relative">
         {activeGroup && !isMeetingSubRoute ? (
           <div className="flex flex-1 w-full h-full">
 
