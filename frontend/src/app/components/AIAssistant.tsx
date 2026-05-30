@@ -130,7 +130,7 @@ export function AIAssistant() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white relative max-w-5xl mx-auto w-full border-x border-gray-50/50 shadow-sm shadow-gray-100/50">
+    <div className="flex flex-col h-full max-h-full min-h-0 overflow-hidden bg-white relative max-w-5xl mx-auto w-full border-x border-gray-50/50 shadow-sm shadow-gray-100/50">
       {/* Header */}
       <div className="h-[73px] px-6 border-b border-gray-100 flex items-center justify-between bg-white/95 backdrop-blur-sm sticky top-0 z-10 shrink-0">
         <div className="flex items-center gap-3">
@@ -148,8 +148,8 @@ export function AIAssistant() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-        <div className="w-full max-w-3xl space-y-8 mt-4 pb-20">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 pb-40 flex flex-col items-center">
+        <div className="w-full max-w-3xl space-y-8 mt-4">
           
           {messages.length === 0 && (
             <div className="text-center text-gray-400 mt-10 text-sm">
@@ -196,7 +196,7 @@ export function AIAssistant() {
       </div>
 
       {/* Input Area */}
-      <div className="p-6 bg-white shrink-0 bg-gradient-to-t from-white via-white to-transparent shadow-[0_-10px_40px_rgba(255,255,255,1)] z-10">
+      <div className="z-20 p-6 bg-white bg-gradient-to-t from-white via-white to-transparent shadow-[0_-10px_40px_rgba(255,255,255,1)] shrink-0">
         <div className="max-w-3xl mx-auto flex flex-col">
           
           {/* Prompt Suggestions */}
