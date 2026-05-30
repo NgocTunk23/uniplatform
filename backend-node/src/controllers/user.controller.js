@@ -114,6 +114,15 @@ const updateProfile = async (req, res, next) => {
     res.json({ data: userResponse });
   } catch (error) {
     console.error("🔴 LỖI CẬP NHẬT PROFILE:", error);
+    // If Google refresh token is invalid, provide a clear error to the client
+    if (error && error.code === 'GOOGLE_REFRESH_TOKEN_INVALID') {
+      return next(new ApiError(
+        409,
+        'Google Drive connection is invalid or revoked. Please reconnect Google Drive in Drive Files.',
+        ERROR_CODES.FILE.GOOGLE_DRIVE_NOT_CONNECTED
+      ));
+    }
+
     next(error); // Chuyển lỗi xuống error handler chung
   }
 };

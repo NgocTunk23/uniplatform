@@ -178,8 +178,20 @@ const uploadFile = async (fileObject) => {
     if (response) console.log('📦 Response data:', response.data ? 'exists' : 'null');
     return response.data;
   } catch (error) {
+    // Detect common OAuth refresh failures and provide a clearer error message
     if (error.response) {
       console.error('❌ Google Drive Upload Error Details:', JSON.stringify(error.response.data));
+      try {
+        const errData = error.response.data || {};
+        if (errData.error === 'invalid_grant') {
+          console.error('❌ Google Drive OAuth invalid_grant detected (refresh token revoked/expired)');
+          const err = new Error('Google Drive refresh token invalid or revoked. Please reconnect Google Drive (invalid_grant)');
+          err.code = 'GOOGLE_REFRESH_TOKEN_INVALID';
+          throw err;
+        }
+      } catch (inner) {
+        // fall through to rethrow original error below if parsing fails
+      }
     }
     console.error('❌ Google Drive Upload Error:', error.message);
     throw error;
@@ -256,6 +268,17 @@ const uploadFileFromPath = async (filePath, fileObject) => {
   } catch (error) {
     if (error.response) {
       console.error('❌ Google Drive Upload Error Details:', JSON.stringify(error.response.data));
+      try {
+        const errData = error.response.data || {};
+        if (errData.error === 'invalid_grant') {
+          console.error('❌ Google Drive OAuth invalid_grant detected (refresh token revoked/expired)');
+          const err = new Error('Google Drive refresh token invalid or revoked for this user. User must reconnect Drive (invalid_grant)');
+          err.code = 'GOOGLE_REFRESH_TOKEN_INVALID';
+          throw err;
+        }
+      } catch (inner) {
+        // ignore
+      }
     }
     console.error('❌ Google Drive Upload Error:', error.message);
     throw error;
