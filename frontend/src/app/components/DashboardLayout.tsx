@@ -75,7 +75,7 @@ export function DashboardLayout() {
       {/* Main Sidebar */}
       <div
         className={`
-          fixed md:relative md:flex z-10 w-72 h-screen md:h-full flex-col bg-white border-r border-gray-100 transition-transform duration-300 ease-in-out overflow-y-auto
+          fixed md:relative md:flex z-10 w-72 h-full flex-col bg-white border-r border-gray-100 transition-transform duration-300 ease-in-out
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
