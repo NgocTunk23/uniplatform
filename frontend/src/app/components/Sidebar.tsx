@@ -65,7 +65,7 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
     if (!token) return;
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
       const response = await fetch(`${apiUrl}/api/workspaces`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -73,8 +73,8 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
       });
       
       if (response.ok) {
-        const data = await response.json();
-        const formattedGroups = data.map((ws: any) => {
+        const data = await response.json() as any[];
+        const formattedGroups: { id: string; name: string; unread: number }[] = data.map((ws: any) => {
           const id = ws.workspaceid || ws.id || ws._id;
           return {
             id,
@@ -139,7 +139,7 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
     setIsCreating(true);
     try {
       const token = localStorage.getItem('uniplatform_user_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+      const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
       
       const response = await fetch(`${apiUrl}/api/workspaces`, {
         method: 'POST',
@@ -188,7 +188,7 @@ export function Sidebar({ onCloseMobile, activeGroup, onSelectGroup }: SidebarPr
       if (!token) return;
 
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const apiUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001';
         const response = await fetch(`${apiUrl}/api/users/profile`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
