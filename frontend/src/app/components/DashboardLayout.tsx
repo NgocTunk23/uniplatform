@@ -60,7 +60,7 @@ export function DashboardLayout() {
   }, [meetings]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-white text-gray-900 font-sans">
+    <div className="flex min-h-screen w-full bg-white text-gray-900 font-sans">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-100 bg-white absolute top-0 w-full z-20">
         <h1 className="text-xl font-bold tracking-tight text-gray-900">UniPlatform</h1>
@@ -75,7 +75,7 @@ export function DashboardLayout() {
       {/* Main Sidebar */}
       <div
         className={`
-          fixed md:relative md:flex z-10 w-72 h-full flex-col bg-white border-r border-gray-100 transition-transform duration-300 ease-in-out
+          fixed md:relative md:flex z-10 w-72 h-full max-h-screen top-0 bottom-0 left-0 flex-col bg-white border-r border-gray-100 overflow-y-auto transition-transform duration-300 ease-in-out
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
       >
@@ -94,7 +94,7 @@ export function DashboardLayout() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col md:flex-row h-full overflow-y-auto md:overflow-hidden mt-[73px] md:mt-0 relative">
+      <div className="flex flex-1 flex-col md:flex-row h-full min-h-0 overflow-y-auto md:overflow-hidden mt-[73px] md:mt-0 relative">
         {activeGroup && !isMeetingSubRoute ? (
           <div className="flex flex-1 w-full h-full">
 
